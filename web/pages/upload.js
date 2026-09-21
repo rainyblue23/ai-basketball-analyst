@@ -1,0 +1,845 @@
+/* ==========================================================================
+   pages/upload.js —— 页面 1：上传与分析配置
+   --------------------------------------------------------------------------
+   数据来源接口：
+     POST /api/jobs            建任务，body {video_path, source, seed, make_highlights}
+     WS   /api/jobs/{id}/ws    每帧推送任务 JSON（status/progress/message）
+     GET  /api/jobs/{id}       进度轮询兜底
+     GET  /api/jobs            最近 20 条任务（可直接回看历史产物）
+     GET  /api/games/{id} ...  任务完成后自动装载全部产物
+   无后端时的降级：给出明确提示，并允许直接「载入演示数据」。
+   ========================================================================== */
+window.PAGES = window.PAGES || {};
+
+window.PAGES['upload'] = {
+  name: 'page-upload',
+  data: function () {
+    return {
+      S: window.STORE,
+      api: window.API,
+      form: {
+        source: 'video',            // video | jsonl（合成演示入口已移除）
+        video_path: '',
+        seed: 20240607,
+        make_highlights: true,
+        // 真视频快速模式：跳过逐帧 YOLO，只走比分牌 + 颜色追球
+        fast: false,
+        // 可选：进球标注文件（scripts/label_baskets.py 产出），当自动判据的准绳
+        labels_path: ''
+      },
+      busy: false,
+      job: { job_id: '', status: '', progress: 0, message: '', error: null, out_dir: '', summary: '' },
+      logs: [],
+      jobs: [],
+      watcher: null,
+      uploadPct: -1,          // -1 = 未上传；0~1 = 上传中
+      uploadedName: '',
+      health: null,
+      fileName: '',           // 本地文件名（仅用于界面显示；上传后用后端返回的路径）
+      // ---- 「在画面上标篮筐」弹窗 ----
+      markOpen: false,
+      markAt: 1.0,            // 用第几秒的帧来标
+      markImg: '',            // data:image/jpeg;base64,...
+      markSize: { w: 0, h: 0 },
+      markPts: [],            // [{name, label, x, y}]（归一化 0~1）
+      markIdx: 0,
+      markSaving: false,
+      savedMarks: null,       // 该视频已保存的标点
+      // ---- 标球场：点场地特征点解标定（用户建议：不一定要标篮筐）----
+      markKind: 'hoop',       // hoop | court
+      courtItems: [],         // [{name,label,hint}] 11 个候选特征点
+      mfFrames: [],           // 抽出来的画面 [{t,image,w,h}]
+      mfIdx: 0,               // 当前是第几张
+      mfPts: [],              // 已标点 [{t,name,label,x,y}]
+      mfTarget: '',           // 当前选中要标的点名
+      mfResult: null,         // 解算结果
+      mfCenter: 60,           // 在哪个时刻附近抽帧（同一镜头内）
+      mfSpan: 3,              // 抽帧的时间跨度（秒）
+      courtPts: [],
+      courtIdx: 0,
+      courtResult: null,
+      calInfo: null
+    };
+  },
+  computed: {
+    canSubmit: function () {
+      // 只有 video / jsonl 两种源（合成演示入口已移除）
+      return !!String(this.form.video_path || '').trim();
+    },
+    /** 标点顺序：先篮筐中心，再左右缘、上下沿（都是相对篮筐的） */
+    markItems: function () {
+      return [
+        { name: 'rim_center', label: '篮筐中心', hint: '点篮圈正中心' },
+        { name: 'rim_left', label: '篮圈左缘', hint: '点篮圈最左边' },
+        { name: 'rim_right', label: '篮圈右缘', hint: '点篮圈最右边' },
+        { name: 'rim_top', label: '篮圈上沿', hint: '点篮圈最上边' },
+        { name: 'rim_bottom', label: '篮圈下沿', hint: '点篮圈最下边' }
+      ];
+    },
+    /** 当前模式要点的项（篮筐 5 点 / 球场 11 点） */
+    activeItems: function () {
+      return this.markKind === 'court' ? this.courtItems : this.markItems;
+    },
+    /** 当前模式已点的点 */
+    activePts: function () {
+      // 球场模式只画**本帧**的点：不同画面的像素坐标不通用，
+      // 把别帧的点叠上来会让人以为标错了
+      return this.markKind === 'court' ? this.mfPtsHere : this.markPts;
+    },
+    /** 当前模式的下标 */
+    activeIdx: function () {
+      return this.markKind === 'court' ? this.courtIdx : this.markIdx;
+    },
+    /** 当前画面 */
+    mfCurrent: function () { return this.mfFrames[this.mfIdx] || null; },
+    /** 本帧已标的点（只画这些 —— 别的帧的点坐标不通用） */
+    mfPtsHere: function () {
+      var t = this.mfCurrent ? this.mfCurrent.t : null;
+      return this.mfPts.filter(function (p) { return p.t === t; });
+    },
+    /** 某个点名是否已标过（按钮变绿） */
+    mfDone: function () {
+      var m = {};
+      this.mfPts.forEach(function (p) { m[p.name] = 1; });
+      return m;
+    },
+    mfEnough: function () { return this.mfPts.length >= 4; },
+    courtCurrent: function () { return this.courtItems[this.courtIdx] || null; },
+    courtDone: function () { return this.courtIdx >= this.courtItems.length; },
+    courtEnough: function () { return this.courtPts.length >= 4; },
+    markCurrent: function () {
+      if (this.markKind === 'court') return this.courtCurrent;
+      return this.markItems[this.markIdx] || null;
+    },
+    markDone: function () {
+      if (this.markKind === 'court') return this.courtDone;
+      return this.markIdx >= this.markItems.length;
+    },
+    /** 已点出的点里，篮筐中心 + 左右缘 → 算出归一化 rx；中心 + 上下沿 → ry */
+    markHoop: function () {
+      var self = this;
+      function g(n) {
+        var p = self.markPts.filter(function (q) { return q.name === n; })[0];
+        return p ? { x: p.x, y: p.y } : null;
+      }
+      var c = g('rim_center');
+      if (!c) return null;
+      var l = g('rim_left'), r = g('rim_right'), t = g('rim_top'), b = g('rim_bottom');
+      var rx = 0, ry = 0;
+      if (l && r) rx = Math.abs(r.x - l.x) / 2;
+      else if (l) rx = Math.abs(c.x - l.x);
+      else if (r) rx = Math.abs(r.x - c.x);
+      if (t && b) ry = Math.abs(b.y - t.y) / 2;
+      else if (t) ry = Math.abs(c.y - t.y);
+      else if (b) ry = Math.abs(b.y - c.y);
+      if (!(rx > 0)) rx = 0.02;      // 没标边缘时给个保守默认（画面宽度的 2%）
+      if (!(ry > 0)) ry = rx * 0.42;
+      return { cx: c.x, cy: c.y, rx: rx, ry: ry };
+    },
+    statusTag: function () {
+      return { queued: 'info', running: 'warning', done: 'success', error: 'danger' }[this.job.status] || 'info';
+    },
+    statusText: function () {
+      return { queued: '排队中', running: '分析中', done: '已完成', error: '失败' }[this.job.status] || '未开始';
+    },
+    percent: function () { return Math.round((Number(this.job.progress) || 0) * 100); }
+  },
+  mounted: function () {
+    this.refreshJobs();
+    this.fetchHealth();
+  },
+  beforeUnmount: function () {
+    if (this.watcher) this.watcher.close();
+  },
+  methods: {
+    /* ------------------------------------------------------------------
+       在画面上标篮筐（不用敲命令行）
+       ------------------------------------------------------------------ */
+    openMark: function () {
+      var self = this;
+      this.markKind = 'hoop';
+      var v = String(this.form.video_path || '').trim();
+      if (!v) { this.$message.warning('先选一个视频（上传或填路径）'); return; }
+      this.markOpen = true;
+      this.markIdx = 0;
+      this.markPts = [];
+      this.loadMarkFrame();
+      window.API.getMarks(v).then(function (r) {
+        self.savedMarks = (r && r.exists) ? r.marks : null;
+      }).catch(function () { self.savedMarks = null; });
+    },
+    /** 打开「标球场」：抽 N 个画面，多帧累加标点 */
+    openCourt: function () {
+      var self = this;
+      var v = String(this.form.video_path || '').trim();
+      if (!v) { this.$message.warning('先选一个视频'); return; }
+      this.markKind = 'court';
+      this.markOpen = true;
+      this.mfFrames = [];
+      this.mfIdx = 0;
+      this.mfPts = [];
+      this.mfTarget = '';
+      this.mfResult = null;
+      this.markImg = '';
+      if (!this.courtItems.length) {
+        window.API.courtLandmarks().then(function (d) {
+          self.courtItems = (d && d.landmarks) || [];
+        }).catch(function () {});
+      }
+      this.$message.info('正在抽画面…');
+      window.API.getFrames(v, 6, this.mfCenter, this.mfSpan).then(function (d) {
+        self.mfFrames = (d && d.frames) || [];
+        if (!self.mfFrames.length) {
+          self.$message.error('抽不到画面（视频太短或全是黑帧？）');
+          return;
+        }
+        self.$message.success('抽到 ' + self.mfFrames.length +
+          ' 个画面：每帧点几个看得清的特征点，攒够 4 个就能解标定');
+      }).catch(function (e) {
+        self.$message.error('抽帧失败：' + (e && e.message ? e.message : e));
+      });
+      window.API.getCalibration(v).then(function (r) {
+        self.calInfo = (r && r.exists) ? r : null;
+      }).catch(function () { self.calInfo = null; });
+    },
+    /** 在指定时刻附近重抽（这几帧属于同一镜头，点才能叠加） */
+    mfResample: function () {
+      var self = this;
+      var v = String(this.form.video_path || '').trim();
+      if (!v) return;
+      window.API.getFrames(v, 6, this.mfCenter, this.mfSpan).then(function (d) {
+        // 换镜头就清空已标点：不同镜头的像素坐标不通用
+        if (self.mfPts.length) {
+          self.mfPts = [];
+          self.$message.info('已换镜头，原标点已清空（不同镜头坐标不通用）');
+        }
+        self.mfFrames = (d && d.frames) || [];
+        self.mfIdx = 0;
+        self.$message.success('抽到 ' + self.mfFrames.length + ' 帧（t=' +
+          (self.mfFrames.length ? self.mfFrames[0].t + '~' +
+           self.mfFrames[self.mfFrames.length - 1].t : '') + 's）');
+      }).catch(function (e) {
+        self.$message.error('抽帧失败：' + (e && e.message ? e.message : e));
+      });
+    },
+    mfPrev: function () { if (this.mfIdx > 0) this.mfIdx -= 1; },
+    mfNext: function () {
+      if (this.mfIdx < this.mfFrames.length - 1) this.mfIdx += 1;
+      else this.$message.info('已经是最后一个画面了');
+    },
+    mfPick: function (item) { this.mfTarget = item.name; },
+    /** 在当前画面上点一个点（必须是先选中了某个特征点） */
+    mfClick: function (ev) {
+      if (!this.mfTarget) {
+        this.$message.warning('先在上面选一个特征点（比如「中圈中心」），再在画面里点它');
+        return;
+      }
+      if (!this.mfCurrent) return;
+      var el = (ev.target && ev.target.tagName === 'IMG') ? ev.target
+                                                          : ev.currentTarget;
+      var box = el.getBoundingClientRect();
+      var x = Math.max(0, Math.min(1, (ev.clientX - box.left) / box.width));
+      var y = Math.max(0, Math.min(1, (ev.clientY - box.top) / box.height));
+      var item = null;
+      for (var i = 0; i < this.courtItems.length; i++) {
+        if (this.courtItems[i].name === this.mfTarget) { item = this.courtItems[i]; }
+      }
+      // 同一点名只保留最后一次（重复点=修正）
+      var self = this;
+      this.mfPts = this.mfPts.filter(function (p) { return p.name !== self.mfTarget; });
+      this.mfPts.push({ t: this.mfCurrent.t, name: this.mfTarget,
+                        label: item ? item.label : this.mfTarget, x: x, y: y });
+      this.mfTarget = '';
+      // 立刻回显坐标：用户一眼就能看出记的是不是鼠标点的地方
+      this.$message.success('已记录 ' + (item ? item.label : '') +
+        ' → (' + x.toFixed(3) + ', ' + y.toFixed(3) + ')');
+    },
+    mfUndo: function () {
+      if (this.mfPts.length) this.mfPts.pop();
+    },
+    mfClear: function () { this.mfPts = []; this.mfTarget = ''; },
+    /** 保存并解算（多帧累加） */
+    saveCourtMulti: function () {
+      var self = this;
+      if (!this.mfEnough) {
+        this.$message.warning('至少要点 4 个特征点（现在 ' + this.mfPts.length + ' 个）');
+        return;
+      }
+      var byT = {};
+      this.mfPts.forEach(function (p) {
+        byT[p.t] = byT[p.t] || { t: p.t, landmarks: {} };
+        byT[p.t].landmarks[p.name] = [p.x, p.y];
+      });
+      var frames = Object.keys(byT).map(function (k) { return byT[k]; });
+      this.markSaving = true;
+      window.API.calibrateMulti({
+        video_path: String(this.form.video_path).trim(), frames: frames
+      }).then(function (r) {
+        self.markSaving = false;
+        self.mfResult = r;
+        if (r.ok) {
+          self.$message.success('标定成功：' + r.n_points + ' 个点 / ' +
+            r.n_frames + ' 个画面，平均误差 ' + r.rmse_m + ' m —— 分析时会自动使用');
+          self.calInfo = { exists: true, path: r.path, reproj_error_m: r.rmse_m };
+        } else {
+          self.$message.warning('误差 ' + r.rmse_m + ' m 偏大，看下面的离群点');
+        }
+      }).catch(function (e) {
+        self.markSaving = false;
+        self.$message.error('解算失败：' + (e && e.message ? e.message : e));
+      });
+    },
+    /** 球场模式下点一个点 */
+    onCourtClick: function (ev) {
+      if (this.mfFrames.length) { this.mfClick(ev); return; }
+      if (this.courtDone || !this.courtCurrent) return;
+      // 用**图片元素**的框做基准（不是容器）：容器是 inline-block + max-width，
+      // 在弹窗里它的宽度可能比图片显示宽度大，用容器归一化会导致绿圈整体偏移。
+      var el = (ev.target && ev.target.tagName === 'IMG') ? ev.target
+                                                          : ev.currentTarget;
+      var box = el.getBoundingClientRect();
+      var x = Math.max(0, Math.min(1, (ev.clientX - box.left) / box.width));
+      var y = Math.max(0, Math.min(1, (ev.clientY - box.top) / box.height));
+      this.courtPts.push({ name: this.courtCurrent.name,
+                           label: this.courtCurrent.label, x: x, y: y });
+      this.courtIdx += 1;
+    },
+    /** 提交球场标定 */
+    saveCourt: function () {
+      if (this.mfFrames.length) { this.saveCourtMulti(); return; }
+      var self = this;
+      if (!this.courtEnough) {
+        this.$message.warning('至少要点 4 个场地特征点（现在 ' +
+          this.courtPts.length + ' 个）');
+        return;
+      }
+      var lm = {};
+      this.courtPts.forEach(function (p) { lm[p.name] = [p.x, p.y]; });
+      this.markSaving = true;
+      window.API.saveCourtMarks({
+        video_path: String(this.form.video_path).trim(),
+        at: this.markAt, landmarks: lm
+      }).then(function (r) {
+        self.markSaving = false;
+        self.courtResult = r;
+        if (r.usable) {
+          self.$message.success('标定完成：' + r.n_points + ' 个点，重投影误差 ' +
+            r.rmse_m + ' m —— 分析这段视频时会自动使用');
+          self.markOpen = false;
+        } else {
+          self.$message.warning('重投影误差 ' + r.rmse_m +
+            ' m 偏大，点位可能有误：建议重点或换一张帧');
+        }
+      }).catch(function (e) {
+        self.markSaving = false;
+        self.$message.error('标定失败：' + (e && e.message ? e.message : e));
+      });
+    },
+    loadMarkFrame: function (keepPoints) {
+      var self = this;
+      var v = String(this.form.video_path || '').trim();
+      // 换帧就清空标点：标点存的是**像素位置**，换了帧那些位置就指向别的东西了
+      // （实测用户看到的现象是"点跟着画面漂移"，其实是我们没清）。
+      if (!keepPoints && (this.courtPts.length || this.markPts.length)) {
+        this.courtPts = [];
+        this.courtIdx = 0;
+        this.markPts = [];
+        this.markIdx = 0;
+        this.$message.info('已换帧，标点已清空，请按提示重新点');
+      }
+      this.markImg = '';
+      this.log('GET /api/frame?at=' + this.markAt);
+      window.API.getFrame(v, this.markAt).then(function (r) {
+        self.markImg = r.image;
+        self.markSize = { w: r.w, h: r.h };
+      }).catch(function (e) {
+        self.$message.error('取帧失败：' + (e && e.message ? e.message : e));
+      });
+    },
+    onMarkClick: function (ev) {
+      if (this.markKind === 'court') { this.onCourtClick(ev); return; }
+      if (this.markDone || !this.markCurrent) return;
+      var el = (ev.target && ev.target.tagName === 'IMG') ? ev.target
+                                                          : ev.currentTarget;
+      var box = el.getBoundingClientRect();
+      var x = (ev.clientX - box.left) / box.width;
+      var y = (ev.clientY - box.top) / box.height;
+      x = Math.max(0, Math.min(1, x));
+      y = Math.max(0, Math.min(1, y));
+      this.markPts.push({ name: this.markCurrent.name,
+                          label: this.markCurrent.label, x: x, y: y });
+      this.markIdx += 1;
+    },
+    markUndo: function () {
+      if (this.markKind === 'court') { this.courtUndo(); return; }
+      if (this.markIdx > 0) {
+        this.markIdx -= 1;
+        this.markPts.pop();
+      }
+    },
+    markSkip: function () {
+      if (this.markKind === 'court') { this.courtSkip(); return; }
+      if (!this.markDone) this.markIdx += 1;
+    },
+    courtUndo: function () {
+      if (this.courtIdx > 0) { this.courtIdx -= 1; this.courtPts.pop(); }
+    },
+    courtSkip: function () { if (!this.courtDone) this.courtIdx += 1; },
+    markPct: function (p) { return { left: (p.x * 100) + '%', top: (p.y * 100) + '%' }; },
+    /** 保存标点：POST /api/marks（归一化坐标，后端换回像素） */
+    saveMarks: function () {
+      var self = this;
+      if (this.markKind === 'court') { this.saveCourt(); return; }
+      var h = this.markHoop;
+      if (!h) { this.$message.warning('至少要点出「篮筐中心」'); return; }
+      var lm = {};
+      this.markPts.forEach(function (p) { lm[p.name] = [p.x, p.y]; });
+      this.markSaving = true;
+      window.API.saveMarks({
+        video_path: String(this.form.video_path).trim(),
+        at: this.markAt,
+        landmarks: lm,
+        hoop: [h.cx, h.cy, h.rx, h.ry]
+      }).then(function (r) {
+        self.markSaving = false;
+        self.markOpen = false;
+        self.savedMarks = r.marks;
+        self.$message.success('标点已保存，分析时会直接用它（不再跑篮筐检测器）');
+      }).catch(function (e) {
+        self.markSaving = false;
+        self.$message.error('保存失败：' + (e && e.message ? e.message : e));
+      });
+    },
+    clearMarks: function () {
+      if (this.markKind === 'court') { this.courtPts = []; this.courtIdx = 0; return; }
+      this.markPts = []; this.markIdx = 0;
+    },
+    /** 把已保存的标点画回去（只读展示） */
+    savedMarkPct: function (p) { return { left: (p[0] * 100) + '%', top: (p[1] * 100) + '%' }; },
+
+    /** 后端能力探测：GET /api/health（ffmpeg / 检测模型 / OpenCV 是否就绪） */
+    fetchHealth: function () {
+      var self = this;
+      if (!this.S.backendOk) return;
+      window.API.health().then(function (h) { self.health = h; })
+        .catch(function () { self.health = null; });
+    },
+    /** 浏览器上传视频：POST /api/upload（带 x-filename 头）→ 得到后端可见的路径 */
+    pickFile: function () {
+      var self = this;
+      if (!this.S.backendOk) {
+        this.$message.warning('未连接后端，无法上传文件；可先填写后端机器上的绝对路径');
+        return;
+      }
+      if (this.health && this.health.stale) {
+        this.$message.warning('后端正在自动重启或仍载入旧代码，请等几秒后点「刷新」再上传');
+        return;
+      }
+      var input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'video/*';
+      input.onchange = function () {
+        var f = input.files && input.files[0];
+        if (!f) return;
+        self.fileName = f.name;
+        self.uploadPct = 0;
+        self.log('POST /api/upload（x-filename=' + f.name + '，' + (f.size / 1048576).toFixed(1) + ' MB）');
+        window.API.uploadVideo(f, function (p) { self.uploadPct = p; }).then(function (r) {
+          self.uploadPct = -1;
+          self.form.source = 'video';
+          self.form.video_path = r.path;
+          self.log('上传完成：' + r.path + '（' + r.bytes + ' 字节）');
+          self.$message.success('视频已上传到后端：' + r.path);
+        }).catch(function (e) {
+          self.uploadPct = -1;
+          self.log('上传失败：' + e.message);
+          // 错误消息本身已经写清楚了原因（后端没响应 / 被中断 / HTTP 码），
+          // 这里不再套一层「上传失败：」，免得出现「上传失败：上传失败：…」
+          self.$message.error(e.message);
+        });
+      };
+      input.click();
+    },
+
+    /** 静态产物模式：载入 web/demo/*.json（不需要后端进程） */
+    loadDemo: function () {
+      var self = this;
+      window.API.loadDemo().then(function (d) {
+        if (!d.game) {
+          self.$message.error('未找到 web/demo/game.json：先跑 '
+            + 'python -m aihoop.cli demo --seed 7 --duration 600 --out out/demo');
+          return;
+        }
+        self.S.applyGame(d.game, d.players || [], d.shotchart, {
+          markdown: d.reportMd || '', json: d.report_json || null
+        }, d.highlights);
+        self.S.demoMode = true;
+        self.S.jobId = 'demo';
+        self.$message.success('已载入演示数据');
+        location.hash = '#/overview';
+      });
+    },
+
+    /** 拉取历史任务列表：GET /api/jobs */
+    refreshJobs: function () {
+      var self = this;
+      if (!this.S.backendOk) return;
+      window.API.listJobs().then(function (d) {
+        self.jobs = Array.isArray(d) ? d : (d && d.jobs) || [];
+      }).catch(function () { /* 静默：无后端时不打扰用户 */ });
+    },
+
+    /** 回看某个历史任务的全部产物：GET /api/games/{id} 等 */
+    openJob: function (row) {
+      var self = this;
+      if (row.status !== 'done') { this.$message.info('该任务还未完成'); return; }
+      window.APP_LOAD_JOB(row.job_id).then(function () {
+        self.S.demoMode = false;
+        self.$message.success('已载入任务 ' + String(row.job_id).slice(0, 8) + ' 的产物');
+        location.hash = '#/overview';
+      }).catch(function (e) {
+        self.$message.error('载入失败：' + e.message);
+      });
+    },
+
+    /** 开始分析：POST /api/jobs → WS/轮询跟踪进度 → 完成后装载产物 */
+    start: function () {
+      var self = this;
+      if (!this.S.backendOk) {
+        this.$message.warning('未连接后端，无法新建任务；可先点「载入演示数据」走完整演示流程');
+        return;
+      }
+      if (!this.canSubmit) { this.$message.warning('请填写视频路径或 JSONL 文件路径'); return; }
+      this.busy = true;
+      this.logs = [];
+      this.job = { job_id: '', status: 'queued', progress: 0, message: '正在提交任务…', error: null, out_dir: '', summary: '' };
+
+      var payload = {
+        // 后端 JobCreate：video 源用 video_path；jsonl 源用 raw_path（两个都带上，互不冲突）
+        video_path: String(this.form.video_path).trim(),
+        source: this.form.source,
+        seed: Number(this.form.seed) || 0,
+        make_highlights: !!this.form.make_highlights
+      };
+      if (this.form.source === 'video') {
+        // 快速模式：跳过逐帧 YOLO，只走「比分牌 + 颜色追球」
+        payload.detect_players = !this.form.fast;
+        payload.stride = this.form.fast ? 1 : 2;
+        // 如果标过篮筐，把标点文件带上：后端直接用你的坐标，跳过检测器
+        if (this.savedMarks && this.savedMarks.path) {
+          payload.marks = this.savedMarks.path;
+          this.log('带上人工标点：' + this.savedMarks.path);
+        }
+        // 如果自己也标过进球（label_baskets 的产出），带上当准绳
+        if (this.form.labels_path) payload.basket_labels = String(this.form.labels_path).trim();
+      }
+      if (this.form.source === 'jsonl') payload.raw_path = payload.video_path;
+      this.log('POST /api/jobs ' + JSON.stringify(payload));
+
+      window.API.createJob(payload).then(function (r) {
+        var id = r.job_id || r.id;
+        self.job.job_id = id;
+        self.log('任务已创建 job_id=' + id + '，订阅 WS /api/jobs/' + id + '/ws');
+        window.APP.registerJob(self.job);
+        self.subscribe(id);
+      }).catch(function (e) {
+        self.busy = false;
+        self.job.status = 'error';
+        self.job.error = e.message;
+        self.log('创建任务失败：' + e.message);
+        self.$message.error('创建任务失败：' + e.message);
+      });
+    },
+
+    /** 订阅进度：WS 优先，失败自动切轮询（api.js 内部实现） */
+    subscribe: function (id) {
+      var self = this;
+      if (this.watcher) this.watcher.close();
+      this.watcher = window.API.watchJob(id, function (j) {
+        var prev = self.job.message;
+        self.job = j;
+        if (j.message && j.message !== prev) self.log('阶段：' + j.message + '（' + Math.round((j.progress || 0) * 100) + '%）');
+        if (j.status === 'done') {
+          self.busy = false;
+          self.log('分析完成：' + (j.summary || ''));
+          self.$message.success('分析完成，正在载入产物…');
+          window.APP_LOAD_JOB(id).then(function () {
+            self.S.demoMode = false;
+            self.refreshJobs();
+            location.hash = '#/overview';
+          }).catch(function (e) { self.$message.error('产物载入失败：' + e.message); });
+        } else if (j.status === 'error') {
+          self.busy = false;
+          self.log('任务失败：' + (j.error || '未知错误'));
+          self.$message.error('分析失败：' + (j.error || '未知错误'));
+        }
+      }, function (err) {
+        self.log('⚠ ' + err.message);
+      });
+    },
+
+    log: function (msg) {
+      var t = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+      this.logs.push('[' + t + '] ' + msg);
+      if (this.logs.length > 200) this.logs.shift();
+      var self = this;
+      this.$nextTick(function () {
+        var el = self.$refs.logbox;
+        if (el) el.scrollTop = el.scrollHeight;
+      });
+    }
+  },
+  template: [
+    '<div>',
+    '  <div class="card">',
+    '    <h3 class="card-title">① 选择数据源</h3>',
+    '    <div class="grid grid-2">',
+    '      <div class="src-card" :class="{active: form.source===\'video\'}" @click="form.source=\'video\'">',
+    '        <div class="t">🎥 上传视频（video）</div>',
+    '        <div class="d">两种方式：① 直接<b>选择本地文件</b>上传（POST /api/upload，后端复制到 data/uploads）；',
+    '          ② 填写后端机器上的<b>绝对路径</b>（同机演示最省事）。</div>',
+    '      </div>',
+    '      <div class="src-card" :class="{active: form.source===\'jsonl\'}" @click="form.source=\'jsonl\'">',
+    '        <div class="t">📄 已有 JSONL（jsonl）</div>',
+    '        <div class="d">直接用既有的检测结果重跑统计与热区，跳过目标检测环节；',
+    '          后端取 <code>raw_path</code> 指向的 raw_track.json。</div>',
+    '      </div>',
+    '    </div>',
+    '    <div class="hint">「合成演示」入口已移除：它生成的是<b>模拟比赛</b>（比分/出手/回合全是造出来的），',
+    '      混在历史任务里会被误认成真实分析结果。回归测试请用命令行：',
+    '      <code>python -m aihoop.cli demo --seed 7 --duration 600 --out out/fixture</code></div>',
+    '  </div>',
+
+    '  <div class="grid grid-2">',
+    '    <div class="card">',
+    '      <h3 class="card-title">② 分析参数</h3>',
+    '      <el-form label-width="112px" label-position="left">',
+    '        <el-form-item label="文件路径">',
+    '          <el-input v-model="form.video_path" placeholder="例如 D:\\\\videos\\\\game1.mp4 或 out\\\\xxx\\\\raw_track.json" clearable />',
+    '          <div class="row" style="margin-top:8px">',
+    '            <el-button size="small" :disabled="!S.backendOk || (health && health.stale)" @click="pickFile">选择本地视频上传</el-button>',
+    '            <span class="hint" v-if="fileName">已选：{{ fileName }}</span>',
+    '            <span class="hint" v-if="uploadPct>=0">上传中 {{ Math.round(uploadPct*100) }}%</span>',
+    '          </div>',
+    '          <el-progress v-if="uploadPct>=0" :percentage="Math.round(uploadPct*100)" :stroke-width="8" style="margin-top:8px;max-width:420px" />',
+    '          <div class="hint">路径由后端进程解析；也可以点上面的按钮把视频上传到后端（返回可直接使用的路径）。</div>',
+    '        </el-form-item>',
+    // ---- 在画面上标篮筐：这是「分析前你先告诉我篮筐在哪」的入口 ----
+    '        <el-form-item v-if="form.source===\'video\'" label="篮筐标点">',
+    '          <div class="row">',
+    '            <el-button size="small" type="primary" plain :disabled="!S.backendOk" @click="openMark">在画面上标篮筐</el-button>',
+    '            <el-button size="small" plain :disabled="!S.backendOk" @click="openCourt">标球场（点场地特征点）</el-button>',
+    '            <el-tag v-if="savedMarks && savedMarks.hoop" size="small" type="success" effect="plain">',
+    '              已标：中心 {{ Math.round(savedMarks.hoop[0]) }},{{ Math.round(savedMarks.hoop[1]) }}',
+    '              半径 {{ Math.round(savedMarks.hoop[2]) }}×{{ Math.round(savedMarks.hoop[3]) }}',
+    '            </el-tag>',
+    '            <el-tag v-else size="small" type="info" effect="plain">未标点（走自动检测）</el-tag>',
+    '          </div>',
+    '          <div class="hint">花 10 秒点 5 下（篮筐中心 + 圈的四边）：之后分析直接使用你的坐标，',
+    '            <b>不再依赖篮筐检测器</b>，判进球的尺度也变成真实的。检测器认不出篮筐的机位一定要标。</div>',
+    '        </el-form-item>',
+    // ---- 标球场：用户建议「不一定要标篮筐，别的有特色的点也可以」----
+    '        <el-form-item v-if="form.source===\'video\'" label="球场标定">',
+    '          <div class="row">',
+    '            <el-button size="small" plain :disabled="!S.backendOk" @click="openCourt">标球场（点场地特征点）</el-button>',
+    '            <el-tag v-if="calInfo" size="small" type="success" effect="plain">',
+    '              已标定：重投影误差 {{ calInfo.reproj_error_m }} m',
+    '            </el-tag>',
+    '            <el-tag v-else size="small" type="warning" effect="plain">未标定（热区/战术图出不来）</el-tag>',
+    '          </div>',
+    '          <div class="hint">点 4 个以上<b>场地特征点</b>（四角 / 中线两端 / 中圈中心 / 罚球线中点 / 篮筐），',
+    '            自动解出这段视频的球场标定。<b>热区、战术图、球场坐标全靠它</b> —— 用别的视频的标定会整片错位。</div>',
+    '        </el-form-item>',
+    '        <el-form-item v-if="form.source===\'video\'" label="进球标注(可选)">',
+    '          <el-input v-model="form.labels_path" placeholder="例如 out\\\\label_nybo\\\\labels\\\\basket_labels.jsonl" clearable />',
+    '          <div class="hint">填了它：<b>只报告标注为「进球」的时刻</b>（自动判定中不在此列的算误报）。',
+    '            用 <code>python scripts\\label_baskets.py</code> 生成。</div>',
+    '        </el-form-item>',
+    '        <el-form-item label="随机种子 seed">',
+    '          <el-input-number v-model="form.seed" :min="0" :max="99999999" :step="1" controls-position="right" style="width:180px" />',
+    '          <span class="hint" style="margin-left:10px">相同 seed + 相同数据源 = 完全可复现的结果（答辩可复查）</span>',
+    '        </el-form-item>',
+    '        <el-form-item label="生成高光片段">',
+    '          <el-switch v-model="form.make_highlights" />',
+    '          <span class="hint" style="margin-left:10px">需要本机安装 ffmpeg；关闭则只出统计数据，速度更快</span>',
+    '        </el-form-item>',
+    '        <el-form-item v-if="form.source===\'video\'" label="快速模式">',
+    '          <el-switch v-model="form.fast" />',
+    '          <span class="hint" style="margin-left:10px">跳过逐帧 YOLO（球员检测）：只读比分牌 + 颜色线索追球。CPU 上快十几倍；代价是没有球员个体归属，1v1/野球场视频会把进球都算在一边</span>',
+    '        </el-form-item>',
+    '        <el-form-item label="后端状态">',
+    '          <el-tag :type="S.backendOk ? \'success\' : \'warning\'" effect="plain">{{ api.base }}</el-tag>',
+    '          <span class="hint" style="margin-left:10px">{{ S.backendOk ? \'已连接\' : \'未连接（演示数据模式）\' }}</span>',
+    '          <div class="row" style="margin-top:8px" v-if="health">',
+    '            <el-tag size="small" :type="health.ffmpeg ? \'success\' : \'info\'" effect="plain">ffmpeg {{ health.ffmpeg ? \'就绪\' : \'缺失\' }}</el-tag>',
+    '            <el-tag size="small" :type="health.opencv ? \'success\' : \'info\'" effect="plain">OpenCV {{ health.opencv ? \'就绪\' : \'缺失\' }}</el-tag>',
+    '            <el-tag size="small" :type="health.ultralytics ? \'success\' : \'info\'" effect="plain">检测模型 {{ health.ultralytics ? \'就绪\' : \'未装\' }}</el-tag>',
+    '            <el-tag size="small" effect="plain" v-if="health.code_rev">代码 {{ health.code_rev }}</el-tag>',
+    '            <el-tag size="small" effect="plain" type="info" v-if="health.code_loaded_at">进程载入 {{ health.code_loaded_at }}</el-tag>',
+    '            <el-button size="small" text @click="fetchHealth">刷新</el-button>',
+    '          </div>',
+    '          <el-alert v-if="health && health.stale" type="warning" :closable="false" show-icon style="margin-top:8px"',
+    '            title="后端正在自动重启以加载新代码"',
+    '            description="源码（代码时间）比进程载入时间新，说明后端还没切到最新代码。用「启动后端.bat」启动的话会在 2 秒内自动重启；稍等片刻点「刷新」即可。若一直不变，请关掉后端窗口重新双击「启动后端.bat」。" />',
+    '          <el-alert v-else-if="health && health.has_ball_rim_path === false" type="error" :closable="false" show-icon style="margin-top:8px"',
+    '            title="后端进程跑的是旧代码，新功能不会生效"',
+    '            description="uvicorn 只在启动时加载一次源码：改了 .py 但没重启，进程里还是老模块，而且不报错（表现就是「改了跟没改一样」）。请关掉后端窗口后重新双击项目根目录的「启动后端.bat」（它有自动重启，之后就不用管了）。" />',
+    '          <div class="hint" v-if="health">ffmpeg 决定能否生成高光片段；检测模型与 OpenCV 只在 video 源需要。</div>',
+    '        </el-form-item>',
+    '      </el-form>',
+    '      <div class="row">',
+    '        <el-button type="primary" :loading="busy" @click="start">开始分析</el-button>',
+    '        <el-button @click="refreshJobs">刷新任务列表</el-button>',
+    '        <el-button plain type="warning" @click="loadDemo">载入演示数据（离线可用）</el-button>',
+    '      </div>',
+    '    </div>',
+
+    '    <div class="card">',
+    '      <h3 class="card-title">③ 分析进度 <span class="sub">WebSocket 实时推送 /api/jobs/{id}/ws</span></h3>',
+    '      <div class="progress-box">',
+    '        <div class="row" style="justify-content:space-between;margin-bottom:8px">',
+    '          <span><el-tag :type="statusTag" effect="dark" size="small">{{ statusText }}</el-tag>',
+    '            <span class="mono muted" style="margin-left:8px">{{ job.job_id ? job.job_id.slice(0,12) : \'—\' }}</span></span>',
+    '          <b class="mono">{{ percent }}%</b>',
+    '        </div>',
+    '        <el-progress :percentage="percent" :stroke-width="12" :status="job.status===\'error\' ? \'exception\' : (job.status===\'done\' ? \'success\' : \'\')" />',
+    '        <div class="hint" style="margin-top:8px">当前阶段：{{ job.message || \'等待开始\' }}</div>',
+    '        <div class="hint" v-if="job.summary">结果摘要：{{ job.summary }}</div>',
+    '        <div class="hint" v-if="job.out_dir">产物目录：<code>{{ job.out_dir }}</code></div>',
+    '        <el-alert v-if="job.error" type="error" :closable="false" :title="job.error" style="margin-top:10px" />',
+    '      </div>',
+    '      <div class="stage-log" ref="logbox" style="margin-top:12px">',
+    '        <div v-for="(l,i) in logs" :key="i">{{ l }}</div>',
+    '        <div v-if="!logs.length" class="muted">等待任务开始…（阶段：载入检测结果 → 计分规则引擎 → 统计与热区 → 战报 → 导出 → 高光）</div>',
+    '      </div>',
+    '    </div>',
+    '  </div>',
+
+    '  <div class="card" v-if="S.backendOk">',
+    '    <h3 class="card-title">历史任务 <span class="sub">GET /api/jobs（最近 20 条）· 点「查看」可直接回看产物</span></h3>',
+    '    <el-table :data="jobs" size="small" border empty-text="暂无任务">',
+    '      <el-table-column prop="job_id" label="任务 ID" min-width="200" show-overflow-tooltip />',
+    '      <el-table-column prop="status" label="状态" width="100">',
+    '        <template #default="s"><el-tag size="small" :type="{done:\'success\',running:\'warning\',error:\'danger\',queued:\'info\'}[s.row.status]">{{ s.row.status }}</el-tag></template>',
+    '      </el-table-column>',
+    '      <el-table-column label="进度" width="150">',
+    '        <template #default="s"><el-progress :percentage="Math.round((s.row.progress||0)*100)" :stroke-width="8" /></template>',
+    '      </el-table-column>',
+    '      <el-table-column prop="message" label="阶段" min-width="180" show-overflow-tooltip />',
+    '      <el-table-column prop="summary" label="摘要" min-width="240" show-overflow-tooltip />',
+    '      <el-table-column label="操作" width="110" align="center">',
+    '        <template #default="s"><el-button size="small" text type="primary" @click="openJob(s.row)">查看</el-button></template>',
+    '      </el-table-column>',
+    '    </el-table>',
+    '  </div>',
+
+    // ---- 标注弹窗（篮筐 / 球场 两种模式共用）----
+    '  <el-dialog v-model="markOpen" :title="markKind===\'court\' ? \'标球场：点场地特征点（4 个以上）\' : \'在画面上标篮筐\'" width="82%" top="4vh" :close-on-click-modal="false">',
+    '    <div class="row" style="margin-bottom:8px;align-items:center">',
+    '      <span class="hint">取帧时刻</span>',
+    '      <el-input-number v-model="markAt" :min="0" :step="0.5" :precision="1" size="small" style="width:120px" />',
+    '      <el-button size="small" @click="loadMarkFrame(false)">重新取帧（会清空已点的点）</el-button>',
+    '      <span class="hint">（看不清就换个时刻；画面会放大显示）</span>',
+    '    </div>',
+    // 当前目标 + 实时反馈（点了几个、下一个点在哪）
+    '    <el-alert v-if="markCurrent" type="info" :closable="false" show-icon style="margin-bottom:8px"',
+    '      :title="\'下一个请点：\' + markCurrent.label + \'（\' + markCurrent.hint + \'）\'"',
+    '      :description="\'已点 \' + activePts.length + \' 个 —— 每点一下画面上立刻出现绿点+名称；点错了按「撤销上一个」\'" />',
+    '    <el-alert v-else type="success" :closable="false" show-icon style="margin-bottom:8px"',
+    '      :title="markKind===\'court\' ? (\'点完了 \' + courtPts.length + \' 个点，可以保存\') : \'五项都点完了，可以保存\'"',
+    '      :description="markKind===\'court\' ? (\'已点：\' + courtPts.map(function(p){return p.label}).join(\'、\')) : (markHoop ? (\'篮筐 中心 \' + Math.round(markHoop.cx*markSize.w) + \',\' + Math.round(markHoop.cy*markSize.h) + \'  半径 \' + Math.round(markHoop.rx*markSize.w) + \'×\' + Math.round(markHoop.ry*markSize.h) + \' 像素\') : \'\')" />',
+    // 球场模式下点不够 4 个的提示
+    '    <el-alert v-if="markKind===\'court\' && !courtEnough" type="warning" :closable="false" show-icon style="margin-bottom:8px"',
+    '      title="至少要 4 个点才能解出标定"',
+    '      :description="\'现在只有 \' + courtPts.length + \' 个，还差 \' + (4 - courtPts.length) + \' 个。若画面里看不清的点按「跳过这一项」，但最终仍要有 4 个以上。\'" />',
+    // 标定失败时的原因（重投影误差偏大等）
+    '    <el-alert v-if="courtResult && !courtResult.usable" type="error" :closable="false" show-icon style="margin-bottom:8px"',
+    '      :title="\'标定结果不可用（重投影误差 \' + courtResult.rmse_m + \' m）\'"',
+    '      description="点位可能有误：检查是否点在了正确的角/线上，或换一张更清楚的帧重新标。" />',
+    // 外层盒子宽度 = min(100%, 画面宽)；图片 width:100% 撑满它。
+    // 这样"图片显示尺寸"和"定位容器尺寸"严格相等，绿圈才会落在鼠标点上。
+    // ---- 球场模式：画面切换 + 特征点选择（多画面累加）----
+    '    <div v-if="markKind===\'court\' && mfFrames.length" style="margin-bottom:8px">',
+    '      <div class="row" style="align-items:center;margin-bottom:6px">',
+    '        <b>画面 {{ mfIdx+1 }}/{{ mfFrames.length }}</b>',
+    '        <span class="hint">t={{ mfCurrent ? mfCurrent.t : 0 }}s</span>',
+    '        <el-button size="small" @click="mfPrev" :disabled="mfIdx<=0">上一张画面</el-button>',
+    '        <el-button size="small" @click="mfNext" :disabled="mfIdx>=mfFrames.length-1">下一张画面</el-button>',
+    '        <span class="grow"></span>',
+    '        <el-tag size="small" :type="mfEnough?\'success\':\'info\'" effect="plain">已标 {{ mfPts.length }} 个点（本帧 {{ mfPtsHere.length }} 个）</el-tag>',
+    '      </div>',
+    '      <div class="row" style="align-items:center;margin-bottom:6px">',
+    '        <span class="hint">在</span>',
+    '        <el-input-number v-model="mfCenter" :min="0" :step="1" :precision="1" size="small" style="width:110px" />',
+    '        <span class="hint">秒附近抽</span>',
+    '        <el-input-number v-model="mfSpan" :min="0.5" :max="30" :step="0.5" size="small" style="width:100px" />',
+    '        <span class="hint">秒内的帧</span>',
+    '        <el-button size="small" @click="mfResample">按这个时刻重抽</el-button>',
+    '        <span class="hint">（几帧要在**同一镜头**里，标点才能叠加）</span>',
+    '      </div>',
+    '      <div class="hint" style="margin-bottom:6px">① 先点下面一个特征点 → ② 再在画面里点它的位置（每帧点几个就行，攒够 4 个即可）</div>',
+    '      <div class="row" style="flex-wrap:wrap">',
+    '        <el-button v-for="it in courtItems" :key="it.name" size="small"',
+    '          :type="mfTarget===it.name ? \'primary\' : (mfDone[it.name] ? \'success\' : \'default\')"',
+    '          :plain="mfTarget!==it.name" @click="mfPick(it)">',
+    '          {{ mfDone[it.name] ? \'✓ \' : \'\' }}{{ it.label }}</el-button>',
+    '      </div>',
+    '      <div class="hint" v-if="mfTarget" style="margin-top:6px;color:#409eff">',
+    '        现在去画面里点：{{ mfTarget }}（点了之后自动取消选择，可再选下一个）</div>',
+    '      <el-alert v-if="mfResult && !mfResult.ok" type="error" :closable="false" show-icon style="margin-top:8px"',
+    '        :title="\'标定误差偏大（平均 \' + mfResult.rmse_m + \' m）\'"',
+    '        :description="\'最离群的几个点：\' + mfResult.worst.map(function(d){return (d.label || d.name || \'?\') + \'(t=\' + d.t + \'s, \' + d.err_m + \'m)\'}).join(\'，\')" />',
+    '      <div v-if="mfResult && mfResult.per_frame_fit" style="margin-top:8px">',
+    '        <div class="hint">各画面单独拟合的结果（能标定的画面会标绿）：</div>',
+    '        <div class="row" style="flex-wrap:wrap;margin-top:4px">',
+    '          <el-tag v-for="fr in mfResult.per_frame_fit" :key="fr.t" size="small"',
+    '            :type="fr.ok ? \'success\' : (fr.n >= 4 ? \'warning\' : \'info\')" effect="plain" style="margin:2px">',
+    '            t={{ fr.t }}s · {{ fr.n }}点 · {{ fr.rmse_m === null ? \'—\' : fr.rmse_m + \'m\' }}</el-tag>',
+    '        </div>',
+    '      </div>',
+    '      <el-alert v-else-if="mfResult && mfResult.ok" type="success" :closable="false" show-icon style="margin-top:8px"',
+    '        :title="\'标定成功：平均误差 \' + mfResult.rmse_m + \' m\'"',
+    '        description="已保存为这段视频的标定，分析时会自动使用。" />',
+    '    </div>',
+    // 画面（球场模式用抽帧图，篮筐模式用取帧图）
+    '    <div style="position:relative;display:inline-block;width:100%;max-width:1100px;cursor:crosshair" @click="onMarkClick">',
+    '      <img v-if="markKind===\'court\' && mfCurrent" :src="mfCurrent.image" style="width:100%;height:auto;display:block;border-radius:6px" />',
+    '      <img v-else-if="markKind!==\'court\' && markImg" :src="markImg" style="width:100%;height:auto;display:block;border-radius:6px" />',
+    '      <div v-else class="muted" style="padding:40px">正在抽画面…</div>',
+    // 已点的标记（两种模式都画 activePts —— 之前只用 markPts，
+    // 球场模式下点了一个点都不显示，用户以为没点上去）
+    '      <svg v-if="frameW && frameH" :viewBox="\'0 0 \' + frameW + \' \' + frameH"',
+    '           preserveAspectRatio="none"',
+    '           style="position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none">',
+    '        <template v-for="(p,i) in activePts" :key="i">',
+    '          <circle :cx="p.x * frameW" :cy="p.y * frameH" :r="Math.max(10, frameW*0.012)"',
+    '                  fill="rgba(34,197,94,.35)" stroke="#22c55e" :stroke-width="Math.max(2, frameW*0.003)" />',
+    '          <text :x="p.x * frameW + Math.max(12, frameW*0.014)" :y="p.y * frameH"',
+    '                fill="#22c55e" :font-size="Math.max(16, frameW*0.022)"',
+    '                style="paint-order:stroke;stroke:#000;stroke-width:3px">{{ i + 1 }}. {{ p.label }}</text>',
+    '        </template>',
+    '      </svg>',
+    // 篮圈示意（只在篮筐模式）
+    '      <div v-if="markKind===\'hoop\' && markHoop" style="position:absolute;pointer-events:none;border:2px dashed #ef4444;border-radius:50%"',
+    '           :style="{left:((markHoop.cx-markHoop.rx)*100)+\'%\',top:((markHoop.cy-markHoop.ry)*100)+\'%\',width:(markHoop.rx*200)+\'%\',height:(markHoop.ry*200)+\'%\'}"></div>',
+    '    </div>',
+    // 已点清单（文字版，双重反馈）
+    '    <div v-if="activePts.length" class="row" style="margin-top:8px;flex-wrap:wrap">',
+    '      <el-tag v-for="(p,i) in activePts" :key="\'t\'+i" size="small" type="success" effect="plain" style="margin:2px">',
+    '        {{ i + 1 }}. {{ p.label }}</el-tag>',
+    '    </div>',
+    '    <template #footer>',
+    '      <el-button v-if="markKind===\'court\'" size="small" @click="mfUndo" :disabled="!mfPts.length">撤销上一个点</el-button>',
+    '      <el-button v-else size="small" @click="markUndo" :disabled="!activePts.length">撤销上一个</el-button>',
+    '      <el-button v-if="markKind!==\'court\'" size="small" @click="markSkip" :disabled="markDone">跳过这一项</el-button>',
+    '      <el-button size="small" @click="markKind===\'court\' ? mfClear() : clearMarks()" :disabled="!activePts.length">清空</el-button>',
+    '      <el-button size="small" @click="markOpen=false">取消</el-button>',
+    // 保存：篮筐模式要有点出篮筐中心；球场模式只要 ≥4 个点
+    '      <el-button size="small" type="primary" :loading="markSaving"',
+    '        :disabled="markKind===\'court\' ? !mfEnough : !markHoop" @click="markKind===\'court\' ? saveCourtMulti() : saveMarks()">',
+    '        {{ markKind===\'court\' ? \'保存并解算标定\' : \'保存标点\' }}</el-button>',
+    '    </template>',
+    '  </el-dialog>',
+    '</div>'
+  ].join('\n')
+};
