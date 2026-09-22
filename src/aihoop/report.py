@@ -117,7 +117,15 @@ def build_report_md(game: dict, players: list[dict], shots: list[Shot],
           "或者针对这个频道重跑一次比分牌模板标定。")
         A("")
     policy = str(game.get("score_policy", "scoreboard") or "scoreboard").lower()
-    court_mode = policy in ("court", "visual", "auto")
+    # 带入分到底算没算进总分 —— 直接看管线给的结论，别再用 policy 去猜：
+    # auto 口径下"比分牌读出来了"就计入、没读出来就不计入，同一个 policy 两种结果。
+    carry_counted = bool(game.get("carry_counted"))
+    if policy == "scoreboard":
+        court_mode = False         # 显式用比分牌口径：报告按"最终比分"写
+    elif policy in ("court", "visual"):
+        court_mode = True
+    else:                          # auto：读出来就算入，没读出来就按场上进球
+        court_mode = not carry_counted
     carry = game.get("carry_in") or {}
     has_ref = bool(carry.get("home") or carry.get("away"))
     clip = game.get("clip_score") or {"home": 0, "away": 0}
@@ -342,14 +350,28 @@ def _tactics_section(A, game: dict, tactics: Optional[dict]) -> None:
     hn = game["teams"]["home"]["name"]
     an = game["teams"]["away"]["name"]
     if not (tactics and tactics.get("available")):
-        reason = (tactics or {}).get("reason") or \
-            "本场没有球员轨迹（缺少球场标定或球员检测被关闭）"
+        # 优先用**管线给出的具体原因**（例如"自动逐帧标定没通过独立校验：
+        # 人工标的篮筐经它投到离真筐 6.60 m"），它比一句"没有球员轨迹"有用得多。
+        reason = ((game.get("tactics") or {}).get("reason")
+                  or (tactics or {}).get("reason")
+                  or "本场没有球员轨迹（缺少球场标定或球员检测被关闭）")
         A(f"- 本场未生成战术分析：{reason}")
-        A("- 战术层需要「球员逐帧球场坐标」。真视频路径请先做球场标定，"
-          "并保持球员检测开启（`detect_players=true`）；"
-          "合成数据源默认自带球员轨迹。")
+        A("- 战术层需要「球员逐帧球场坐标」。真视频路径要么有一份**通过校验**"
+          "的球场标定，要么自动逐帧标定同时通过质量门槛（达标率 ≥0.5、中位 "
+          "ratio ≥1.25）**与独立校验**（人工标的篮筐投影必须落在真篮筐 3m 内）；"
+          "任一不过就不出战术图，而不是给一张错的。"
+          "修法：在「上传与分析」页重新标一次球场 —— 建议**在同一帧里点 6 个以上"
+          "不在同一条线上**的特征点。合成数据源默认自带球员轨迹。")
         A("")
         return
+
+    if tactics.get("position_unverified"):
+        A(f"> ⚠ **球员位置未独立校验**：{tactics.get('position_note') or ''}")
+        A(">")
+        A("> 也就是说：回合/传球/阵型/间距这些**基于相对位置**的结论可以参考，"
+          "但具体坐标可能有系统偏差；要用于答辩的硬结论，请先把这个机位的球场"
+          "标定重标一次。")
+        A("")
 
     poss = tactics.get("possession") or {}
     passes = tactics.get("passes") or {}
@@ -490,7 +512,12 @@ def _analysis_paragraph(hs: dict, as_: dict, hn: str, an: str,
     """
     game = game or {}
     policy = str(game.get("score_policy", "scoreboard") or "scoreboard").lower()
-    court_mode = policy in ("court", "visual", "auto")
+    if policy == "scoreboard":
+        court_mode = False
+    elif policy in ("court", "visual"):
+        court_mode = True
+    else:
+        court_mode = not bool(game.get("carry_counted"))
     ref = game.get("scoreboard_reference") or game.get("carry_in") or {}
     has_ref = bool(ref.get("home") or ref.get("away"))
     clip = game.get("clip_score") or {"home": hs["points"], "away": as_["points"]}

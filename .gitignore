@@ -39,6 +39,12 @@ data/marks_*.json
 data/basket_feedback.jsonl
 data/scoreboard_bug.json
 data/scoreboard_bugs/
+# 「手动框选 + OCR」读出的得分事件：按视频存，属于运行时产物（像标定一样）
+data/sb_events_*.json
+# 标定/篮筐标注数据集与打包（每个 15MB 上下，可重新导出）
+data/_calib.zip
+data/calib_ds/
+data/calib_ds_finetune/
 data/rim_ds/
 data/rim_yolo/
 data/ball_ds/

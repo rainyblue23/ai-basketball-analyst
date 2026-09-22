@@ -314,7 +314,8 @@ def cmd_video(args) -> int:
             return 2
         manual_hoop = Hoop(cx=float(hp[0]), cy=float(hp[1]),
                            rx=float(hp[2]), ry=float(hp[3]),
-                           votes=1, confidence=1.0, method="manual")
+                           votes=1, confidence=1.0, method="manual",
+                           t=float(d.get("at") or 0.0))
         print(f"[info] 用人工标定的篮筐：cx={manual_hoop.cx:.0f} "
               f"cy={manual_hoop.cy:.0f} rx={manual_hoop.rx:.0f} "
               f"ry={manual_hoop.ry:.0f}（来自 {mp.name}）")
@@ -373,6 +374,7 @@ def cmd_video(args) -> int:
                       hoop_sight_cfg=sight_cfg,
                       basket_teams=teams_override,
                       basket_lookback_s=lookback_s,
+                      scoreboard_events=getattr(args, "scoreboard_events", None),
                       manual_hoop=manual_hoop,
                       basket_labels=basket_labels,
                       basket_model=basket_model,
@@ -608,9 +610,11 @@ def build_parser() -> argparse.ArgumentParser:
                    help="跳过逐帧 YOLO，只要比分牌 + 颜色追球（CPU 上快十几倍）")
     v.add_argument("--home-hoop", default="left", choices=["left", "right"],
                    help="主队进攻哪一侧篮筐（比分牌给不出方向，用它定出手位置）")
-    v.add_argument("--score-policy", default="court",
+    v.add_argument("--score-policy", default="auto",
                    choices=["court", "visual", "scoreboard", "auto"],
-                   help="计分口径：court/visual=按场上进球计分；scoreboard=按比分牌带入+事件；auto=自动")
+                   help="计分口径：auto（默认）=比分牌真读出来了就用它（带入分+事件），"
+                        "否则按场上进球；court/visual=一律按场上进球；"
+                        "scoreboard=强制用比分牌带入+事件")
     v.add_argument("--visual-shot-value", type=int, default=2, choices=[2, 3],
                    help="无标定时 2/3 分：默认 2=自动估计并回退 2；3=强制按 3 分")
     v.add_argument("--hoop-weights", default="",
@@ -630,6 +634,9 @@ def build_parser() -> argparse.ArgumentParser:
     v.add_argument("--marks", default=None,
                    help="人工标点文件（scripts\\mark_landmarks.py 生成）："
                         "直接用你标的篮筐，跳过检测器 —— 换机位/检测器不灵时最稳")
+    v.add_argument("--scoreboard-events", default=None,
+                   help="外部记分牌事件 JSON（scripts/read_marked_scoreboard.py "
+                        "的产出）—— 给模板匹配认不出的非标准台标用")
     v.add_argument("--basket-labels", default=None,
                    help="人工标注文件（scripts\\label_baskets.py 生成）："
                         "给了它就只报告标注为「进球」的时刻 —— 自动判据不可信时的准绳")

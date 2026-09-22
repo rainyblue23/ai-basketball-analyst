@@ -25,7 +25,10 @@ window.PAGES['upload'] = {
         // 真视频快速模式：跳过逐帧 YOLO，只走比分牌 + 颜色追球
         fast: false,
         // 可选：进球标注文件（scripts/label_baskets.py 产出），当自动判据的准绳
-        labels_path: ''
+        labels_path: '',
+        // 可选：比分牌得分事件文件（「读比分牌」按钮的产出）。给了它，
+        // 非标准台标也能走比分牌路径；留空则由后端自动定位。
+        scoreboard_events: ''
       },
       busy: false,
       job: { job_id: '', status: '', progress: 0, message: '', error: null, out_dir: '', summary: '' },
@@ -52,13 +55,23 @@ window.PAGES['upload'] = {
       mfIdx: 0,               // 当前是第几张
       mfPts: [],              // 已标点 [{t,name,label,x,y}]
       mfTarget: '',           // 当前选中要标的点名
+      autoMode: true,          // 自动识别模式：点位置即可，不用选特征点名字
+      autoHalf: 'far',         // 你看到的主要是哪部分场地：far/near/full
+      autoResult: null,        // 自动识别结果
       mfResult: null,         // 解算结果
+      hoverPt: null,          // 鼠标在画面上的位置（画准星用）
       mfCenter: 60,           // 在哪个时刻附近抽帧（同一镜头内）
       mfSpan: 3,              // 抽帧的时间跨度（秒）
       courtPts: [],
       courtIdx: 0,
       courtResult: null,
-      calInfo: null
+      calInfo: null,
+      // ---- 「读比分牌」（自动定位 / 手动框选 + OCR）----
+      sbBusy: false,
+      sbResult: null,          // {ok, method, box, ocr_hit, n_crops, events, final, path, note}
+      sbStartHome: null,       // 起始比分（可选；视频从半场中间开始录时填上更稳）
+      sbStartAway: null,
+      sbBox: ''                // 手动框选用：归一化 "x0,y0,x1,y1"；留空=自动定位
     };
   },
   computed: {
@@ -92,6 +105,18 @@ window.PAGES['upload'] = {
     },
     /** 当前画面 */
     mfCurrent: function () { return this.mfFrames[this.mfIdx] || null; },
+    /** 当前画面的原始像素尺寸。
+     *  画点用 SVG 的 viewBox 对齐到图片原始尺寸 —— 之前用百分比定位，
+     *  依赖"容器宽度==图片宽度"这个不成立的前提，点会整体偏移。
+     *  （另：这两个 computed 曾经漏定义，导致 SVG 永不渲染、点完全看不见。） */
+    frameW: function () {
+      if (this.markKind === 'court') return this.mfCurrent ? this.mfCurrent.w : 0;
+      return this.markSize.w || 0;
+    },
+    frameH: function () {
+      if (this.markKind === 'court') return this.mfCurrent ? this.mfCurrent.h : 0;
+      return this.markSize.h || 0;
+    },
     /** 本帧已标的点（只画这些 —— 别的帧的点坐标不通用） */
     mfPtsHere: function () {
       var t = this.mfCurrent ? this.mfCurrent.t : null;
@@ -194,7 +219,7 @@ window.PAGES['upload'] = {
           return;
         }
         self.$message.success('抽到 ' + self.mfFrames.length +
-          ' 个画面：每帧点几个看得清的特征点，攒够 4 个就能解标定');
+          ' 个画面：请挑场地看得最全的那一帧，一次点够 5~6 个点（同一帧里的点才算数）');
       }).catch(function (e) {
         self.$message.error('抽帧失败：' + (e && e.message ? e.message : e));
       });
@@ -230,6 +255,19 @@ window.PAGES['upload'] = {
     mfPick: function (item) { this.mfTarget = item.name; },
     /** 在当前画面上点一个点（必须是先选中了某个特征点） */
     mfClick: function (ev) {
+      if (!this.mfCurrent) return;
+      if (this.autoMode) {
+        var e0 = (ev.target && ev.target.tagName === 'IMG') ? ev.target
+                                                            : ev.currentTarget;
+        var b0 = e0.getBoundingClientRect();
+        var ax = Math.max(0, Math.min(1, (ev.clientX - b0.left) / b0.width));
+        var ay = Math.max(0, Math.min(1, (ev.clientY - b0.top) / b0.height));
+        this.mfPts.push({ t: this.mfCurrent.t, name: 'auto' + this.mfPts.length,
+                          label: '点' + (this.mfPts.length + 1), x: ax, y: ay });
+        this.autoResult = null;
+        this.$message.success('已记录第 ' + this.mfPts.length + ' 个点');
+        return;
+      }
       if (!this.mfTarget) {
         this.$message.warning('先在上面选一个特征点（比如「中圈中心」），再在画面里点它');
         return;
@@ -250,14 +288,45 @@ window.PAGES['upload'] = {
       this.mfPts.push({ t: this.mfCurrent.t, name: this.mfTarget,
                         label: item ? item.label : this.mfTarget, x: x, y: y });
       this.mfTarget = '';
+      // ★ 加了新点就清掉上一次的解算结果 —— 否则界面一直显示"旧报错"，
+      // 用户会以为补点之后还是不行（实测踩到：先点 4 个点报错，再补到 6 个，
+      // 红框仍写着"只点了 4 个点"，用户就卡在这里了）
+      this.mfResult = null;
       // 立刻回显坐标：用户一眼就能看出记的是不是鼠标点的地方
       this.$message.success('已记录 ' + (item ? item.label : '') +
         ' → (' + x.toFixed(3) + ', ' + y.toFixed(3) + ')');
     },
     mfUndo: function () {
       if (this.mfPts.length) this.mfPts.pop();
+      this.mfResult = null;      // 撤销后旧结果失效
     },
-    mfClear: function () { this.mfPts = []; this.mfTarget = ''; },
+    mfClear: function () { this.mfPts = []; this.mfTarget = ''; this.mfResult = null; },
+    /** 自动识别标定：把当前帧的点交给后端，让它自己认出对应关系 */
+    solveAutoCalib: function () {
+      var self = this;
+      var pts = (this.mfPtsHere || []).map(function (p) { return [p.x, p.y]; });
+      if (pts.length < 5) {
+        this.$message.warning('自动识别至少要点 5 个点（现在 ' + pts.length +
+          ' 个）—— 4 个点时任何配对都能精确拟合，分不出对错；第 5 个点才能投票');
+        return;
+      }
+      this.autoResult = { loading: true };
+      window.API.calibrateAuto({
+        video_path: this.videoPath || this.form.video_path,
+        points: pts,
+        half: this.autoHalf,
+        t: this.mfCurrent ? this.mfCurrent.t : 0
+      }).then(function (r) {
+        self.autoResult = r;
+        if (r && r.ok) {
+          self.$message.success('自动识别成功：' + r.named + '，误差 ' + r.rmse_m + ' m');
+        } else {
+          self.$message.error((r && r.note) || '自动识别失败');
+        }
+      }).catch(function (e) {
+        self.autoResult = { ok: false, note: e.message || String(e) };
+      });
+    },
     /** 保存并解算（多帧累加） */
     saveCourtMulti: function () {
       var self = this;
@@ -303,6 +372,53 @@ window.PAGES['upload'] = {
       this.courtPts.push({ name: this.courtCurrent.name,
                            label: this.courtCurrent.label, x: x, y: y });
       this.courtIdx += 1;
+    },
+    /** 读比分牌：自动定位（或手动框选）+ 放大 OCR → 得分事件文件 */
+    readScoreboard: function () {
+      var self = this;
+      var v = String(this.videoPath || this.form.video_path || '').trim();
+      if (!v) { this.$message.warning('先填视频路径（或上传视频）'); return; }
+      var payload = { video_path: v, step: 0.5, zoom: 4.0 };
+      var box = [];
+      String(this.sbBox || '').split(',').forEach(function (x) {
+        var n = parseFloat(x);
+        if (!isNaN(n)) box.push(n);
+      });
+      if (box.length === 4) payload.box = box;
+      var sh = parseInt(this.sbStartHome, 10);
+      var sa = parseInt(this.sbStartAway, 10);
+      if (!isNaN(sh) && !isNaN(sa)) payload.start = { home: sh, away: sa };
+      this.sbBusy = true;
+      this.sbResult = { loading: true };
+      this.log('POST /api/scoreboard/ocr ' + JSON.stringify(payload));
+      window.API.scoreboardOcr(payload).then(function (r) {
+        self.sbBusy = false;
+        self.sbResult = r;
+        self.form.scoreboard_events = r.path || '';
+        self.$message.success('比分牌读出 ' + r.n_events + ' 个得分事件，最终 ' +
+          r.final.home + ' : ' + r.final.away);
+        self.log('比分牌：' + r.note);
+      }).catch(function (e) {
+        self.sbBusy = false;
+        self.sbResult = { ok: false, note: (e && e.message) || String(e) };
+        self.$message.error('读比分牌失败：' + ((e && e.message) || e));
+      });
+    },
+    /** 切视频后，看这段视频是否已经读过比分牌 */
+    loadScoreboardEvents: function () {
+      var self = this;
+      var v = String(this.videoPath || this.form.video_path || '').trim();
+      if (!v) return;
+      window.API.scoreboardEvents(v).then(function (r) {
+        if (r && r.exists) {
+          self.form.scoreboard_events = r.path;
+          self.sbResult = { ok: true, saved: true, path: r.path, final: r.final,
+                            n_events: r.n_events, method: r.method,
+                            note: '这段视频已经读过比分牌（' + r.n_events +
+                                  ' 个得分事件，最终 ' + (r.final || {}).home +
+                                  ' : ' + (r.final || {}).away + '），分析时会用它' };
+        }
+      }).catch(function () { /* 没读过就算了，不打扰用户 */ });
     },
     /** 提交球场标定 */
     saveCourt: function () {
@@ -356,6 +472,18 @@ window.PAGES['upload'] = {
         self.$message.error('取帧失败：' + (e && e.message ? e.message : e));
       });
     },
+    /** 鼠标在画面上移动 → 记下位置，用来画准星（点之前就知道会落在哪） */
+    onMarkMove: function (ev) {
+      var el = (ev.target && ev.target.tagName === 'IMG') ? ev.target
+                                                          : ev.currentTarget;
+      var box = el.getBoundingClientRect();
+      if (!box.width || !box.height) return;
+      var x = (ev.clientX - box.left) / box.width;
+      var y = (ev.clientY - box.top) / box.height;
+      if (x < 0 || x > 1 || y < 0 || y > 1) { this.hoverPt = null; return; }
+      this.hoverPt = { x: x, y: y };
+    },
+    onMarkLeave: function () { this.hoverPt = null; },
     onMarkClick: function (ev) {
       if (this.markKind === 'court') { this.onCourtClick(ev); return; }
       if (this.markDone || !this.markCurrent) return;
@@ -532,6 +660,11 @@ window.PAGES['upload'] = {
         }
         // 如果自己也标过进球（label_baskets 的产出），带上当准绳
         if (this.form.labels_path) payload.basket_labels = String(this.form.labels_path).trim();
+        // 比分牌得分事件（「读比分牌」的产出）：带上它，非标准台标也能走比分牌路径
+        if (this.form.scoreboard_events) {
+          payload.scoreboard_events = String(this.form.scoreboard_events).trim();
+          this.log('带上比分牌得分事件：' + payload.scoreboard_events);
+        }
       }
       if (this.form.source === 'jsonl') payload.raw_path = payload.video_path;
       this.log('POST /api/jobs ' + JSON.stringify(payload));
@@ -615,7 +748,7 @@ window.PAGES['upload'] = {
     '      <h3 class="card-title">② 分析参数</h3>',
     '      <el-form label-width="112px" label-position="left">',
     '        <el-form-item label="文件路径">',
-    '          <el-input v-model="form.video_path" placeholder="例如 D:\\\\videos\\\\game1.mp4 或 out\\\\xxx\\\\raw_track.json" clearable />',
+    '          <el-input v-model="form.video_path" @change="loadScoreboardEvents" placeholder="例如 D:\\\\videos\\\\game1.mp4 或 out\\\\xxx\\\\raw_track.json" clearable />',
     '          <div class="row" style="margin-top:8px">',
     '            <el-button size="small" :disabled="!S.backendOk || (health && health.stale)" @click="pickFile">选择本地视频上传</el-button>',
     '            <span class="hint" v-if="fileName">已选：{{ fileName }}</span>',
@@ -645,10 +778,11 @@ window.PAGES['upload'] = {
     '            <el-tag v-if="calInfo" size="small" type="success" effect="plain">',
     '              已标定：重投影误差 {{ calInfo.reproj_error_m }} m',
     '            </el-tag>',
-    '            <el-tag v-else size="small" type="warning" effect="plain">未标定（热区/战术图出不来）</el-tag>',
+    '            <el-tag v-else size="small" type="warning" effect="plain">未标定（热区不出；战术图会退化成「自动逐帧标定」，位置未校验）</el-tag>',
     '          </div>',
     '          <div class="hint">点 4 个以上<b>场地特征点</b>（四角 / 中线两端 / 中圈中心 / 罚球线中点 / 篮筐），',
-    '            自动解出这段视频的球场标定。<b>热区、战术图、球场坐标全靠它</b> —— 用别的视频的标定会整片错位。</div>',
+    '            自动解出这段视频的球场标定。<b>热区、战术图、球场坐标全靠它</b> —— 用别的视频的标定会整片错位。',
+    '            没有标定时：战术图仍会用<b>自动逐帧标定</b>算球员坐标（结果上会明确标注「位置未校验」），但热区不出。</div>',
     '        </el-form-item>',
     '        <el-form-item v-if="form.source===\'video\'" label="进球标注(可选)">',
     '          <el-input v-model="form.labels_path" placeholder="例如 out\\\\label_nybo\\\\labels\\\\basket_labels.jsonl" clearable />',
@@ -666,6 +800,27 @@ window.PAGES['upload'] = {
     '        <el-form-item v-if="form.source===\'video\'" label="快速模式">',
     '          <el-switch v-model="form.fast" />',
     '          <span class="hint" style="margin-left:10px">跳过逐帧 YOLO（球员检测）：只读比分牌 + 颜色线索追球。CPU 上快十几倍；代价是没有球员个体归属，1v1/野球场视频会把进球都算在一边</span>',
+    '        </el-form-item>',
+    '        <el-form-item v-if="form.source===\'video\'" label="比分牌（可选）">',
+    '          <div class="row" style="flex-wrap:wrap;align-items:center;gap:8px">',
+    '            <el-button size="small" type="primary" :loading="sbBusy" @click="readScoreboard">',
+    '              读比分牌（自动定位 + OCR）</el-button>',
+    '            <span class="hint">起始比分（可选）：</span>',
+    '            <el-input-number v-model="sbStartHome" :min="0" :max="199" size="small" style="width:100px" placeholder="主队" />',
+    '            <el-input-number v-model="sbStartAway" :min="0" :max="199" size="small" style="width:100px" placeholder="客队" />',
+    '          </div>',
+    '          <div class="hint" style="margin-top:6px">',
+    '            转播台标（含校园/村 BA 那种长横条）自动定位读不出时，用它兜底：',
+    '            自动定位比分区域 → 放大 4 倍 → Windows OCR。填了起始比分更稳',
+    '            （视频从半场中间开始录时用它当基线）。</div>',
+    '          <el-input v-model="form.scoreboard_events" size="small" clearable style="margin-top:6px"',
+    '            placeholder="得分事件文件路径（点上面的按钮自动填；也可手填 out\\\\sb_events.json）" />',
+    '          <el-input v-model="sbBox" size="small" clearable style="margin-top:6px"',
+    '            placeholder="手动框选（可选）：归一化 x0,y0,x1,y1，例如 0.21,0.10,0.79,0.15；留空=自动定位" />',
+    '          <el-alert v-if="sbResult" style="margin-top:8px" :closable="false" show-icon',
+    "            :type=\"sbResult.loading ? 'info' : (sbResult.ok ? 'success' : 'error')\"",
+    "            :title=\"sbResult.loading ? '正在定位并 OCR…（十几秒到一分钟）' : (sbResult.ok ? ('读出 ' + (sbResult.n_events||0) + ' 个得分事件，最终 ' + ((sbResult.final||{}).home) + ' : ' + ((sbResult.final||{}).away)) : '没读出比分')\"",
+    "            :description=\"sbResult.loading ? '' : (sbResult.note || '')\" />",
     '        </el-form-item>',
     '        <el-form-item label="后端状态">',
     '          <el-tag :type="S.backendOk ? \'success\' : \'warning\'" effect="plain">{{ api.base }}</el-tag>',
@@ -752,10 +907,10 @@ window.PAGES['upload'] = {
     '    <el-alert v-if="markKind===\'court\' && !courtEnough" type="warning" :closable="false" show-icon style="margin-bottom:8px"',
     '      title="至少要 4 个点才能解出标定"',
     '      :description="\'现在只有 \' + courtPts.length + \' 个，还差 \' + (4 - courtPts.length) + \' 个。若画面里看不清的点按「跳过这一项」，但最终仍要有 4 个以上。\'" />',
-    // 标定失败时的原因（重投影误差偏大等）
+    // 标定失败时的原因（重投影误差偏大 / 点位退化 / 解释不了画面里的真篮筐）
     '    <el-alert v-if="courtResult && !courtResult.usable" type="error" :closable="false" show-icon style="margin-bottom:8px"',
-    '      :title="\'标定结果不可用（重投影误差 \' + courtResult.rmse_m + \' m）\'"',
-    '      description="点位可能有误：检查是否点在了正确的角/线上，或换一张更清楚的帧重新标。" />',
+    "      :title=\"'标定结果不可用' + (courtResult.rmse_m != null ? ('（重投影误差 ' + courtResult.rmse_m + ' m）') : '')\"",
+    '      :description="courtResult.note || \'点位可能有误：检查是否点在了正确的角/线上，或换一张更清楚的帧重新标。\'" />',
     // 外层盒子宽度 = min(100%, 画面宽)；图片 width:100% 撑满它。
     // 这样"图片显示尺寸"和"定位容器尺寸"严格相等，绿圈才会落在鼠标点上。
     // ---- 球场模式：画面切换 + 特征点选择（多画面累加）----
@@ -777,8 +932,25 @@ window.PAGES['upload'] = {
     '        <el-button size="small" @click="mfResample">按这个时刻重抽</el-button>',
     '        <span class="hint">（几帧要在**同一镜头**里，标点才能叠加）</span>',
     '      </div>',
-    '      <div class="hint" style="margin-bottom:6px">① 先点下面一个特征点 → ② 再在画面里点它的位置（每帧点几个就行，攒够 4 个即可）</div>',
-    '      <div class="row" style="flex-wrap:wrap">',
+    '      <div class="hint" style="margin-bottom:6px">① 先点下面一个特征点 → ② 再在画面里点它的位置。'
+    + '★ 关键：<b>尽量在同一个画面里一次点够 5~6 个点</b>，再切画面 —— '
+    + '单应矩阵要求同一帧至少 4 个点，分散在多个画面里会解不准（实测把 6 个点标在 3 个画面上，误差 4.6m）。'
+    + '画面里看不清的点按「跳过这一个」。点要<b>铺开</b>：优先场地四角，其次中圈/罚球区角，别都挤在一条线上。</div>',
+    '      <div class="row" style="align-items:center;gap:10px;margin-bottom:6px">',
+    '        <el-switch v-model="autoMode" active-text="自动识别（不用选名字）" />',
+    '        <span class="hint">我看的是：</span>',
+    '        <el-select v-model="autoHalf" size="small" style="width:190px" :disabled="!autoMode">',
+    '          <el-option label="远端半场 + 中圈" value="far" />',
+    '          <el-option label="近端半场 + 中圈" value="near" />',
+    '          <el-option label="两端都能看到" value="full" />',
+    '        </el-select>',
+    '        <el-button v-if="autoMode" size="small" type="primary" @click="solveAutoCalib">自动解算标定</el-button>',
+    '      </div>',
+    '      <el-alert v-if="autoResult" :closable="false" show-icon',
+    "        :type=\"autoResult.loading ? 'info' : (autoResult.ok ? 'success' : 'error')\"",
+    "        :title=\"autoResult.loading ? '正在识别…（几秒钟）' : (autoResult.ok ? ('识别成功：' + autoResult.named + '，误差 ' + autoResult.rmse_m + ' m') : '自动识别没成功')\"",
+    "        :description=\"autoResult.loading ? '' : (autoResult.note || '')\" style=\"margin-bottom:8px\" />",
+    '      <div v-if="!autoMode" class="row" style="flex-wrap:wrap">',
     '        <el-button v-for="it in courtItems" :key="it.name" size="small"',
     '          :type="mfTarget===it.name ? \'primary\' : (mfDone[it.name] ? \'success\' : \'default\')"',
     '          :plain="mfTarget!==it.name" @click="mfPick(it)">',
@@ -787,8 +959,18 @@ window.PAGES['upload'] = {
     '      <div class="hint" v-if="mfTarget" style="margin-top:6px;color:#409eff">',
     '        现在去画面里点：{{ mfTarget }}（点了之后自动取消选择，可再选下一个）</div>',
     '      <el-alert v-if="mfResult && !mfResult.ok" type="error" :closable="false" show-icon style="margin-top:8px"',
-    '        :title="\'标定误差偏大（平均 \' + mfResult.rmse_m + \' m）\'"',
+    '        :title="mfResult.note ? mfResult.note : (\'标定误差偏大（平均 \' + mfResult.rmse_m + \' m）\')"',
     '        :description="\'最离群的几个点：\' + mfResult.worst.map(function(d){return (d.label || d.name || \'?\') + \'(t=\' + d.t + \'s, \' + d.err_m + \'m)\'}).join(\'，\')" />',
+    // 客观体检读数：点位退化 / 与画面里的真篮筐对不上。
+    // 单看"重投影误差"是不够的 —— 点位几乎共线时误差必然是 0.00m 左右。
+    '      <div v-if="mfResult && mfResult.degeneracy" class="hint" style="margin-top:6px">',
+    '        点位展开度：画面侧最大三角形 {{ mfResult.degeneracy.src_tri_px2 }}px²（占画面 {{ (mfResult.degeneracy.src_frac*100).toFixed(2) }}%）、',
+    '        球场侧 {{ mfResult.degeneracy.dst_tri_m2 }}m²',
+    '        <span v-if="mfResult.degeneracy.degenerate" style="color:#f56c6c"> —— 判定为退化（近共线/重合）</span>',
+    '        <span v-if="mfResult.hoop_check && mfResult.hoop_check.checked"',
+    '              :style="{color: mfResult.hoop_check.ok ? \'#67c23a\' : \'#f56c6c\'}">',
+    '          ｜ 独立校验（真篮筐）：{{ mfResult.hoop_check.reason }}</span>',
+    '      </div>',
     '      <div v-if="mfResult && mfResult.per_frame_fit" style="margin-top:8px">',
     '        <div class="hint">各画面单独拟合的结果（能标定的画面会标绿）：</div>',
     '        <div class="row" style="flex-wrap:wrap;margin-top:4px">',
@@ -802,7 +984,7 @@ window.PAGES['upload'] = {
     '        description="已保存为这段视频的标定，分析时会自动使用。" />',
     '    </div>',
     // 画面（球场模式用抽帧图，篮筐模式用取帧图）
-    '    <div style="position:relative;display:inline-block;width:100%;max-width:1100px;cursor:crosshair" @click="onMarkClick">',
+    '    <div style="position:relative;display:inline-block;width:100%;max-width:1100px;cursor:crosshair" @click="onMarkClick" @mousemove="onMarkMove" @mouseleave="onMarkLeave">',
     '      <img v-if="markKind===\'court\' && mfCurrent" :src="mfCurrent.image" style="width:100%;height:auto;display:block;border-radius:6px" />',
     '      <img v-else-if="markKind!==\'court\' && markImg" :src="markImg" style="width:100%;height:auto;display:block;border-radius:6px" />',
     '      <div v-else class="muted" style="padding:40px">正在抽画面…</div>',
@@ -811,6 +993,10 @@ window.PAGES['upload'] = {
     '      <svg v-if="frameW && frameH" :viewBox="\'0 0 \' + frameW + \' \' + frameH"',
     '           preserveAspectRatio="none"',
     '           style="position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none">',
+    '        <g v-if="hoverPt">',
+    '          <line :x1="hoverPt.x*frameW - 22" :y1="hoverPt.y*frameH" :x2="hoverPt.x*frameW + 22" :y2="hoverPt.y*frameH" stroke="#f59e0b" :stroke-width="Math.max(1.5, frameW*0.0022)" />',
+    '          <line :x1="hoverPt.x*frameW" :y1="hoverPt.y*frameH - 22" :x2="hoverPt.x*frameW" :y2="hoverPt.y*frameH + 22" stroke="#f59e0b" :stroke-width="Math.max(1.5, frameW*0.0022)" />',
+    '        </g>',
     '        <template v-for="(p,i) in activePts" :key="i">',
     '          <circle :cx="p.x * frameW" :cy="p.y * frameH" :r="Math.max(10, frameW*0.012)"',
     '                  fill="rgba(34,197,94,.35)" stroke="#22c55e" :stroke-width="Math.max(2, frameW*0.003)" />',
@@ -826,7 +1012,7 @@ window.PAGES['upload'] = {
     // 已点清单（文字版，双重反馈）
     '    <div v-if="activePts.length" class="row" style="margin-top:8px;flex-wrap:wrap">',
     '      <el-tag v-for="(p,i) in activePts" :key="\'t\'+i" size="small" type="success" effect="plain" style="margin:2px">',
-    '        {{ i + 1 }}. {{ p.label }}</el-tag>',
+    '        {{ i + 1 }}. {{ p.label }} ({{ Math.round(p.x*frameW) }},{{ Math.round(p.y*frameH) }})</el-tag>',
     '    </div>',
     '    <template #footer>',
     '      <el-button v-if="markKind===\'court\'" size="small" @click="mfUndo" :disabled="!mfPts.length">撤销上一个点</el-button>',

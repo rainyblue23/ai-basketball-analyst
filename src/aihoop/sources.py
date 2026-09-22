@@ -64,9 +64,45 @@ class Attempt:
     counts_for_score: bool = True
     # 分值来源：manual / scoreboard / visual_estimate / forced / default
     value_source: str = ""
+    # 标记（如 low_confidence）：报告与复核页据此提示"需人工确认"
+    tags: list = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return self.__dict__.copy()
+
+
+class _ManualScoreScan:
+    """用外部（手动框选 + OCR）算出的得分事件，充当比分牌扫描结果。
+
+    为什么需要：现有识别靠样式模板，非标准台标（村BA/校园转播的底部横条）
+    直接读不出来。而"手动框选 + OCR"这条路已实测可用
+    （scripts/read_marked_scoreboard.py 在 Attleboro 那段读出 3 条得分事件）。
+    本类把它接进管线，让比分牌路径在非标准台标上也能工作。
+    接口只需 events / to_dict / frames_hit / final，与 ScoreboardScan 兼容。
+    """
+
+    def __init__(self, events, start=None, source="manual-ocr"):
+        self.events = events
+        self.source = source
+        self.frames_hit = 1
+        st = start or {}
+        self.final = [
+            int(st.get("home", 0)) + sum(int(e["delta"]) for e in events
+                                         if e.get("team") == "home"),
+            int(st.get("away", 0)) + sum(int(e["delta"]) for e in events
+                                         if e.get("team") == "away"),
+        ]
+        self.team_names = {}
+
+    def to_dict(self):
+        return {"source": self.source, "events": self.events,
+                "frames_hit": self.frames_hit,
+                # CLI 会读 frames_read 打印"读到 x/y 帧"——替身对象也要给，
+                # 否则 KeyError（实测踩到：整条推理跑完却在打印统计时崩掉）。
+                "frames_read": max(1, self.frames_hit),
+                "final": self.final,
+                "note": "由「手动框选记分牌 + Windows OCR」得到的事件"
+                        "（不是模板匹配，非标准台标也能用）"}
 
 
 @dataclass
@@ -803,6 +839,7 @@ class VideoSource:
                  basket_teams: Optional[dict] = None,
                  basket_lookback_s: float = 1.5,
                  manual_hoop=None,
+        scoreboard_events=None,
                  basket_labels=None,
                  basket_model=None):
         self.video_path = video_path
@@ -883,6 +920,9 @@ class VideoSource:
         # 给了它就不再跑篮筐检测器：判据里的 rx/ry 有了真实尺度，
         # 也不会因为检测器在这个机位上不灵而整条路径失效。
         self.manual_hoop = manual_hoop
+        # 外部记分牌事件（scripts/read_marked_scoreboard.py 的产出）：
+        # 给非标准台标用 —— 模板匹配读不出来时，靠它走比分牌路径
+        self.scoreboard_events_path = scoreboard_events
         # 人工标注的进球白名单（来自 scripts/label_baskets.py 的标注文件）。
         # 给了它就**只报告命中白名单的进球** —— 因为实测有些机位上自动判据
         # precision = 0%（nybo_3min 三次判进球全错），这时候唯一诚实的做法是
@@ -942,6 +982,57 @@ class VideoSource:
                                    "score_policy": self.score_policy})
         # 标定是否适用于这段视频 —— 标定文件是按机位存的，分辨率对不上就不能用
         rt.detections_meta["calibration_valid"] = self._calibration_matches(W, H)
+        # 记下方法/误差：pipeline 据此判断这是不是**用户手动标的**标定。
+        # 手动标定即使自动校验没过，也允许出热区/战术图（并显式标注"未校验"），
+        # 否则用户会遇到"标定明明存下来了、界面却什么都不给"的黑箱（实测踩到）。
+        if self.cal is not None:
+            rt.detections_meta["calibration_method"] = getattr(
+                self.cal, "method", "") or ""
+            # 注意：**不能用 `or 99.0`** —— 标定误差正好是 0.0 时会被当成假值，
+            # 于是"0 米误差的完美标定"被记成 99 米，热区/战术图又被关掉
+            # （实测踩到：标定 0.00m、门禁却显示 calibration_rmse_m=99.0）。
+            _rmse = getattr(self.cal, "reproj_error_m", None)
+            rt.detections_meta["calibration_rmse_m"] = (
+                float(_rmse) if _rmse is not None else 99.0)
+            # 退化（近共线/重合）标定必须在这里就挡掉：它的**重投影误差照样是
+            # 0.00m**，只靠误差看不出问题（实测：4 个点几乎共线 → 篮筐被投到
+            # 33m 外，界面却显示"标定可用 1.45m"）。判据与读数写进 meta，
+            # 界面/报告据此说清"为什么不能用"。
+            try:
+                from .court import calibration_degeneracy
+                deg = calibration_degeneracy(self.cal)
+                rt.detections_meta["calibration_degeneracy"] = deg
+                if deg.get("degenerate"):
+                    rt.detections_meta["calibration_valid"] = False
+                    rt.detections_meta["calibration_rejected"] = deg.get("reason", "")
+            except Exception as e:  # noqa: BLE001  校验失败不该拖垮主流程
+                rt.detections_meta["calibration_degeneracy_error"] = (
+                    f"{type(e).__name__}: {e}")
+
+        # ---- 独立校验：这份标定解释得了画面里那个（手标的）真篮筐吗？----
+        # 为什么放在这里而不是只在"篮下判进球"那条路径里：有比分牌的转播走的是
+        # 比分牌路径、根本不跑 hoopsight，于是这道校验被整条绕过 ——
+        # 实测 basketball_match 那份标定把画面里的篮筐投到了 87m 外，
+        # 却照样能出热区/战术图。用户手标过篮筐时，这是**与特征点无关的真值**，
+        # 一票否决。
+        try:
+            mh = getattr(self, "manual_hoop", None)
+            if mh is not None and self.cal is not None and getattr(self.cal, "H", None):
+                from .baskets import calibration_sane_for_scoring
+                ok_h, why_h = calibration_sane_for_scoring(
+                    self.cal, (float(mh.cx), float(mh.cy), float(mh.rx)))
+                rt.detections_meta["calibration_hoop_check"] = {
+                    "ok": bool(ok_h), "reason": why_h,
+                    "hoop_px": [float(mh.cx), float(mh.cy)],
+                    "source": "manual_marks"}
+                if not ok_h:
+                    rt.detections_meta["calibration_for_value"] = {
+                        "ok": False, "reason": why_h}
+                    rt.detections_meta["calibration_valid"] = False
+                    rt.detections_meta["calibration_rejected"] = why_h
+        except Exception as e:  # noqa: BLE001
+            rt.detections_meta["calibration_hoop_check_error"] = (
+                f"{type(e).__name__}: {e}")
         # ---- 套餐 B 前置关卡：机位稳不稳 + 标定准不准 ----
         # 单应标定只对固定机位成立，而且标错了**不会报错**（画出来依然像战术图）。
         # 所以在花几十分钟跑推理之前先把这两件事量出来。
@@ -1233,6 +1324,24 @@ class VideoSource:
         # ---- 3b) 套餐 B：把球员像素轨迹投影成球场坐标 ----
         # 只有标定确实适用于这段视频时才投影（标定按机位存，对不上就拒绝），
         # 否则宁可不产出轨迹 —— 错位的俯视战术图比没有更糟。
+        # 走自动逐帧标定时，先拿**人工标的篮筐**当独立真值校验一次：
+        # 实测这段素材的逐帧标定把篮筐投到 9.2m 外（而它自己的质量分 ratio
+        # 反而高达 7.17），坐标整段不可用 —— 不过这道校验就绝不能出战术图。
+        if self.sliding and getattr(self, "manual_hoop", None) is not None:
+            try:
+                from .calibcheck import validate_sliding_with_hoop
+                mh = self.manual_hoop
+                val = validate_sliding_with_hoop(
+                    self.sliding, (mh.cx, mh.cy), t=float(getattr(mh, "t", 0.0)))
+                rt.detections_meta["sliding_validation"] = val
+                if val.get("checked") and not val.get("ok"):
+                    # 校验没过 → 丢掉这套滑动标定，球员坐标一律不产出
+                    # （留着它只会得到一张看着专业、实际偏 9 米的战术图）
+                    self.sliding = None
+            except Exception as e:  # noqa: BLE001
+                rt.detections_meta["sliding_validation_error"] = \
+                    f"{type(e).__name__}: {e}"
+
         if rt.detections_meta.get("calibration_valid") or self.sliding:
             rt.detections_meta["player_track_source"] = (
                 "sliding_calibration" if self.sliding else "static_calibration")
@@ -1337,14 +1446,64 @@ class VideoSource:
             scan = None
             sb_source = ""
 
+            # 3.0 外部事件优先（手动框选 + OCR 的产出）——非标准台标唯一可用的路
+            if self.scoreboard_events_path:
+                try:
+                    _d = json.loads(Path(self.scoreboard_events_path)
+                                    .read_text(encoding="utf-8"))
+                    _ev = [{"kind": "baseline", "t": 0.0, "team": "", "delta": 0,
+                            "home": int((_d.get("start") or {}).get("home", 0)),
+                            "away": int((_d.get("start") or {}).get("away", 0)),
+                            "period": 1}]
+                    _ev += [{"kind": "score", "t": float(e["t"]),
+                             "team": e["team"], "delta": int(e["delta"])}
+                            for e in _d.get("events", [])]
+                    scan = _ManualScoreScan(_ev, _d.get("start"), "manual-ocr")
+                    sb_source = "manual-ocr"
+                    rt.detections_meta["scoreboard_manual"] = {
+                        "path": str(self.scoreboard_events_path),
+                        "n_events": len(_d.get("events", [])),
+                        "start": _d.get("start")}
+                    print("[info] 用外部记分牌事件：%d 条（起始 %s:%s）"
+                          % (len(_d.get("events", [])),
+                             (_d.get("start") or {}).get("home"),
+                             (_d.get("start") or {}).get("away")))
+                except Exception as _e:  # noqa: BLE001
+                    rt.detections_meta["scoreboard_manual_error"] = \
+                        f"{type(_e).__name__}: {_e}"
+
             # 4.1 先试 Windows OCR：能处理模板匹配不认识的其他台标样式
+            # 注意：外部事件（manual-ocr）已经给了 scan 时必须**跳过检测** ——
+            # 否则这里的 `scan = read_scoreboard_ocr(...)` 会把外部结果覆盖成 None
+            # （实测踩到：加了 --scoreboard-events 却完全没生效，事件数还是 0）。
             try:
-                from .ocr_scoreboard import read_scoreboard_ocr
-                scan = read_scoreboard_ocr(self.video_path, cfg_sb)
-                if scan is not None and scan.frames_hit > 0:
-                    sb_source = "ocr"
-                else:
-                    scan = None
+                if sb_source != "manual-ocr":
+                    from .ocr_scoreboard import read_scoreboard_ocr
+                    from .scoreboard import locate_score_bug_static
+                    # 先定位比分牌横条，再**只 OCR 这块并放大** ——
+                    # 实测整帧 OCR 读不出 12px 高的比分数字（老代码就是这么做的，
+                    # 在这段素材上直接返回 None，于是"画面里明明有比分"却读出 0:0）；
+                    # 放大 4 倍后同一套 OCR 能稳定读出 KPHS 27 / AHS 35。
+                    # 定位用「叠加层不随时间变化」那条路（见 locate_score_bug_static），
+                    # 它对底色/长宽比不敏感，这条跟蓝墙同色的长条台标也能定准。
+                    region = None
+                    try:
+                        bar = locate_score_bug_static(self.video_path, cfg_sb)
+                        if bar is not None:
+                            region = (bar.x, bar.y, bar.w, bar.h)
+                            rt.detections_meta["scoreboard_bar"] = {
+                                "x": bar.x, "y": bar.y, "w": bar.w, "h": bar.h,
+                                "method": "static_overlay"}
+                    except Exception as e:  # noqa: BLE001
+                        rt.detections_meta["scoreboard_bar_error"] = \
+                            f"{type(e).__name__}: {e}"
+                    scan = read_scoreboard_ocr(
+                        self.video_path, cfg_sb, samples=48,
+                        region=region, zoom=4.0 if region else 2.0)
+                    if scan is not None and scan.frames_hit > 0:
+                        sb_source = "ocr"
+                    else:
+                        scan = None
             except Exception as e:
                 rt.detections_meta["ocr_scoreboard_error"] = \
                     f"{type(e).__name__}: {e}"
@@ -1367,9 +1526,15 @@ class VideoSource:
                             progress=lambda p, m: step(0.64 + 0.16 * p, m))
                         sb_source = "template"
                 except Exception as e:
-                    # 没有比分牌不是致命错误：退回「球 + 篮筐」那条视觉路径
+                    # 没有比分牌不是致命错误：退回「球 + 篮筐」那条视觉路径。
+                    # 连 traceback 一起记下来 —— 老版本只留一句
+                    # "TypeError: int() argument ... not 'list'"，看不出是谁抛的，
+                    # 排查时白跑好几轮（实测踩到）。记全了下次一眼能定位。
+                    import traceback as _tb
                     rt.detections_meta["scoreboard_error"] = \
                         f"{type(e).__name__}: {e}"
+                    rt.detections_meta["scoreboard_error_traceback"] = \
+                        _tb.format_exc()[-2000:]
                     scan = None
 
             if scan is not None:
@@ -1666,6 +1831,14 @@ class VideoSource:
                 h0 = scan.hoops[0]
                 hoop_px = (h0.get("cx", 0.0), h0.get("cy", 0.0),
                            h0.get("rx", 1.0))
+            elif getattr(self, "manual_hoop", None) is not None:
+                # 检测不到篮筐（镜头在动、画面不清）时，**退回用用户手工标的篮筐**做验证。
+                # 实测踩到：用户把球场标定和篮筐都标好了，却因为这里只认"检测到的篮筐"
+                # 而判成"没有可用标定" → 热区/战术图一个都不生成，
+                # 用户完全不知道为什么（标定明明存下来了、误差 0.693m）。
+                mh = self.manual_hoop
+                hoop_px = (float(mh.cx), float(mh.cy), float(mh.rx))
+                meta["calibration_hoop_source"] = "manual_marks"
             cal_ok2, cal_why = calibration_sane_for_scoring(
                 (self.cal if self.cal and self.cal.H else None), hoop_px)
             meta["calibration_for_value"] = {"ok": cal_ok2, "reason": cal_why}
@@ -1921,14 +2094,24 @@ class VideoSource:
                 att.forced_value = int(val)
                 att.value_assumed = True
                 att.value_source = vsrc
-            # 最低置信度：实测球+篮筐那条路会在没人投篮的时刻吐出一条
-            # conf=0.3 的碎片轨迹（画面里篮筐附近根本没有球），
-            # 计 0 分不影响比分，但会把「出手次数」灌水。低置信度的直接丢。
-            if att.conf is not None and float(att.conf) <= 0.45:
-                rt.detections_meta.setdefault("attempts_low_conf_dropped",
-                                              []).append(
-                    {"t": round(float(att.t), 2), "conf": float(att.conf)})
-                continue
+            # 最低置信度：实测球+篮筐那条路会在没人投篮的时刻吐出碎片轨迹。
+            # **但不能直接删** —— 删掉的后果是「出手 0 次」，用户会以为功能坏了
+            # （实测踩到：这段视频的 3 次出手 conf 恰好都等于 0.45，被 `<=` 全部丢掉）。
+            # 正确做法是保留 + 标记，让它进"出手次数"，但不让低置信度的"进球"污染比分。
+            low = (att.conf is not None and float(att.conf) <= 0.45)
+            if low:
+                tags = list(getattr(att, "tags", None) or [])
+                if "low_confidence" not in tags:
+                    tags.append("low_confidence")
+                att.tags = tags
+                if att.made:
+                    # 低置信度的"进了"不计分：宁可少算，不可虚高
+                    att.counts_for_score = False
+                rt.detections_meta.setdefault("attempts_low_conf", []).append(
+                    {"t": round(float(att.t), 2), "conf": float(att.conf),
+                     "made": bool(att.made), "kept": True,
+                     "note": "已保留在出手里，但标为需复核" +
+                             ("；且不计入比分" if att.made else "")})
             rt.attempts.append(att)
         rt.attempts.sort(key=lambda a: a.t)
 

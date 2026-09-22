@@ -113,6 +113,38 @@ window.PAGES['overview'] = {
       var p = String((this.game && this.game.score_policy) || 'scoreboard').toLowerCase();
       return ['court', 'visual', 'auto'].indexOf(p) >= 0;
     },
+    /** 这次分析是不是"什么都没判出来"（没有任何得分事件/出手/时间轴） */
+    emptyAnalysis: function () {
+      var g = this.game || {};
+      var sc = g.score || {};
+      var tl = g.timeline || [];
+      var att = (g.meta && g.meta.attempts) || {};
+      var n = (att.from_scoreboard || 0) + (att.from_ball_track || 0);
+      return tl.length === 0 && n === 0 && !sc.home && !sc.away;
+    },
+    /** 空结果时把真正的原因说清楚（别只给一个 0:0 让人以为页面坏了） */
+    emptyWhy: function () {
+      var m = (this.game && this.game.meta) || {};
+      var lines = ['得分事件：0    出手记录：0'];
+      var ve = m.visual_error || (m.hoopsight && m.hoopsight.reason);
+      if (ve) { lines.push('为什么没判出来：' + String(ve).slice(0, 180)); }
+      if (m.scoreboard_error) {
+        lines.push('比分牌路径：' + String(m.scoreboard_error).slice(0, 140));
+      }
+      if (m.court_outputs_unverified) {
+        lines.push('另外：热区/战术图用的是你手动标的标定，'
+          + '自动校验没通过，位置可能有偏差。');
+      }
+      lines.push('');
+      lines.push('想让它有内容，三条路：');
+      lines.push('  ① 记分牌路径：视频里有可读记分牌时，得分事件直接进结果'
+        + '（这段视频底部就有记分牌）；');
+      lines.push('  ② 换更清楚的素材：球在画面里 ≥30 像素时进球检测才能工作'
+        + '（README「素材体检」）；');
+      lines.push('  ③ 人工复核：在「人工复核」页逐条确认/补录，'
+        + '判完再看总览与热区。');
+      return lines.join('\n');
+    },
     hasCarryIn: function () {
       var ci = this.game && this.game.carry_in;
       return !!(ci && (ci.home || ci.away));
@@ -245,6 +277,14 @@ window.PAGES['overview'] = {
     '  </div>',
 
     '  <template v-else>',
+    // 这次分析什么都没出时，**先把原因说清楚**：用户看到 0:0 + 空列表会以为功能坏了，
+    // 实际多半是上游判据放弃（镜头在动 / 球太小 / 没有记分牌），页面必须自己讲明白。
+    '    <div class="card" v-if="emptyAnalysis">',
+    '      <h3 class="card-title">比赛总览 <span class="sub">这次分析没有产出得分事件</span></h3>',
+    '      <el-alert type="warning" :closable="false" show-icon',
+    '        title="这份结果里没有任何进球/出手 —— 不是页面坏了，是上游没判出来"',
+    '        :description="emptyWhy" />',
+    '    </div>',
     '    <!-- ① 比分牌 + 分节比分 -->',
     '    <div class="card">',
     '      <h3 class="card-title">比赛总览 <span class="sub">数据来源：GET /api/games/{{ S.jobId }}（game.json）</span>',

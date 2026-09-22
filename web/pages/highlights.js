@@ -28,6 +28,25 @@ window.PAGES['highlights'] = {
     };
   },
   computed: {
+    /** 「没有高光片段」时把真正的原因说清楚 —— 不能只丢一句"暂无高光片段"。
+     *  实测用户看到空高光会以为功能坏了；真正原因通常是这次分析 0 进球：
+     *  镜头在动 → 篮筐判据放弃；球太小 → 追不到；也没有记分牌事件。 */
+    emptyWhy: function () {
+      var g = this.game || {};
+      var m = g.meta || {};
+      var lines = ['进球/出手数：0（这次分析没有产生任何可剪的回合）'];
+      var ve = m.visual_error || (m.hoopsight && m.hoopsight.reason);
+      if (ve) { lines.push('为什么没有：' + String(ve).slice(0, 160)); }
+      lines.push('');
+      lines.push('想让高光有内容，三条路：');
+      lines.push('  ① 自动候选 + 逐条确认：用上面的「进球确认」面板，'
+        + '或「人工复核」页逐条判进/没进，判完后点「重建高光」；');
+      lines.push('  ② 记分牌路径：视频里有可读记分牌时，'
+        + '得分事件会直接变成进球记录（这段视频底部就有记分牌）；');
+      lines.push('  ③ 换更清楚的素材：球在画面里 ≥30 像素时，'
+        + '进球检测才能工作（README「素材体检」）。');
+      return lines.join('\n');
+    },
     /** 已选但还没提交的判断数量（按钮上显示「提交我的判断(N)」） */
     pending: function () {
       var n = 0;
@@ -214,12 +233,15 @@ window.PAGES['highlights'] = {
     '  </div>',
 
     '  <div class="card" v-if="!clips.length">',
-    '    <el-empty description="暂无高光片段">',
-    '      <div class="hint" style="max-width:560px;text-align:left">',
-    '        高光片段由后端在任务里勾选「生成高光片段」后产出（<code>make_highlights=true</code>，依赖 ffmpeg）。',
-    '        若只跑合成演示数据，通常不会有片段文件 —— 此时可打开原始视频，按片段表里的时间点手动跳转。',
-    '      </div>',
-    '    </el-empty>',
+    '    <h3 class="card-title">高光集锦 <span class="sub">本片段没有可剪的回合</span></h3>',
+    '    <el-alert type="info" :closable="false" show-icon',
+    '      title="没有高光片段 —— 因为这次分析没有判定出任何进球/出手"',
+    '      :description="emptyWhy" />',
+    '    <div class="hint" style="max-width:620px;text-align:left;margin-top:10px">',
+    '      技术说明：高光由后端在任务里勾选「生成高光片段」后产出'
+    + '（<code>make_highlights=true</code>，依赖 ffmpeg）；'
+    + '但没有进球/出手时，它会正确地产出**空集**，而不是随便剪几段充数。',
+    '    </div>',
     '  </div>',
 
     '  <template v-else>',

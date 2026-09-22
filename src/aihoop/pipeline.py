@@ -72,9 +72,8 @@ class PipelineResult:
         g = self.game
         extra = ""
         carry = g.get("carry_in") or {}
-        policy = str(g.get("score_policy", "scoreboard") or "scoreboard").lower()
         if carry.get("home") or carry.get("away"):
-            if policy == "scoreboard":
+            if g.get("carry_counted"):
                 extra = (f" | 开局带入 {carry.get('home', 0)}:"
                          f"{carry.get('away', 0)}")
             else:
@@ -165,17 +164,27 @@ def run_pipeline(rt: RawTrack, cfg: Optional[PipelineConfig] = None,
     player_rows = compute_player_stats(shots, rt.players, events)
 
     # ---- 4) 比分/走势 ----
+    meta = _evidence_meta(rt)      # 先取证据摘要：下面的计分口径要用到比分牌读数
     prog = score_progression(shots)
     qs = quarter_scores(shots)
     # 开局带入比分（视频从半场中间开始录时比分牌上已有的分）计入总分，
     # 但**不伪造出手**：出手统计仍然只统计本片段里真实发生的那些。
-    # 计分口径：court/visual 默认按场上检测到的进球计分，比分牌只作参考；
-    # scoreboard 才把比分牌带入分计入总分。
+    # 计分口径：court/visual 按场上检测到的进球计分，比分牌只作参考；
+    # scoreboard 把比分牌带入分计入总分；auto（默认）**只要比分牌真读出来了**
+    # 就用比分牌口径 —— 转播素材上这才是"正常"的结果：
+    # 实测这段校园转播画面写着 KPH 27 : AHS 35，老默认口径却输出 0:0，
+    # 用户看到的就是"分析结果和画面对不上"。
     policy = str(rt.detections_meta.get("score_policy", "scoreboard")
                  or "scoreboard").lower()
-    use_carry_for_score = policy == "scoreboard"
     carry = {"home": int((rt.base_score or {}).get("home", 0) or 0),
              "away": int((rt.base_score or {}).get("away", 0) or 0)}
+    sb_meta = meta.get("scoreboard") or {}
+    sb_score_events = [e for e in (sb_meta.get("events") or [])
+                       if e.get("kind") == "score"]
+    sb_readable = bool(sb_meta) and (bool(sb_score_events)
+                                    or carry["home"] or carry["away"])
+    use_carry_for_score = policy == "scoreboard" or (policy == "auto"
+                                                    and sb_readable)
     # 本片段真正打进的分数
     clip_score = {"home": home.points, "away": away.points}
     if use_carry_for_score and (carry["home"] or carry["away"]):
@@ -190,7 +199,6 @@ def run_pipeline(rt: RawTrack, cfg: Optional[PipelineConfig] = None,
                  "away": clip_score["away"] + carry["away"]}
     else:
         score = dict(clip_score)
-    meta = _evidence_meta(rt)
     meta["score_policy"] = policy
 
     # 每节比分要与总分一致 —— 这里做个自检，答辩时能讲「数据一致性校验」
@@ -208,7 +216,37 @@ def run_pipeline(rt: RawTrack, cfg: Optional[PipelineConfig] = None,
         cal_reason = (_cal.get("reason") or meta.get("calibration_rejected")
                       or "这份球场标定不适用于这段视频（机位/分辨率不匹配）")
 
-    if cal_usable:
+    # 但"用户手动标过、且自洽"的标定不该直接扔掉 —— 用户实测：标了好几轮、
+    # 界面存下了 0.693m 的标定，结果热区/战术图一个都不出，只会看到
+    # "机位/分辨率不匹配"，完全无从判断。
+    # 折中（并且**不掩盖事实**）：热区/战术图这类**展示性**产物允许用
+    # 用户手动标的标定来算，但在 meta 里显式标记"未通过自动校验"并给出原因；
+    # 计分/球员位置这类影响结论的仍然严格按 cal_usable 走。
+    cal_source = str(getattr(_cal, "method", "") or
+                     meta.get("calibration_method", "") or "")
+    manual_cal = bool(meta.get("calibration_is_manual")) or \
+        cal_source.startswith(("web-keypoints", "auto-identify", "manual"))
+    # 退化（近共线/重合）标定**不能**走"手动标定就放行"这条口子：它的重投影误差
+    # 也是 0.00m，但坐标整片是错的（实测篮筐被投到 33m 外）。
+    # 同理，"独立校验（画面里那个真篮筐）没过"也必须一票否决 —— 那份标定连真值点
+    # 都解释不了，画出来的热区/战术图只会是错的。
+    _deg = meta.get("calibration_degeneracy") or {}
+    cal_degenerate = bool(_deg.get("degenerate"))
+    hoop_check_bad = bool(_cal) and _cal.get("ok") is False
+    if cal_degenerate:
+        cal_reason = (_deg.get("reason") or cal_reason
+                      or "这份球场标定的点位退化（近共线/重合），坐标不可用")
+    elif hoop_check_bad and _cal.get("reason"):
+        cal_reason = _cal["reason"]
+    # 注意：这里**不能**写 `float(meta.get("calibration_rmse_m") or 99)` ——
+    # 误差正好是 0.0 的完美标定会被 `or` 当成假值、判成 99m 而关掉热区
+    # （同样的坑在 sources.py 里也踩过一次）。
+    _rmse = meta.get("calibration_rmse_m")
+    _rmse = 99.0 if _rmse is None else float(_rmse)
+    cal_charts = cal_usable or (manual_cal and not cal_degenerate
+                                and not hoop_check_bad and _rmse < 1.5)
+
+    if cal_charts:
         sc = shot_chart(shots)
         zones_by_team = {t: shot_chart(shots, team=t)["zones"]
                          for t in ("home", "away")}
@@ -216,9 +254,15 @@ def run_pipeline(rt: RawTrack, cfg: Optional[PipelineConfig] = None,
         sc = {"points": [], "zones": {}, "bin_size": 0.0,
               "unavailable": True, "reason": cal_reason}
         zones_by_team = {t: {} for t in ("home", "away")}
-    meta["court_outputs_available"] = cal_usable
-    if not cal_usable:
+    meta["court_outputs_available"] = cal_charts
+    meta["court_outputs_unverified"] = bool(cal_charts and not cal_usable)
+    if not cal_charts:
         meta["court_outputs_reason"] = cal_reason
+    elif not cal_usable:
+        meta["court_outputs_reason"] = (
+            "热区/战术图基于**你手动标的**球场标定（%s）；"
+            "自动校验没通过（%s）—— 位置可能有偏差，请对照原始画面核对。"
+            % (meta.get("calibration_method") or "手动标定", cal_reason))
 
     game = {
         "score": score,
@@ -240,6 +284,11 @@ def run_pipeline(rt: RawTrack, cfg: Optional[PipelineConfig] = None,
         "needs_review": [s.to_dict() for s in shots if "needs_review" in s.tags],
         "possessions": len(possessions(shots)),
         "carry_in": carry,
+        # 带入分**到底算进总分没有**（口径是 auto 时取决于比分牌是否真读出来了）。
+        # 报告/摘要/前端都该看这个布尔量，而不是各自去猜 policy 的含义 ——
+        # 实测踩到：auto 口径下带入分已计入总分，CLI 却仍打印"不计入本片段得分"。
+        "carry_counted": bool(use_carry_for_score
+                              and (carry["home"] or carry["away"])),
         "base_period": int(getattr(rt, "base_period", 1) or 1),
         "judgement": _judgement(meta, shots),
         "unmatched_goals": [s.to_dict() for s in shots
@@ -250,13 +299,23 @@ def run_pipeline(rt: RawTrack, cfg: Optional[PipelineConfig] = None,
     # 放在统计之后、战报之前：战报要引用战术结论（阵型占比 / 传球网络摘要）。
     tactics_data: Optional[dict] = None
     tactics_frames: list[dict] = []
-    if cfg.make_tactics and not cal_usable:
+    # 球员坐标能不能用？两条路：① 已通过校验的静态标定；② 自动逐帧标定（兜底，标注未校验）
+    sliding_ok, sliding_why = _sliding_position_ok(meta)
+    pos_via_sliding = bool(not cal_usable and sliding_ok)
+    if cfg.make_tactics and not cal_usable and not pos_via_sliding:
         # 战术层整层都建立在球场坐标上 —— 标定错，它就整层错。
         # 这里明确标成"不适用"，而不是给一张错的俯视图。
-        step(0.68, "战术层：跳过（球场标定不适用于这段视频）")
-        game["tactics"] = {"available": False, "reason": cal_reason,
-                           "note": "球场标定不适用，战术分析（控球/传球网络/阵型/"
-                                   "空间/俯视图）无法计算"}
+        step(0.68, "战术层：跳过（没有可用的球员球场坐标）")
+        # 优先说"自动逐帧标定为什么不够"，其次才是静态标定的结论 ——
+        # 用户真正要的信息是"我离出战术图还差什么"。
+        why = sliding_why or cal_reason or "没有可用的球员球场坐标"
+        game["tactics"] = {
+            "available": False, "reason": why,
+            "player_track_samples": int((meta.get("player_track") or {}).get("samples") or 0),
+            "note": "战术分析（控球/传球网络/阵型/空间/俯视图）需要可靠的球员球场坐标；"
+                    "这一场既没有通过校验的球场标定，自动逐帧标定也没达到质量门槛。"
+                    "修法：在「上传与分析」页重新标一次球场（建议同一帧里点 6 个以上"
+                    "不在同一条线上的特征点），或改用固定机位素材。"}
     elif cfg.make_tactics:
         step(0.68, "战术层：控球归属 / 传球网络 / 阵型 / 空间")
         tcfg = cfg.tactics or TacticsConfig()
@@ -265,6 +324,21 @@ def run_pipeline(rt: RawTrack, cfg: Optional[PipelineConfig] = None,
         tactics_data = build_tactics(
             rt.player_track, rt.ball_track, rt.players, shots,
             duration=rt.duration, cfg=tcfg)
+        if tactics_data.get("available") and pos_via_sliding:
+            # 位置来自自动逐帧标定：坐标**没有经过独立校验**，必须显式标注。
+            # 展示性结论照给（用户要的就是能看战术图），但绝不冒充"已校验"。
+            tactics_data["position_unverified"] = True
+            tactics_data["position_source"] = "sliding_calibration"
+            tactics_data["position_note"] = (
+                "球员位置来自**自动逐帧标定**（%s）—— 这份标定是按球场线自动拟合的，"
+                "没有用画面里的真值点独立校验过，所以阵型/间距/位置请当参考值，"
+                "建议对照原始画面核对；要更可信请重新手工标定这个机位。"
+                % (sliding_why or "逐帧拟合球场线"))
+            tactics_data.setdefault("notes", []).append(
+                "⚠ 位置未校验：" + tactics_data["position_note"])
+        elif tactics_data.get("available"):
+            tactics_data["position_unverified"] = False
+            tactics_data["position_source"] = "static_calibration"
         if tactics_data.get("available"):
             tactics_frames = build_tactics_frames(
                 rt.player_track, rt.ball_track, duration=rt.duration, cfg=tcfg)
@@ -364,6 +438,10 @@ def _tactics_summary(t: Optional[dict]) -> dict:
         "formation": summary,
         "spacing": (t.get("spacing") or {}).get("teams", {}),
         "coverage": t.get("coverage", {}),
+        # 位置来源：static_calibration（已校验）/ sliding_calibration（自动逐帧，未校验）
+        "position_source": t.get("position_source", ""),
+        "position_unverified": bool(t.get("position_unverified")),
+        "position_note": t.get("position_note", ""),
     }
 
 
@@ -379,16 +457,25 @@ def _evidence_meta(rt: RawTrack) -> dict:
     sb = d.get("scoreboard")
     if sb:
         meta["scoreboard"] = {
+            # source：这份比分是**怎么读出来的**（template / ocr / manual-ocr）。
+            # 报告与界面要显示它 —— 用户最关心的第一件事就是"比分哪来的、可不可信"。
+            "source": sb.get("source"),
             "frames_hit": sb.get("frames_hit"), "frames_read": sb.get("frames_read"),
             "bug": sb.get("bug"),
             "events": [e for e in sb.get("events", []) if e.get("kind") == "score"],
         }
+    if d.get("scoreboard_bar"):
+        meta["scoreboard_bar"] = d["scoreboard_bar"]
     if d.get("visual"):
         meta["visual"] = d["visual"]
     if d.get("hoop"):
         meta["hoop"] = {k: v for k, v in d["hoop"].items() if k != "samples"}
     if "calibration_valid" in d:
         meta["calibration_valid"] = d["calibration_valid"]
+    # 标定的来源与误差：判断"是不是用户手动标的"（手动标定即使自动校验没过，
+    # 也允许出热区/战术图，并显式标注未校验 —— 见下面的 court_outputs_* 逻辑）
+    meta["calibration_method"] = d.get("calibration_method", "")
+    meta["calibration_rmse_m"] = d.get("calibration_rmse_m", 99.0)
     if d.get("visual_error"):
         meta["visual_error"] = d["visual_error"]
     if d.get("final_score"):
@@ -401,7 +488,71 @@ def _evidence_meta(rt: RawTrack) -> dict:
         meta["teams"] = d["teams"]
     if d.get("scoreboard_error"):
         meta["scoreboard_error"] = d["scoreboard_error"]
+    # ---- 球员球场坐标的来源与质量（战术层门槛要用，前端也要显示）----
+    # 静态标定不可用时，sources 会自动改用**逐帧滑动标定**把球员投成球场坐标
+    # （player_track_source == "sliding_calibration"）。它没有经过独立校验，
+    # 所以要把"来源 + 质量读数"一起带出来，绝不让它冒充"已校验的标定"。
+    if d.get("player_track"):
+        meta["player_track"] = d["player_track"]
+    if d.get("player_track_source"):
+        meta["player_track_source"] = d["player_track_source"]
+    if d.get("sliding_calibration"):
+        meta["sliding_calibration"] = d["sliding_calibration"]
+        meta["sliding_anchors"] = d.get("sliding_anchors")
+    if d.get("calibration_degeneracy"):
+        meta["calibration_degeneracy"] = d["calibration_degeneracy"]
+    if d.get("calibration_hoop_check"):
+        meta["calibration_hoop_check"] = d["calibration_hoop_check"]
+    if d.get("calibration_for_value"):
+        meta["calibration_for_value"] = d["calibration_for_value"]
+    if d.get("calibration_rejected"):
+        meta["calibration_rejected"] = d["calibration_rejected"]
+    # 自动逐帧标定的独立校验结论（拿人工标的篮筐当共时的真值点）
+    if d.get("sliding_validation"):
+        meta["sliding_validation"] = d["sliding_validation"]
     return meta
+
+
+# 自动逐帧标定要能拿来做战术图，至少要达到这个质量（判据全部来自滑动标定自己的读数）
+SLIDING_OK_RATIO_MIN = 0.5      # 锚点达标率（ratio >= FIT_RATIO_OK 的锚点占比）
+SLIDING_MEDIAN_RATIO_MIN = 1.25  # 中位 ratio（= calibcheck.FIT_RATIO_BAD）
+
+
+def _sliding_position_ok(meta: dict) -> tuple[bool, str]:
+    """没有可用静态标定时，**自动逐帧标定**的球员坐标能不能用来出战术图？
+
+    为什么需要这条兜底：真视频里静态标定经常不可用（镜头在动、或用户那份标定
+    本身有问题），而逐帧滑动标定是每帧自动拟合球场线解出来的 H，实测在真实素材上
+    中位 ratio 3.0 上下、达标率 0.95+。球员坐标其实是有的 —— 老版本只看静态标定的
+    结论，于是"球员明明检测到了、战术页却一直空着"，用户完全不知道为什么。
+
+    代价必须说清楚：滑动标定**没有经过独立校验**（没有画面里的真值点去核对），
+    所以这里的结论只用于**展示性**产物（俯视战术图 / 阵型 / 间距），
+    并且一律标注 `position_unverified=True`；计分/2-3 分判定仍然只走严格路径。
+    """
+    pt = meta.get("player_track") or {}
+    n = int(pt.get("samples") or 0)
+    # 走自动逐帧标定时，**必须**先过"手标篮筐"那道独立校验：
+    # 实测这段素材的逐帧标定把篮筐投到 9.2m 外，却照样给出 481 帧战术图。
+    sv = meta.get("sliding_validation") or {}
+    if sv.get("checked") and not sv.get("ok"):
+        return False, ("自动逐帧标定没通过独立校验：" + str(sv.get("reason") or ""))
+    if n <= 0:
+        return False, "这场没有球员轨迹（球员检测被关闭，或一个人都没检出）"
+    if str(meta.get("player_track_source") or "") != "sliding_calibration":
+        return False, ""
+    sl = meta.get("sliding_calibration") or {}
+    n_a = int(meta.get("sliding_anchors") or 0)
+    ok_ratio = float(sl.get("ok_ratio") or 0.0)
+    med = float(sl.get("median_ratio") or 0.0)
+    if n_a < 2:
+        return False, (f"自动逐帧标定只锁住 {n_a} 个锚点，不够")
+    if ok_ratio < SLIDING_OK_RATIO_MIN or med < SLIDING_MEDIAN_RATIO_MIN:
+        return False, ("自动逐帧标定质量不足（锚点达标率 %.2f、中位 ratio %.2f）—— "
+                       "镜头运动/画面太糊时会出现这种读数" % (ok_ratio, med))
+    # 成功的这条返回值会被拼进"位置未校验"的说明里，所以只给读数、不带前缀，
+    # 免得出现"自动逐帧标定（自动逐帧标定（…））"这种套娃（实测拼出来过）。
+    return True, ("%d 个锚点，达标率 %.2f，中位 ratio %.2f" % (n_a, ok_ratio, med))
 
 
 def _judgement(meta: dict, shots: list) -> dict:

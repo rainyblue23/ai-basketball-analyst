@@ -137,20 +137,24 @@ class Hoop:
     votes: int = 0
     confidence: float = 0.0
     method: str = ""
+    # 人工标这个篮筐时的**时刻**（秒）。为什么需要它：篮筐像素是"画面里的一个点"，
+    # 镜头一动它就换位置 —— 拿它当独立真值去校验球场标定时，必须用**同一时刻**的
+    # 单应矩阵，否则等于拿两个不同视角的东西对比（实测这段素材镜头一直在跟球）。
+    t: float = 0.0
 
     def to_dict(self) -> dict:
         return {"cx": round(self.cx, 1), "cy": round(self.cy, 1),
                 "rx": round(self.rx, 1), "ry": round(self.ry, 1),
                 "board": self.board, "votes": self.votes,
                 "confidence": round(self.confidence, 3),
-                "method": self.method}
+                "method": self.method, "t": round(float(self.t or 0.0), 2)}
 
     @staticmethod
     def from_dict(d: dict) -> "Hoop":
         return Hoop(cx=d["cx"], cy=d["cy"], rx=d["rx"], ry=d["ry"],
                     board=d.get("board"), votes=d.get("votes", 0),
                     confidence=d.get("confidence", 0.0),
-                    method=d.get("method", ""))
+                    method=d.get("method", ""), t=float(d.get("t", 0.0) or 0.0))
 
 
 def _all_rim_candidates(frame, cfg: HoopConfig):

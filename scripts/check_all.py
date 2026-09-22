@@ -1,8 +1,8 @@
-"""一键跑完所有自检 —— 答辩前每次改动后跑这个。
+﻿"""一键跑完所有自检 —— 答辩前每次改动后跑这个。
 
 包含：
   1. Python 端到端自检（tests/test_plan_a.py，11 项，零第三方依赖）
-  1b.战术层自检（tests/test_plan_b.py，16 项，零第三方依赖）
+  1b.战术层自检（tests/test_plan_b.py，21 项，零第三方依赖）
   2. 实施手册的 Python 代码块可编译性（scripts/verify_doc_code.py）
   3. 实施手册引用的文件/函数是否存在（scripts/verify_doc_refs.py）
   4. 实施手册里的 CLI 调用是否与 argparse 一致（scripts/verify_doc_cli.py）
@@ -90,7 +90,7 @@ def main(argv=None) -> int:
         "1/9 Python 端到端自检 tests/test_plan_a.py",
         [PY, "-B", "tests/test_plan_a.py"])))
 
-    results.append(("比分牌 + 球/篮筐自检（50 项）", run(
+    results.append(("比分牌 + 球/篮筐自检（60 项）", run(
         "2/9 比分牌识别 + 证据融合自检 tests/test_scoreboard.py",
         [PY, "-B", "tests/test_scoreboard.py"])))
 
@@ -102,7 +102,7 @@ def main(argv=None) -> int:
         "2c/9 「这一球是哪一队进的」自检 tests/test_baskets.py",
         [PY, "-B", "tests/test_baskets.py"])))
 
-    results.append(("战术层自检（16 项）", run(
+    results.append(("战术层自检（21 项）", run(
         "3/9 战术层自检 tests/test_plan_b.py",
         [PY, "-B", "tests/test_plan_b.py"])))
 

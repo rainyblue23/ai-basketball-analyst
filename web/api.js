@@ -443,8 +443,25 @@
     return API.getJSON(u, 60000);
   };
   /** 多画面累加解标定（并返回逐个点误差） */
-  API.calibrateMulti = function (payload) {
+  API.calibrateAuto = function (payload) {
+  return postJSON('/api/calibrate_auto', payload);
+};
+API.calibrateMulti = function (payload) {
     return API.postJSON(API.base + '/api/calibrate_multi', payload);
+  };
+
+  /* ---- 比分牌：自动定位 / 手动框选 + OCR 读得分事件 ----
+     为什么需要：模板匹配只认它标过的样式，非标准台标（校园/村 BA 的横条）
+     读不出来；而"框出比分区域 + 放大 OCR"实测能稳定读出
+     （这段素材读出 27:33 → 27:35 → 27:37 → 29:38，与画面逐帧一致）。
+     返回里的 path 直接作为任务的 scoreboard_events 传给后端。 */
+  API.scoreboardOcr = function (payload) {
+    return API.postJSON(API.base + '/api/scoreboard/ocr', payload);
+  };
+  /** 这段视频是否已有 OCR 读出的得分事件（界面据此显示"已读比分牌"） */
+  API.scoreboardEvents = function (videoPath) {
+    return API.getJSON(API.base + '/api/scoreboard/events?video_path=' +
+                       encodeURIComponent(videoPath), 8000);
   };
 
   // 演示模式下的高光片段：静态文件直接给链接

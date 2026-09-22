@@ -50,6 +50,30 @@ window.PAGES['shotchart'] = {
         this.game.meta.court_outputs_reason) ||
         '这份球场标定不适用于这段视频（机位/分辨率不匹配），无法把出手点投到球场上。';
     },
+    /** 「标定可用但 0 次出手」时，说清楚为什么 —— 不能只给一张空球场。
+     *  实测用户看到空热区会以为功能坏了；真正的原因通常是：镜头在动 →
+     *  篮筐判据放弃；球太小 → 追不到；也没有记分牌事件 → 出手数就是 0。 */
+    emptyWhy: function () {
+      var m = (this.game && this.game.meta) || {};
+      var lines = [];
+      lines.push('出手次数：0（这次分析没有产生任何出手记录）');
+      if (m.court_outputs_unverified) {
+        lines.push('另外提醒：热区用的是**你手动标的**球场标定，'
+          + '自动校验没通过 —— 位置可能有偏差。');
+      }
+      var ve = m.visual_error || (m.hoopsight && m.hoopsight.reason);
+      if (ve) { lines.push('为什么没出手：' + String(ve).slice(0, 160)); }
+      var rej = m.calibration_rejected;
+      if (rej) { lines.push('标定校验：' + String(rej).slice(0, 160)); }
+      lines.push('');
+      lines.push('想让热区有内容，三条路：');
+      lines.push('  ① 用记分牌路径：视频里有可读记分牌时，'
+        + '得分事件会直接变成出手记录（这段视频底部就有记分牌）；');
+      lines.push('  ② 换更清楚的素材：球在画面里 ≥30 像素时，'
+        + '出手检测才能工作（判断标准见 README「素材体检」）；');
+      lines.push('  ③ 人工复核：在「人工复核」里逐条确认/补录出手。');
+      return lines.join('\n');
+    },
 
     /** 当前球队的出手点：优先用 shotchart 点集的 team 字段过滤 */
     points: function () {
@@ -218,6 +242,12 @@ window.PAGES['shotchart'] = {
     '      :description="unavailableReason + \'\\n\\n\' +',
     '        \'（宁可不画，也不画错的：球场坐标整片错位时，热区图看起来正常但全是垃圾。\' +',
     '        \'要出热区请先用 calibrate 对这段视频做球场标定。）\'" />',
+    '  </div>',
+    '  <div class="card" v-else-if="!points.length">',
+    '    <h3 class="card-title">投篮热区 <span class="sub">标定可用，但本片段没有出手</span></h3>',
+    '    <el-alert type="info" :closable="false" show-icon',
+    '      title="球场标定是好的，但这次分析**一次出手都没检测到**，所以热区是空的"',
+    '      :description="emptyWhy" />',
     '  </div>',
     '  <div class="card" v-else-if="!points.length && !(S.game)">',
     '    <el-empty description="暂无投篮数据" />',

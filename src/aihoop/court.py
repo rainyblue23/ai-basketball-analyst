@@ -123,6 +123,116 @@ def is_valid_court_point(x: float, y: float, tol: float = 2.0) -> bool:
 
 
 # --------------------------------------------------------------------------
+# 标定退化检测（近共线 / 点重合）
+# --------------------------------------------------------------------------
+def max_triangle_area(pts: Sequence[Sequence[float]]) -> float:
+    """点集里最大三角形的面积（纯 python）。
+
+    这是"这些点有没有把平面真正撑开"的度量：近共线的点集最大三角形面积趋近 0。
+    为什么要它：**重投影误差抓不住退化标定**。4 个点几乎共线时，解出来的 H 在这些
+    点上是精确解（误差 0.00m），但离开这条线就会飞掉 —— 实测一份用户标的标定
+    4 个点 y 都在 310~325px（几乎一条横线），重投影误差 0.00~1.45m 显示"可用"，
+    而画面里的篮筐被投到 (-31.0, -14.0)、离真篮筐 33.4m，热区/战术图整片错位。
+    """
+    best = 0.0
+    n = len(pts or [])
+    for i in range(n - 2):
+        x0, y0 = float(pts[i][0]), float(pts[i][1])
+        for j in range(i + 1, n - 1):
+            x1, y1 = float(pts[j][0]), float(pts[j][1])
+            for k in range(j + 1, n):
+                x2, y2 = float(pts[k][0]), float(pts[k][1])
+                a = abs((x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0)) / 2.0
+                if a > best:
+                    best = a
+    return best
+
+
+def min_pair_distance(pts: Sequence[Sequence[float]]) -> float:
+    """点集里最近两点的距离（点重合 → 0，同样解不出稳定的 H）。"""
+    best = float("inf")
+    n = len(pts or [])
+    for i in range(n - 1):
+        for j in range(i + 1, n):
+            d = math.hypot(float(pts[i][0]) - float(pts[j][0]),
+                           float(pts[i][1]) - float(pts[j][1]))
+            if d < best:
+                best = d
+    return best if n >= 2 else 0.0
+
+
+def calibration_degeneracy(cal, min_src_frac: float = 0.008,
+                           min_dst_frac: float = 0.0025) -> dict:
+    """这份标定的点位是不是退化的（近共线 / 重合）？
+
+    为什么必须单独判一次：单应矩阵只需要 4 组点，**4 个点永远能解出一个"误差 0"的
+    解**，哪怕其中 3 个点在一条线上。于是"重投影误差很小"根本不能证明标定可用，
+    而下游（热区、俯视战术图）会照着一张错的坐标图给出看着很专业的结论。
+    这里用**点集的二维展开度**把这种解挡掉：
+
+      * 像素侧：最大三角形面积 < 画面面积的 0.8%（且小于 400px² 的绝对下限）
+      * 球场侧：最大三角形面积 < 球场面积的 0.25%（约 1.05m²）
+      * 两侧最近两点距离 < 2px / 0.25m（点被重复点到了同一个地方）
+
+    返回 ``{"degenerate": bool, "reason": str, ...质量读数}``。
+    读数是给界面/报告用的 —— 说清"为什么不能用"，而不是只给一个 False。
+    """
+    src = list(getattr(cal, "src_px", None) or [])
+    dst = list(getattr(cal, "dst_m", None) or [])
+    out = {"degenerate": False, "reason": "", "n_points": len(src),
+           "src_tri_px2": round(max_triangle_area(src), 2),
+           "dst_tri_m2": round(max_triangle_area(dst), 3),
+           "src_min_dist_px": round(min_pair_distance(src), 2),
+           "dst_min_dist_m": round(min_pair_distance(dst), 3),
+           "src_frac": 0.0, "dst_frac": 0.0}
+    if len(src) < 4 or len(dst) != len(src):
+        out["degenerate"] = True
+        out["reason"] = (f"只有 {len(src)} 组对应点 —— 单应矩阵至少要 4 组，"
+                         "而且 4 组时解是精确解、误差恒为 0，无法自证正确。")
+        return out
+    if not getattr(cal, "H", None):
+        out["degenerate"] = True
+        out["reason"] = "没有解出单应矩阵。"
+        return out
+
+    size = list(getattr(cal, "frame_size", None) or [])
+    if len(size) >= 2 and float(size[0]) > 0 and float(size[1]) > 0:
+        ref_src = float(size[0]) * float(size[1])
+    else:                       # 老文件没有 frame_size：用点的外接框兜底
+        xs = [float(p[0]) for p in src]
+        ys = [float(p[1]) for p in src]
+        ref_src = max(1.0, (max(xs) - min(xs)) * (max(ys) - min(ys)))
+    ref_dst = COURT_WIDTH * COURT_LENGTH
+    out["src_frac"] = round(out["src_tri_px2"] / ref_src, 5)
+    out["dst_frac"] = round(out["dst_tri_m2"] / ref_dst, 5)
+
+    if out["src_min_dist_px"] < 2.0:
+        out["degenerate"] = True
+        out["reason"] = ("有两个标定点落在同一个位置（距离 %.1fpx）—— "
+                         "多半是同一个点被点了两次。" % out["src_min_dist_px"])
+    elif out["dst_min_dist_m"] < 0.25:
+        out["degenerate"] = True
+        out["reason"] = ("有两个标定点对应到球场上同一个位置（相距 %.2fm）—— "
+                         "点位名称选重了。" % out["dst_min_dist_m"])
+    elif (out["src_tri_px2"] < max(400.0, min_src_frac * ref_src)
+          and out["src_frac"] < min_src_frac):
+        out["degenerate"] = True
+        out["reason"] = ("标定点几乎在**同一条线**上（最大三角形面积只有 "
+                         "%.0fpx²，占画面 %.2f%%）—— 这种点位解出来的单应矩阵"
+                         "在点位之外会飞掉：重投影误差照样是 0.00m，"
+                         "但篮筐/球员会被投到几十米外。"
+                         "请**换几个不在同一条线上**的特征点（例如"
+                         "底线两角 + 罚球区两角 + 中圈）。"
+                         % (out["src_tri_px2"], 100 * out["src_frac"]))
+    elif out["dst_tri_m2"] < max(1.05, min_dst_frac * ref_dst):
+        out["degenerate"] = True
+        out["reason"] = ("你选的特征点在球场上也几乎共线（展开面积只有 "
+                         "%.2fm²）—— 请选**既不同线、又不同侧**的点。"
+                         % out["dst_tri_m2"])
+    return out
+
+
+# --------------------------------------------------------------------------
 # 单应矩阵（3x3，无 numpy 依赖实现，方便在无第三方库时也能跑）
 # --------------------------------------------------------------------------
 Matrix3 = list[list[float]]
@@ -312,9 +422,16 @@ class Calibration:
         分辨率比对，并且**只在标定点确实落在画面内时**才算通过。
         """
         import os
-        base = os.path.basename(str(video_path or ""))
+        base = os.path.basename(str(video_path or "")).lower()
+        # 两边都归一化成**文件名**再比（对路径分隔符与大小写不敏感）。
+        # 实测踩到的大坑：标定文件里存的是路径（"data\basketball_match.mp4"），
+        # 这里却拿它跟 basename（"basketball_match.mp4"）直接比 → 永远不相等
+        # → 用户在界面上辛苦标的标定**全部被判成"不适用于这段视频"**，
+        # 热区/战术图一个都不生成，界面只显示一句"机位/分辨率不匹配"，
+        # 用户完全无从判断（标定明明存下来了、误差还只有 0.693m）。
         if self.for_video:
-            return bool(base) and self.for_video == base
+            fv = os.path.basename(str(self.for_video).replace("\\", "/")).lower()
+            return bool(base) and bool(fv) and fv == base
         src = self.src_px or []
         if not src or not width or not height:
             return False

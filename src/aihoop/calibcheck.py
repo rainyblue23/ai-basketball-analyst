@@ -270,6 +270,55 @@ def court_fit_score(video_path: str, cal: Calibration,
 # --------------------------------------------------------------------------
 # 2b) 自动精修标定（不需要关键点模型、不需要联网、不需要标注）
 # --------------------------------------------------------------------------
+def validate_sliding_with_hoop(sliding: dict, hoop_px, t: float = 0.0,
+                               max_dist_m: float = 3.0) -> dict:
+    """用**人工标的篮筐**校验逐帧滑动标定 —— 这是自动定位那条路上唯一可用的真值。
+
+    为什么必须有这道关卡：滑动标定的质量分（线拟合 ratio）**会被骗**。
+    实测这段 960×544 校园转播：坏到"把篮筐投到 9.2m 外"的那些锚点，
+    ratio 反而是 7.17 / 5.17 / 7.88（比对的那些"看着还行"的锚点 1.4~2.9 还高）。
+    也就是说 `ratio` 完全不能证明坐标对。而人工标的篮筐是**与拟合无关的真值**：
+    把它按同一时刻的 H 投到地面，必须落在真篮筐 (0, ±1.575) 附近。
+
+    实测同一段素材：手标篮筐 (356, 104.9) 经 H 投影落在 (0, ±11.2)，
+    离真筐 **9.2~9.7m** → 这份滑动标定整段不可用（战术图坐标全错）。
+
+    返回 ``{"checked": bool, "ok": bool, "dist_m": float, "reason": str}``。
+    ``checked=False`` 表示没有可用的真值点（没标过篮筐），此时**不能**认为通过。
+    """
+    from .court import apply_homography
+    from .model import HOOP_LEFT, HOOP_RIGHT
+    if not sliding or not (sliding.get("anchors") or []):
+        return {"checked": False, "ok": False, "dist_m": None,
+                "reason": "没有逐帧滑动标定"}
+    if not hoop_px:
+        return {"checked": False, "ok": False, "dist_m": None,
+                "reason": "这段视频没有人工标的篮筐，无法校验自动标定"}
+    try:
+        fps = float(sliding.get("fps") or 30.0)
+        H = homography_at(sliding, int(round(float(t) * fps)),
+                          bool(sliding.get("half_court", True)))
+        if H is None:
+            return {"checked": False, "ok": False, "dist_m": None,
+                    "reason": "该时刻没有可用的单应矩阵"}
+        x, y = apply_homography(H, float(hoop_px[0]), float(hoop_px[1]))
+    except Exception as e:  # noqa: BLE001
+        return {"checked": False, "ok": False, "dist_m": None,
+                "reason": f"校验失败：{type(e).__name__}: {e}"}
+    d = min(math.hypot(x - HOOP_LEFT[0], y - HOOP_LEFT[1]),
+            math.hypot(x - HOOP_RIGHT[0], y - HOOP_RIGHT[1]))
+    ok = d <= max_dist_m
+    return {"checked": True, "ok": bool(ok), "dist_m": round(float(d), 2),
+            "court_xy": [round(x, 2), round(y, 2)],
+            "hoop_px": [round(float(hoop_px[0]), 1), round(float(hoop_px[1]), 1)],
+            "t": round(float(t), 2),
+            "reason": ("人工标的篮筐经这份逐帧标定投到 (%0.1f, %0.1f)，"
+                       "离真篮筐 %.2f m" % (x, y, d))
+                      + ("（在 %.0fm 容差内，通过）" % max_dist_m if ok else
+                         "（超过 %.0fm 容差）—— 这份自动逐帧标定不能用它的"
+                         "球员坐标出战术图，请手工标定这个机位" % max_dist_m)}
+
+
 def _corner_pixels(cal: Calibration) -> list:
     return [[float(p[0]), float(p[1])] for p in cal.src_px]
 

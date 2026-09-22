@@ -1,0 +1,213 @@
+"""手动框选记分牌 → 用 Windows OCR 读出得分事件。
+
+流程（实测可行）：
+  1. 用户在画面上框出记分牌的**数字区域**（1 个或 2 个；两个分别是主/客队分），
+     并给出起始比分；
+  2. 每 step_s 秒抽一帧，把该区域**放大 4 倍**后存成 PNG
+     （实测：放大后 Windows OCR 能稳定读出 "KPHS 27 AHS 35"；不放大就认不出）；
+  3. 一次 PowerShell 调用**批量 OCR** 所有小图（避免逐张启动 PowerShell 的开销）；
+  4. 从文字里抠出数字 → 用「比分只增不减 + 一次最多 +3」过滤误读 → 产出得分事件。
+
+为什么不用模板匹配：现有 `scoreboard.py` 依赖样式模板，实测这段视频直接报
+「画面里没有找到广播比分牌」。OCR 不挑样式，只要用户指一下区域。
+
+用法：
+    python scripts/read_marked_scoreboard.py --video data/new_video.mp4 `
+        --box-home 402,62,438,92 --box-away 522,62,560,92 `
+        --start 27,35 --step 0.5 --out out/sb_events.json
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+
+import cv2  # noqa: E402
+
+
+def grab_crops(video: str, boxes: dict, step_s: float, zoom: float,
+               tmpdir: Path, max_seconds: float = 0.0) -> list[dict]:
+    """按时间抽样，把每个区域放大后存成 PNG，返回 [{t, team, file}]。"""
+    cap = cv2.VideoCapture(str(video))
+    if not cap.isOpened():
+        raise SystemExit(f"打不开视频：{video}")
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    dur = total / fps if fps else 0.0
+    if max_seconds and max_seconds > 0:
+        dur = min(dur, max_seconds)
+    step = max(1, int(round(step_s * fps)))
+    items = []
+    f = 0
+    while f < total and (f / fps) <= dur:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, f)
+        ok, fr = cap.read()
+        if not ok:
+            break
+        t = f / fps
+        for team, (x0, y0, x1, y1) in boxes.items():
+            h, w = fr.shape[:2]
+            a, b = max(0, int(x0)), max(0, int(y0))
+            c, d = min(w, int(x1)), min(h, int(y1))
+            crop = fr[b:d, a:c]
+            if crop.size == 0:
+                continue
+            big = cv2.resize(crop, None, fx=zoom, fy=zoom,
+                             interpolation=cv2.INTER_CUBIC)
+            name = f"{int(round(t * 100)):07d}_{team}.png"
+            cv2.imwrite(str(tmpdir / name), big)
+            items.append({"t": round(t, 2), "team": team, "file": name})
+        f += step
+    cap.release()
+    return items
+
+
+def run_ocr(tmpdir: Path, out_json: Path) -> dict:
+    ps = shutil.which("powershell") or shutil.which("powershell.exe") or \
+        shutil.which("pwsh")
+    if not ps:
+        raise SystemExit("找不到 powershell，无法调用 Windows OCR")
+    script = ROOT / "scripts" / "ocr_batch.ps1"
+    cmd = [ps, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+           str(script), "-Dir", str(tmpdir), "-Out", str(out_json)]
+    # 显式 utf-8 + errors=replace：Windows 上 text=True 默认 GBK，
+    # PowerShell 输出里的非 GBK 字节会让它崩（实测 UnicodeDecodeError）
+    r = subprocess.run(cmd, capture_output=True, text=True,
+                       encoding="utf-8", errors="replace", timeout=1800)
+    if r.returncode != 0:
+        raise SystemExit(f"OCR 失败：{r.stderr[-500:] or r.stdout[-500:]}")
+    return {d["file"]: (d.get("text") or "")
+            for d in json.loads(out_json.read_text(encoding="utf-8"))}
+
+
+def parse_number(text: str):
+    """从 OCR 文本里抠出数字（取第一个 1~3 位的整数）。"""
+    for m in re.finditer(r"\d{1,3}", text or ""):
+        try:
+            return int(m.group(0))
+        except ValueError:
+            continue
+    return None
+
+
+def build_events(items: list[dict], texts: dict, start: dict,
+                 max_delta: int = 3) -> dict:
+    """把 OCR 读数序列变成得分事件（只增不减 + 一次最多 +max_delta）。"""
+    per = {}
+    for it in items:
+        txt = texts.get(it["file"], "")
+        if it["team"] == "all":
+            # 整条横条：按阅读顺序取前两个数字（左=主队、右=客队）
+            nums = [int(m.group(0)) for m in re.finditer(r"\d{1,3}", txt or "")]
+            if len(nums) >= 2:
+                per.setdefault("home", []).append((it["t"], nums[0]))
+                per.setdefault("away", []).append((it["t"], nums[1]))
+            elif len(nums) == 1:
+                per.setdefault("home", []).append((it["t"], nums[0]))
+            continue
+        v = parse_number(txt)
+        if v is None:
+            continue
+        per.setdefault(it["team"], []).append((it["t"], v))
+    events, bad = [], []
+    final = {}
+    for team in ("home", "away"):
+        seq = sorted(per.get(team) or [])
+        if not seq:
+            final[team] = start.get(team)
+            continue
+        cur = int(start.get(team, 0))
+        for t, v in seq:
+            if v < cur:
+                bad.append({"t": t, "team": team, "read": v, "prev": cur,
+                            "why": "读数回退"})
+                continue
+            if v - cur > max_delta:
+                bad.append({"t": t, "team": team, "read": v, "prev": cur,
+                            "why": "一次跳变超过 %d 分（多半是误读）" % max_delta})
+                continue
+            if v > cur:
+                events.append({"t": t, "team": team, "delta": v - cur,
+                               "value": v})
+                cur = v
+        final[team] = cur
+    events.sort(key=lambda e: e["t"])
+    return {"events": events, "rejected": bad, "final": final}
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description="手动框选记分牌 → OCR 读得分事件")
+    ap.add_argument("--video", required=True)
+    ap.add_argument("--box-home", default=None, help="主队分区域 x0,y0,x1,y1")
+    ap.add_argument("--box-away", default=None, help="客队分区域 x0,y0,x1,y1")
+    ap.add_argument("--box-all", default=None,
+                    help="整条记分牌区域 x0,y0,x1,y1（推荐）：OCR 后按阅读顺序"
+                         "取前两个数字当主/客队分 —— 比逐格框更稳" )
+    ap.add_argument("--start", required=True, help="起始比分 home,away（如 27,35）")
+    ap.add_argument("--step", type=float, default=0.5, help="抽样间隔（秒）")
+    ap.add_argument("--zoom", type=float, default=4.0, help="放大倍数（OCR 关键）")
+    ap.add_argument("--max-seconds", type=float, default=0.0)
+    ap.add_argument("--out", default="out/sb_events.json")
+    a = ap.parse_args(argv)
+
+    boxes = {}
+    if a.box_all:
+        boxes["all"] = [float(v) for v in a.box_all.split(",")]
+    for team, spec in (("home", a.box_home), ("away", a.box_away)):
+        if spec and not a.box_all:
+            boxes[team] = [float(v) for v in spec.split(",")]
+    if not boxes:
+        print("[err] 至少给一个区域：--box-home 或 --box-away")
+        return 2
+    hs, as_ = [int(v) for v in a.start.split(",")]
+    start = {"home": hs, "away": as_}
+
+    # 临时目录放在**工作区内**：系统 %TEMP% 在受限沙箱里不可写（实测被判 permission denied），
+    # 而且工作区内也方便出问题时人工检查中间小图。
+    tmpdir = ROOT / "out" / "tmp" / "sbocr"
+    if tmpdir.exists():
+        shutil.rmtree(tmpdir, ignore_errors=True)
+    tmpdir.mkdir(parents=True, exist_ok=True)
+    try:
+        items = grab_crops(a.video, boxes, a.step, a.zoom, tmpdir,
+                           max_seconds=a.max_seconds)
+        print(f"抽样 {len(items)} 张小图（{len(boxes)} 个区域）→ OCR …")
+        texts = run_ocr(tmpdir, ROOT / "out" / "tmp" / "sb_ocr.json")
+        res = build_events(items, texts, start)
+        res.update({"video": a.video, "boxes": boxes, "start": start,
+                    "n_crops": len(items),
+                    "ocr_hit": sum(
+                        1 for it in items
+                        if (len(re.findall(r"\d{1,3}", texts.get(it["file"], "") or "")) >= 2
+                            if it["team"] == "all"
+                            else parse_number(texts.get(it["file"], "")) is not None))})
+        outp = Path(a.out)
+        outp.parent.mkdir(parents=True, exist_ok=True)
+        outp.write_text(json.dumps(res, ensure_ascii=False, indent=2),
+                        encoding="utf-8")
+        print(f"OCR 读出数字 {res['ocr_hit']}/{len(items)} 张")
+        print(f"得分事件 {len(res['events'])} 条；最终比分 {res['final']}")
+        for e in res["events"]:
+            print("   t=%7.2fs  %s  +%d → %d"
+                  % (e["t"], e["team"], e["delta"], e["value"]))
+        if res["rejected"]:
+            print(f"被过滤的误读 {len(res['rejected'])} 条（前 5）：")
+            for d in res["rejected"][:5]:
+                print("   t=%7.2fs %s 读=%s 前值=%s  %s"
+                      % (d["t"], d["team"], d["read"], d["prev"], d["why"]))
+        print(f"\n已存 {outp}")
+        return 0
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

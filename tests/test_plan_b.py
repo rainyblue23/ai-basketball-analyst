@@ -280,6 +280,158 @@ def test_tactics_degrades_without_player_track():
     assert "球员轨迹" in t["reason"]
 
 
+# --------------------------------------------------------------------------
+# 5b) 回归：退化标定 + 自动逐帧标定出战术图
+# --------------------------------------------------------------------------
+def test_degenerate_calibration_is_detected():
+    """近共线的点位必须被判成"退化"。
+
+    这是真实踩到的坑：用户在界面上标了 4 个点，**4 个点的 y 都在 310~325px**
+    （几乎一条横线）。4 个点时单应矩阵是精确解 → 重投影误差 1.45m、"标定可用"，
+    而画面里的篮筐被投到 (-31.0, -14.0)、离真篮筐 **33.4m**，热区与俯视战术图
+    整片错位且不报任何错。**误差小不能证明标定对**，所以要单独判"点位展开度"。
+    """
+    from aihoop.court import calibration_degeneracy
+    bad = Calibration(
+        src_px=[[448.8, 325.1], [955.9, 310.2], [720.2, 321.6], [275.1, 318.1]],
+        dst_m=[[-7.5, 0.0], [7.5, 0.0], [0.0, 0.0], [0.0, -5.8]],
+        H=[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+        reproj_error_m=1.45, frame="full", frame_size=[960, 544])
+    d = calibration_degeneracy(bad)
+    assert d["degenerate"] is True, d
+    assert "同一条线" in d["reason"] or "共线" in d["reason"], d["reason"]
+
+    # 点重合也要判出来
+    dup = Calibration(src_px=[[100, 100], [100.5, 100.2], [900, 90], [100, 700]],
+                      dst_m=[[-7.5, 0.0], [7.5, 0.0], [0.0, 0.0], [0.0, -5.8]],
+                      H=[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+                      frame_size=[960, 544])
+    assert calibration_degeneracy(dup)["degenerate"] is True
+
+    # 一份正常的四角标定不能被误判
+    to_px = _fake_camera()
+    src = [list(to_px(x, y)) for x, y in
+           [(-7.5, 0.0), (7.5, 0.0), (7.5, -14.0), (-7.5, -14.0)]]
+    good = calibrate_from_corners(src, half_court=True)
+    good.frame_size = [960, 544]
+    assert calibration_degeneracy(good)["degenerate"] is False, \
+        calibration_degeneracy(good)
+
+
+def _rt_with_sliding(ok_ratio: float, median_ratio: float):
+    """造一份"静态标定不可用、改用自动逐帧标定"的 RawTrack（真视频的兜底路径）。"""
+    from aihoop.sources import synthetic_game
+    rt = synthetic_game(seed=7, duration=300.0)
+    rt.detections_meta["calibration_valid"] = False
+    rt.detections_meta["calibration_method"] = "web-keypoints-multi"
+    rt.detections_meta["calibration_rmse_m"] = 1.45
+    rt.detections_meta["player_track_source"] = "sliding_calibration"
+    rt.detections_meta["player_track"] = {
+        "samples": len(rt.player_track),
+        "players": len({s.player_id for s in rt.player_track}),
+        "calibration_valid": False}
+    rt.detections_meta["sliding_calibration"] = {
+        "ok_ratio": ok_ratio, "median_ratio": median_ratio,
+        "half_court": True}
+    rt.detections_meta["sliding_anchors"] = 1201
+    return rt
+
+
+def test_tactics_runs_on_sliding_calibration(tmp_path: Path):
+    """静态标定不可用时，**自动逐帧标定**的球员坐标要能出战术图（并标注未校验）。
+
+    真实痛点：真视频里用户那份标定经常通不过校验（机位在动 / 标定点位错），
+    而逐帧滑动标定其实已经把球员投成了球场坐标（实测 2.4 万个点、达标率 0.958）。
+    老版本只看静态标定的结论 → 战术层整层跳过，用户看到的就是"球员明明检测到了、
+    战术页却一直空着"，而且完全不知道为什么。
+    """
+    from aihoop.pipeline import PipelineConfig, run_pipeline
+    out = tmp_path / "sliding_ok"
+    rt = _rt_with_sliding(ok_ratio=0.958, median_ratio=3.09)
+    res = run_pipeline(rt, PipelineConfig(out_dir=str(out),
+                                          make_highlights=False))
+    assert (out / "tactics.json").exists(), "自动逐帧标定达标时必须产出战术图"
+    t = json.loads((out / "tactics.json").read_text(encoding="utf-8"))
+    assert t["available"] is True
+    # 位置来源要如实标注：不能冒充"已校验的标定"
+    assert t["position_unverified"] is True
+    assert t["position_source"] == "sliding_calibration"
+    assert "未校验" in t["position_note"] or "自动逐帧标定" in t["position_note"]
+    assert any("未校验" in n for n in t["notes"]), t["notes"]
+    assert res.game["tactics"]["position_unverified"] is True
+    # 战报里必须出现这条免责说明（答辩看的是报告）
+    md = (out / "report.md").read_text(encoding="utf-8")
+    assert "未独立校验" in md, md[-1200:]
+
+
+def test_tactics_skipped_when_sliding_too_weak(tmp_path: Path):
+    """自动逐帧标定质量不够时**不能**硬出战术图 —— 明确说明原因。"""
+    from aihoop.pipeline import PipelineConfig, run_pipeline
+    out = tmp_path / "sliding_bad"
+    rt = _rt_with_sliding(ok_ratio=0.12, median_ratio=1.0)
+    res = run_pipeline(rt, PipelineConfig(out_dir=str(out),
+                                          make_highlights=False))
+    assert not (out / "tactics.json").exists()
+    tac = res.game["tactics"]
+    assert tac["available"] is False
+    assert "自动逐帧标定" in tac["reason"], tac
+
+
+def test_validate_sliding_with_hoop():
+    """自动逐帧标定必须能被**人工标的篮筐**一票否决（真实踩到的坑）。
+
+    实测这段 960×544 校园转播：滑动标定把手标篮筐投到离真筐 **9.2m** 的地方，
+    而它自己的质量分 ratio 反而高达 7.17（比"看着还行"的锚点 1.4~2.9 还高）——
+    也就是说线拟合分**不能**证明坐标对。只有与拟合无关的真值点（手标篮筐）
+    才能发现它，所以战术层必须以这道校验为准。
+    """
+    from aihoop.calibcheck import validate_sliding_with_hoop
+    from aihoop.court import HALF_COURT_CORNERS
+    from aihoop.model import HOOP_LEFT
+
+    to_px = _fake_camera(scale=40.0, ox=300.0, oy=800.0)
+    corners = [list(to_px(x, y)) for x, y in HALF_COURT_CORNERS]
+    sliding = {"anchors": [{"frame": 0, "corners": corners, "ratio": 3.0}],
+               "fps": 30.0, "half_court": True}
+    # 真值点：分析坐标 (0, 1.575) 对应的像素
+    hoop_px = to_px(HOOP_LEFT[0], HOOP_LEFT[1])
+    good = validate_sliding_with_hoop(sliding, hoop_px, t=0.0)
+    assert good["checked"] is True, good
+    assert good["ok"] is True, good
+    assert good["dist_m"] is not None and good["dist_m"] < 0.5, good
+
+    # 同一个真值点，但标定整体偏了 300px（≈7.5m）—— 必须判不通过
+    shifted = {"anchors": [{"frame": 0,
+                            "corners": [[x + 300, y] for x, y in corners],
+                            "ratio": 9.9}],       # ratio 很高也没用
+               "fps": 30.0, "half_court": True}
+    bad = validate_sliding_with_hoop(shifted, hoop_px, t=0.0)
+    assert bad["checked"] is True and bad["ok"] is False, bad
+    assert bad["dist_m"] > 3.0, bad
+    assert "不能用" in bad["reason"], bad["reason"]
+
+    # 没有真值点时必须明确"没校验"，而不是默认通过
+    none = validate_sliding_with_hoop(sliding, None, t=0.0)
+    assert none["checked"] is False and none["ok"] is False, none
+
+
+def test_tactics_skipped_when_sliding_unvalidated(tmp_path: Path):
+    """滑动标定没过独立校验时，战术层必须**不出图**并说清原因。"""
+    from aihoop.pipeline import PipelineConfig, run_pipeline
+    out = tmp_path / "sliding_unvalidated"
+    rt = _rt_with_sliding(ok_ratio=0.958, median_ratio=3.09)
+    # 校验结论：手标篮筐被投到 9.2m 外 → 不可用
+    rt.detections_meta["sliding_validation"] = {
+        "checked": True, "ok": False, "dist_m": 9.2,
+        "reason": "人工标的篮筐经这份逐帧标定投到 (0.0, 11.2)，离真篮筐 9.20 m"}
+    res = run_pipeline(rt, PipelineConfig(out_dir=str(out),
+                                          make_highlights=False))
+    assert not (out / "tactics.json").exists(), "校验没过就不该出战术图"
+    tac = res.game["tactics"]
+    assert tac["available"] is False
+    assert "独立校验" in tac["reason"], tac
+
+
 def test_pipeline_writes_tactics_artifacts(tmp_path: Path):
     from aihoop.pipeline import PipelineConfig, run_pipeline
     from aihoop.sources import synthetic_game

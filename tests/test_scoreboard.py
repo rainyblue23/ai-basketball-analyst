@@ -132,6 +132,81 @@ def test_pipeline_carry_in():
     check("summary 里点出了带入分", "开局带入" in res.summary(), res.summary())
 
 
+def test_parse_pairs_layout():
+    """按版式配对：`DoubleACS | KPHS 27 | AHS 35 | 3rd Qtr` → 27 : 35。
+
+    回归的是实测踩到的错法：`_parse_words` 要求队名 Token ≥4 个字母，
+    `AHS` 只有 3 个字母被丢掉 → 两个比分都配到同一个数字 → 读出 **27 : 27**
+    （真值 27 : 35）。
+    """
+    print("\n[7] 比分牌版式解析：3 字母队名不能被丢掉")
+    from aihoop.ocr_scoreboard import _parse_pairs
+    words = [
+        {"text": "DoubleACS", "x": 10, "y": 60, "w": 110, "h": 16},
+        {"text": "KPHS", "x": 140, "y": 60, "w": 60, "h": 16},
+        {"text": "27", "x": 210, "y": 60, "w": 26, "h": 16},
+        {"text": "AHS", "x": 250, "y": 60, "w": 46, "h": 16},
+        {"text": "35", "x": 306, "y": 60, "w": 26, "h": 16},
+        {"text": "3rd", "x": 350, "y": 60, "w": 30, "h": 16},
+        {"text": "Qtr", "x": 386, "y": 60, "w": 30, "h": 16},
+    ]
+    p = _parse_pairs(words)
+    check("解析成功", p is not None, str(p))
+    if p:
+        check("主队 27", p["home"] == 27, str(p))
+        check("客队 35", p["away"] == 35, str(p))
+        check("队名认对了", (p.get("home_name"), p.get("away_name"))
+              == ("KPHS", "AHS"), str(p))
+        check("节次认出来是第 3 节", p.get("period") == 3, str(p))
+
+
+def test_locate_static_overlay_bar():
+    """「叠加层不随时间变化」的定位：动态画面 + 固定台标 → 必须定到台标。
+
+    回归的是实测踩到的错法：这段转播的台标是**深蓝长条**（570×24、长宽比 23.8）
+    且与背后蓝墙同色，按"饱和横条 + 长宽比"找会被整面墙粘住丢掉；
+    按白字占比排序时看台那块（0.118）还会赢过真台标（0.115）。
+    换成"全片唯一不动的区域"就干净了。
+
+    直接喂帧数组（不经视频编解码器）：有损压缩会在叠加层边缘留下几十级灰度
+    噪声，测出来的是编解码器的脾气，不是算法本身。
+    """
+    print("\n[8] 自动定位：动态画面里的静态台标")
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:
+        print("  [skip] 没装 opencv/numpy")
+        return
+    from aihoop.scoreboard import ScoreBugConfig, static_overlay_candidates
+    w, h, n = 320, 200, 24
+    rng = np.random.default_rng(0)
+    frames = []
+    for k in range(n):
+        frame = np.zeros((h, w, 3), np.uint8)
+        frame[:, :] = (60, 110, 170)              # 会动的背景（每帧加噪声）
+        x0 = (k * 7) % (w - 40)
+        frame[120:190, x0:x0 + 40] = (120, 190, 240)
+        noise = rng.integers(-40, 41, size=(h, w, 1), dtype=np.int16)
+        frame = np.clip(frame.astype(np.int16) + noise, 0, 255).astype(np.uint8)
+        # 台标：固定位置、固定内容（只有比分数字那一小块会变）—— 画在噪声之上
+        cv2.rectangle(frame, (40, 12), (280, 34), (90, 40, 20), -1)
+        for i, wid in enumerate((14, 10, 12, 8, 14)):
+            cv2.rectangle(frame, (60 + i * 22, 17), (60 + i * 22 + wid, 30),
+                          (255, 255, 255), -1)
+        cv2.rectangle(frame, (200 + (k % 2) * 2, 17), (214 + (k % 2) * 2, 30),
+                      (255, 255, 255), -1)
+        frames.append(frame)
+    cands = static_overlay_candidates(frames, ScoreBugConfig())
+    check("找到了候选", bool(cands), str(cands))
+    if cands:
+        _s, (x, y, bw, bh) = cands[0]
+        check("位置对上（x≈40）", abs(x - 40) <= 8, f"x={x}")
+        check("位置对上（y≈12）", abs(y - 12) <= 8, f"y={y}")
+        check("宽度对上（≈240）", abs(bw - 240) <= 30, f"w={bw}")
+        check("高度对上（≈22）", abs(bh - 22) <= 10, f"h={bh}")
+
+
 def test_field_patterns_roundtrip():
     print("\n[6] 字段图案模板：存盘/加载/匹配")
     try:
@@ -361,6 +436,8 @@ def main() -> int:
     test_debounce_needs_confirm()
     test_points_to_attempts()
     test_pipeline_carry_in()
+    test_parse_pairs_layout()
+    test_locate_static_overlay_bar()
     test_field_patterns_roundtrip()
     test_attempt_serialization()
     test_team_assignment_by_jersey()
