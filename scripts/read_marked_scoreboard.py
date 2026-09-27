@@ -88,59 +88,74 @@ def run_ocr(tmpdir: Path, out_json: Path) -> dict:
             for d in json.loads(out_json.read_text(encoding="utf-8"))}
 
 
-def parse_number(text: str):
-    """从 OCR 文本里抠出数字（取第一个 1~3 位的整数）。"""
-    for m in re.finditer(r"\d{1,3}", text or ""):
+from aihoop.score_text import parse_number, parse_scores, build_events
+
+def locate_scoreboard_ocr(video, tmpdir, team_names=None):
+    """Select proposals by readable score pairs across time, not static pixels."""
+    from aihoop.score_text import parse_scores
+    from aihoop.scoreboard import ScoreBugConfig, locate_score_bug_static, locate_score_bug_box
+    cap = cv2.VideoCapture(str(video))
+    width, height = int(cap.get(3)), int(cap.get(4))
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    proposals = []
+    for locator in (locate_score_bug_static, locate_score_bug_box):
         try:
-            return int(m.group(0))
-        except ValueError:
-            continue
-    return None
+            bug = locator(str(video), ScoreBugConfig())
+            if bug is not None:
+                proposals.append((bug.x, bug.y, bug.w, bug.h))
+        except Exception:
+            pass
+    # Overlapping generic edge bands. Do not bake in a particular video's box.
+    for y0,y1 in ((0,.20),(.06,.22),(.78,1),(.86,1)):
+        for x0,x1 in ((0,1),(0,.7),(.2,.8),(.3,1)):
+            proposals.append((int(x0*width),int(y0*height),int((x1-x0)*width),int((y1-y0)*height)))
+    proposals = list(dict.fromkeys(proposals))
+    files = {i:[] for i in range(len(proposals))}
+    for sample, frac in enumerate((.01,.25,.5,.75,.99)):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, max(0,int((total-1)*frac)))
+        ok, frame = cap.read()
+        if not ok: continue
+        for i,(x,y,w,h) in enumerate(proposals):
+            crop = frame[max(0,y):min(height,y+h),max(0,x):min(width,x+w)]
+            if not crop.size:continue
+            name=f'candidate_{i}_{sample}.png'
+            cv2.imwrite(str(tmpdir/name),cv2.resize(crop,None,fx=3,fy=3,interpolation=cv2.INTER_CUBIC))
+            files[i].append(name)
+    cap.release()
+    texts = run_ocr(tmpdir,tmpdir/'candidates.json')
+    ranking=[]
+    for i,names in files.items():
+        parsed=[parse_scores(texts.get(n,''),team_names) for n in names]
+        # Unlabelled numbers in a stand/clock are not enough to locate an overlay.
+        hits=sum(bool(v) and mode=='team_labels' for v,mode in parsed)
+        rate=hits/max(1,len(names))
+        if hits>=3 and rate>=.6:
+            ranking.append((rate,-proposals[i][2]*proposals[i][3],i))
+    if not ranking:
+        raise ValueError('自动定位的区域没有稳定读到双方比分，请手动框选比分牌')
+    return proposals[max(ranking)[2]]
 
 
-def build_events(items: list[dict], texts: dict, start: dict,
-                 max_delta: int = 3) -> dict:
-    """把 OCR 读数序列变成得分事件（只增不减 + 一次最多 +max_delta）。"""
-    per = {}
-    for it in items:
-        txt = texts.get(it["file"], "")
-        if it["team"] == "all":
-            # 整条横条：按阅读顺序取前两个数字（左=主队、右=客队）
-            nums = [int(m.group(0)) for m in re.finditer(r"\d{1,3}", txt or "")]
-            if len(nums) >= 2:
-                per.setdefault("home", []).append((it["t"], nums[0]))
-                per.setdefault("away", []).append((it["t"], nums[1]))
-            elif len(nums) == 1:
-                per.setdefault("home", []).append((it["t"], nums[0]))
-            continue
-        v = parse_number(txt)
-        if v is None:
-            continue
-        per.setdefault(it["team"], []).append((it["t"], v))
-    events, bad = [], []
-    final = {}
-    for team in ("home", "away"):
-        seq = sorted(per.get(team) or [])
-        if not seq:
-            final[team] = start.get(team)
-            continue
-        cur = int(start.get(team, 0))
-        for t, v in seq:
-            if v < cur:
-                bad.append({"t": t, "team": team, "read": v, "prev": cur,
-                            "why": "读数回退"})
-                continue
-            if v - cur > max_delta:
-                bad.append({"t": t, "team": team, "read": v, "prev": cur,
-                            "why": "一次跳变超过 %d 分（多半是误读）" % max_delta})
-                continue
-            if v > cur:
-                events.append({"t": t, "team": team, "delta": v - cur,
-                               "value": v})
-                cur = v
-        final[team] = cur
-    events.sort(key=lambda e: e["t"])
-    return {"events": events, "rejected": bad, "final": final}
+def read_scoreboard(video, box=None, start=None, step=.5, zoom=4., max_seconds=0., team_names=None):
+    """Shared API/video OCR path. Failed reads never replace saved evidence."""
+    parent=ROOT/'out'/'tmp'
+    parent.mkdir(parents=True,exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='sbocr_',dir=parent) as tmp:
+        tmpdir=Path(tmp)
+        method='manual_box' if box is not None else 'auto_ocr_verified'
+        if box is None:
+            probe=tmpdir/'probe';probe.mkdir()
+            box=locate_scoreboard_ocr(video,probe,team_names)
+        x,y,w,h=box
+        crops=tmpdir/'crops';crops.mkdir()
+        items=grab_crops(video,{'all':[x,y,x+w,y+h]},step,zoom,crops,max_seconds)
+        if not items:raise ValueError('没有可读取的比分牌画面，请检查框选区域')
+        texts=run_ocr(crops,tmpdir/'ocr.json')
+        res=build_events(items,texts,start,team_names=team_names)
+        if res['ocr_hit']/len(items)<.5 or any(v is None for v in res['final'].values()):
+            raise ValueError('双方比分有效读数不足，请重新手动框选比分牌；未保存本次结果')
+        res.update(video=str(video),box=list(box),method=method,n_crops=len(items))
+        return res
 
 
 def main(argv=None) -> int:
@@ -150,8 +165,8 @@ def main(argv=None) -> int:
     ap.add_argument("--box-away", default=None, help="客队分区域 x0,y0,x1,y1")
     ap.add_argument("--box-all", default=None,
                     help="整条记分牌区域 x0,y0,x1,y1（推荐）：OCR 后按阅读顺序"
-                         "取前两个数字当主/客队分 —— 比逐格框更稳" )
-    ap.add_argument("--start", required=True, help="起始比分 home,away（如 27,35）")
+                         "匹配队名与比分，并排除节次/计时数字" )
+    ap.add_argument("--start", default=None, help="起始比分 home,away（如 27,35）")
     ap.add_argument("--step", type=float, default=0.5, help="抽样间隔（秒）")
     ap.add_argument("--zoom", type=float, default=4.0, help="放大倍数（OCR 关键）")
     ap.add_argument("--max-seconds", type=float, default=0.0)
@@ -167,8 +182,7 @@ def main(argv=None) -> int:
     if not boxes:
         print("[err] 至少给一个区域：--box-home 或 --box-away")
         return 2
-    hs, as_ = [int(v) for v in a.start.split(",")]
-    start = {"home": hs, "away": as_}
+    start = dict(zip(("home", "away"), map(int,a.start.split(",")))) if a.start else {}
 
     # 临时目录放在**工作区内**：系统 %TEMP% 在受限沙箱里不可写（实测被判 permission denied），
     # 而且工作区内也方便出问题时人工检查中间小图。
@@ -182,13 +196,7 @@ def main(argv=None) -> int:
         print(f"抽样 {len(items)} 张小图（{len(boxes)} 个区域）→ OCR …")
         texts = run_ocr(tmpdir, ROOT / "out" / "tmp" / "sb_ocr.json")
         res = build_events(items, texts, start)
-        res.update({"video": a.video, "boxes": boxes, "start": start,
-                    "n_crops": len(items),
-                    "ocr_hit": sum(
-                        1 for it in items
-                        if (len(re.findall(r"\d{1,3}", texts.get(it["file"], "") or "")) >= 2
-                            if it["team"] == "all"
-                            else parse_number(texts.get(it["file"], "")) is not None))})
+        res.update({"video": a.video, "boxes": boxes, "n_crops": len(items)})
         outp = Path(a.out)
         outp.parent.mkdir(parents=True, exist_ok=True)
         outp.write_text(json.dumps(res, ensure_ascii=False, indent=2),

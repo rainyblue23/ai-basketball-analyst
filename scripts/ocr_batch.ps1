@@ -1,9 +1,14 @@
 ﻿# 批量 OCR：对目录下的图片逐张用 Windows.Media.Ocr 识别，输出 JSON
-# 用法: powershell -File ocr_batch.ps1 -Dir <图片目录> -Out <结果json>
+# 用法: powershell -File ocr_batch.ps1 -Dir <图片目录> -Out <结果json> [-WithWords]
 # 为什么要批量：PowerShell 每次启动要几百毫秒，逐帧调用会慢十倍以上。
+# -WithWords：额外输出每个词的坐标（words:[{text,x,y,w,h}]）。
+#   自动定位给的框常常比真实比分条大一圈（实测 game_04：[384,64,1152,172] vs 真实
+#   [600,100,1360,180]），命中率因此从 100% 掉到 79%；有了词坐标才能把框收紧。
+#   默认不加这个开关 —— 老的调用方与单测只认 file/text 两个字段。
 param(
     [Parameter(Mandatory = $true)][string]$Dir,
-    [Parameter(Mandatory = $true)][string]$Out
+    [Parameter(Mandatory = $true)][string]$Out,
+    [switch]$WithWords
 )
 
 $ErrorActionPreference = 'Stop'
@@ -46,7 +51,25 @@ foreach ($f in $files) {
         $decoder = Await ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream)) ([Windows.Graphics.Imaging.BitmapDecoder])
         $bitmap = Await ($decoder.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
         $res = Await ($engine.RecognizeAsync($bitmap)) ([Windows.Media.Ocr.OcrResult])
-        $results.Add([pscustomobject]@{ file = $f.Name; text = $res.Text })
+        if ($WithWords) {
+            # 每个词的包围盒（ocr_batch 以前只回文本，词坐标被丢掉）
+            $words = New-Object System.Collections.Generic.List[object]
+            foreach ($line in $res.Lines) {
+                foreach ($w in $line.Words) {
+                    $r = $w.BoundingRect
+                    $words.Add([pscustomobject]@{
+                        text = $w.Text
+                        x    = [int][math]::Round($r.X)
+                        y    = [int][math]::Round($r.Y)
+                        w    = [int][math]::Round($r.Width)
+                        h    = [int][math]::Round($r.Height)
+                    })
+                }
+            }
+            $results.Add([pscustomobject]@{ file = $f.Name; text = $res.Text; words = $words })
+        } else {
+            $results.Add([pscustomobject]@{ file = $f.Name; text = $res.Text })
+        }
         $stream.Dispose()
     } catch {
         $results.Add([pscustomobject]@{ file = $f.Name; text = ""; error = "$($_.Exception.Message)" })

@@ -94,7 +94,7 @@ def main(argv=None) -> int:
     port = argv[0] if argv else "8000"
 
     env = dict(os.environ)
-    env["PYTHONPATH"] = str(SRC)
+    env["PYTHONPATH"] = os.pathsep.join([str(SRC)] + [p for p in os.environ.get("PYTHONPATH", "").split(os.pathsep) if p])
     env.setdefault("PYTHONIOENCODING", "utf-8")
     cmd = [sys.executable, "-m", "aihoop.cli", "serve", "--port", str(port)]
 
