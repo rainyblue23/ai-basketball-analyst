@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8" />
@@ -61,15 +61,12 @@
       <span class="logo">🏀</span>
       <div class="brand-text">
         <b>AI 篮球分析软件</b>
+        <small>比赛视频 → 比分 / 命中率 / 热区 / 战报</small>
       </div>
     </div>
 
-    <nav class="topnav">
-      <a v-for="m in menus" :key="m.key" :href="'#/' + m.key"
-         :class="['topnav-item', { active: route === m.key }]">
-        <span class="ico">{{ m.icon }}</span>{{ m.title }}
-      </a>
-    </nav>
+    <!-- 导航统一放在左侧栏（按「首页 / 分析流程 / 结果与产出」分组）。
+         顶栏原来又平铺了一遍同样的菜单，与侧栏重复 —— 用户反馈后已移除。 -->
 
     <div class="topbar-right">
       <!-- 后端探测结果：green = 已连后端；orange = 演示数据模式 -->
@@ -102,14 +99,19 @@
   <!-- ============ 左侧菜单 + 内容区 ============ -->
   <div class="layout">
     <aside class="sidebar">
+      <a v-for="m in menus.filter(x => x.group === 'home')" :key="m.key" :href="'#/' + m.key"
+         :class="['side-item', { active: route === m.key }]">
+        <span class="ico">{{ m.icon }}</span>
+        <span class="txt">{{ m.title }}</span>
+      </a>
       <div class="side-sec">分析流程</div>
-      <a v-for="m in menus.slice(0, 4)" :key="m.key" :href="'#/' + m.key"
+      <a v-for="m in menus.filter(x => x.group === 'flow')" :key="m.key" :href="'#/' + m.key"
          :class="['side-item', { active: route === m.key }]">
         <span class="ico">{{ m.icon }}</span>
         <span class="txt">{{ m.title }}</span>
       </a>
       <div class="side-sec">结果与产出</div>
-      <a v-for="m in menus.slice(4)" :key="m.key" :href="'#/' + m.key"
+      <a v-for="m in menus.filter(x => x.group === 'output')" :key="m.key" :href="'#/' + m.key"
          :class="['side-item', { active: route === m.key }]">
         <span class="ico">{{ m.icon }}</span>
         <span class="txt">{{ m.title }}</span>
@@ -150,19 +152,20 @@
   页面上「证据来源」卡片还是老样子，看着像后端没改 —— 其实是前端根本没换。
   改前端文件后把下面的 v= 一起 +1，就能保证浏览器一定拿到新代码。
 -->
-<script src="./api.js?v=31"></script>
-<script src="./data.js?v=31"></script>
-<script src="./court.js?v=31"></script>
-<script src="./components.js?v=31"></script>
-<script src="./pages/upload.js?v=31"></script>
-<script src="./pages/overview.js?v=31"></script>
-<script src="./pages/stats.js?v=31"></script>
-<script src="./pages/shotchart.js?v=31"></script>
-<script src="./pages/tactics.js?v=31"></script>
-<script src="./pages/highlights.js?v=31"></script>
-<script src="./pages/report.js?v=31"></script>
-<script src="./pages/review.js?v=31"></script>
-<script src="./pages/train.js?v=31"></script>
-<script src="./app.js?v=31"></script>
+<script src="./api.js?v=34"></script>
+<script src="./data.js?v=34"></script>
+<script src="./court.js?v=34"></script>
+<script src="./components.js?v=34"></script>
+<script src="./pages/home.js?v=34"></script>
+<script src="./pages/upload.js?v=34"></script>
+<script src="./pages/overview.js?v=34"></script>
+<script src="./pages/stats.js?v=34"></script>
+<script src="./pages/shotchart.js?v=34"></script>
+<script src="./pages/tactics.js?v=34"></script>
+<script src="./pages/highlights.js?v=34"></script>
+<script src="./pages/report.js?v=34"></script>
+<script src="./pages/review.js?v=34"></script>
+<script src="./pages/train.js?v=34"></script>
+<script src="./app.js?v=34"></script>
 </body>
 </html>

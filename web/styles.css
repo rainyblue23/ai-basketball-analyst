@@ -168,11 +168,11 @@ code {
   display: inline-block; min-width: 34px; text-align: center; padding: 1px 6px;
   border-radius: 5px; font-size: 11.5px; font-weight: 700; color: #fff;
 }
-.tl-badge.made { background: var(--made); }
-.tl-badge.miss { background: #c9ced6; color: #5b6472; }
+.tl-badge.made { background: var(--made); color: #052719; }
+.tl-badge.miss { background: #c9ced6; color: #3a424e; }
 .tl-badge.h { background: var(--home); }
-.tl-badge.a { background: var(--away); }
-.tl-badge.needs { background: #f5a623; }
+.tl-badge.a { background: var(--away); color: #1f2937; }
+.tl-badge.needs { background: #fff; border: 1px solid #f5a623; color: #8a5a00; }
 
 /* ---------------- 球场容器 ---------------- */
 .court-wrap { position: relative; width: 100%; }
@@ -290,3 +290,15 @@ code {
 .bar-track svg.formation-bar { width: 100%; height: 100%; display: block; }
 
 .small { font-size: 12px; line-height: 1.8; }
+
+/* ---- 首页的模块入口卡片（home.js）----
+   用户反馈：打开网页先看到一大片空白、不知道点哪里。首页给"这是什么 + 从哪开始 + 有哪些模块"。
+   卡片整块可点（<a>），hover 抬一下，避免看起来像纯文本。 */
+.home-card { display: block; text-decoration: none; color: inherit;
+  background: #f8fafc; border: 1px solid var(--line); border-radius: 10px;
+  padding: 12px 14px; transition: box-shadow .15s, transform .15s, border-color .15s; }
+.home-card:hover { border-color: var(--home); box-shadow: 0 3px 10px rgba(47, 111, 237, .12);
+  transform: translateY(-1px); }
+.home-card-head { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.home-card-ico { font-size: 17px; line-height: 1; }
+.home-card-desc { color: var(--ink-3); font-size: 12px; line-height: 1.7; margin-top: 6px; }

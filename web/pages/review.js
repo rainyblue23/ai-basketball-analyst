@@ -22,6 +22,7 @@ window.PAGES['review'] = {
     return {
       S: window.STORE,
       rows: [],                 // 本地可改判队列（复制自 game.needs_review）
+      onlyInferred: false,
       showAll: false,           // 是否把高置信度出手也列出来
       busyIdx: -1,
       localLog: [],             // 改判记录（用于答辩演示时说明写回口径）
@@ -33,18 +34,20 @@ window.PAGES['review'] = {
     game: function () { return this.S.game; },
     /** 全部出手（timeline 口径），用于「显示全部」模式 */
     allShots: function () {
-      return (this.game && this.game.timeline) || [];
+      return ((this.game && this.game.timeline) || []).map(function (s, i) {
+        return Object.assign({}, s, { _index: i });
+      });
     },
     list: function () {
-      if (this.showAll) return this.allShots;
-      return this.rows;
+      var list = this.showAll ? this.allShots : this.rows;
+      return this.onlyInferred ? list.filter(this.hasSuggestion) : list;
     },
     stats: function () {
       var total = this.allShots.length;
       var need = this.rows.length;
-      var done = this.rows.filter(function (r) { return r._corrected; }).length;
+      var done = this.localLog.length;
       return {
-        total: total, need: need, done: done, left: need - done,
+        total: total, need: need, done: done, left: need,
         rate: total ? (1 - need / Math.max(1, total)) : 1
       };
     },
@@ -94,24 +97,43 @@ window.PAGES['review'] = {
       var need = (g && g.needs_review) || [];
       this.rows = need.map(function (s) {
         // index：优先用后端给的 _index/shot_index，否则按 t 匹配 timeline 序号
-        var idx = (s.index !== undefined) ? s.index
-          : (s.shot_index !== undefined) ? s.shot_index : findIndex(timeline, s);
-        return Object.assign({}, s, { _index: idx, _corrected: false, _origin: { made: s.made, value: s.value } });
+        var explicit = s.index !== undefined ? s.index : s.shot_index;
+        var idx = Number.isInteger(explicit) && explicit >= 0 && explicit < timeline.length
+          ? explicit : findIndex(timeline, s);
+        return Object.assign({}, s, { _index: idx, _corrected: false, _origin: { made: s.made, value: s.value, result: s.result } });
       }).sort(function (a, b) { return a._index - b._index; });
 
       function findIndex(list, s) {
-        for (var i = 0; i < list.length; i++) {
-          var e = list[i];
-          if (Math.abs(Number(e.t) - Number(s.t)) < 0.001 &&
-            e.player_id === s.player_id && Number(e.value) === Number(s.value)) return i;
-        }
-        return -1;
+        // Legacy timelines round seconds to two decimals. Never choose an ambiguous match.
+        var candidates = [];
+        list.forEach(function (e, i) {
+          if (Math.abs(Number(e.t) - Number(s.t)) <= 0.005001 && e.player_id === s.player_id)
+            candidates.push(i);
+        });
+        var exact = candidates.filter(function (i) { return Number(list[i].value) === Number(s.value); });
+        if (exact.length === 1) return exact[0];
+        return candidates.length === 1 ? candidates[0] : -1;
       }
+    },
+    isUnknown: function (row) { return row.result === 'unknown' || row.made == null; },
+    unknownReason: function (row) {
+      if (!this.isUnknown(row)) return '';
+      var codes = [row.evidence].concat(row.tags || []);
+      if (codes.includes('cross_hoop_uncertain')) return '这一刻篮筐位置不够稳定，无法可靠判定。';
+      if (codes.includes('cross_rim_contact')) return '球的轨迹靠近筐沿，可能擦筐；是否进球需要人工确认。';
+      return '';
+    },
+    hasSuggestion: function (row) {
+      return this.isUnknown(row) && !this.unknownReason(row) && typeof row.suggested_made === 'boolean';
+    },
+    resultLabel: function (row) { return this.isUnknown(row) ? '结果未知' : row.made ? '命中' : '未中'; },
+    suggestionReason: function (row) {
+      return row.evidence === 'cross_extrapolated' ? '筐口轨迹缺失，依据趋势拟合推算' : '筐口轨迹缺失，依据前后位置插值推算';
     },
     teamName: function (s) { return window.D.teamName(this.game, s); },
     mmss: function (t) { return window.D.mmss(t); },
     /** 位置缩略图：court.js 的标准半场 + 该次出手标记 */
-    thumb: function (row) { return window.Court.shotThumb(row, {}); },
+    thumb: function (row) { return this.isUnknown(row) ? '' : window.Court.shotThumb(row, {}); },
     conf: function (row) { return Math.round((Number(row.confidence) || 0) * 100); },
     confType: function (row) {
       var c = Number(row.confidence) || 0;
@@ -128,8 +150,9 @@ window.PAGES['review'] = {
     /** 改判入口：value 传 1|2|3，made 传 true/false */
     async correct(row, made, value) {
       var self = this;
-      if (row._index === undefined || row._index < 0) {
-        this.$message.error('该出手在事件流中定位失败，无法提交改判');
+      if (this.busyIdx !== -1) return;
+      if (!Number.isInteger(row._index) || row._index < 0) {
+        this.$message.error('这条记录无法定位到比赛事件，请刷新后重试');
         return;
       }
       this.busyIdx = row._index;
@@ -145,14 +168,21 @@ window.PAGES['review'] = {
           this.$message.success('已提交后端改判，统计口径已写回' +
             (remote && remote.score ? ('（后端比分 ' + remote.score.home + ':' + remote.score.away + '）') : ''));
         } catch (e) {
-          this.$message.error('改判提交失败：' + e.message + '（已改为本地改判）');
+          this.$message.error('改判未保存：' + e.message + '。请重试。');
+          this.busyIdx = -1;
+          return;
         }
       } else {
         this.$message.info('演示/离线模式：本次改判只在本地重算统计口径，不会写回后端');
       }
 
       // 2) 本地写回：更新 needs_review 与 timeline，并重算比分/球队统计/热区
-      this.applyLocal(row, made, value);
+      if (persisted) {
+        try { await window.APP_LOAD_JOB(this.S.jobId); this.build(); }
+        catch (e) { this.$message.warning('改判已保存，但刷新失败，请重新载入比赛'); }
+      } else {
+        this.applyLocal(row, made, value);
+      }
       row._corrected = true;
       row.made = !!made;
       row.value = Number(value);
@@ -174,6 +204,7 @@ window.PAGES['review'] = {
           if (e === row || (e.player_id === row.player_id &&
             Math.abs(Number(e.t) - Number(row.t)) < 0.001)) {
             e.made = !!made;
+            e.result = made ? 'made' : 'missed';
             e.value = Number(value);
             e.points = made ? Number(value) : 0;
             e.source = 'manual';       // 与后端 OutcomeSource.MANUAL 对应
@@ -186,7 +217,7 @@ window.PAGES['review'] = {
       var qs = [];
       for (var p = 1; p <= (g.periods || 4); p++) qs.push({ period: p, home: 0, away: 0 });
       tl.forEach(function (e) {
-        var pts = e.made ? Number(e.points === undefined ? e.value : e.points) : 0;
+        var pts = e.result !== 'unknown' && e.counts_for_score !== false && e.made ? Number(e.points === undefined ? e.value : e.points) : 0;
         if (e.team === 'home') { h += pts; if (qs[Number(e.period || 1) - 1]) qs[Number(e.period || 1) - 1].home += pts; }
         else if (e.team === 'away') { a += pts; if (qs[Number(e.period || 1) - 1]) qs[Number(e.period || 1) - 1].away += pts; }
       });
@@ -211,7 +242,8 @@ window.PAGES['review'] = {
       tl.forEach(function (e) {
         var r = agg[e.player_id] || (agg[e.player_id] = blank(e.player_id, e.team));
         var v = Number(e.value || 2);
-        r.points += e.made ? v : 0;
+        if (e.result === 'unknown') return;
+        r.points += e.counts_for_score !== false && e.made ? v : 0;
         if (v === 1) { r.fta++; if (e.made) r.ftm++; }
         else { r.fga++; if (e.made) r.fgm++; if (v === 3) { r.tpa++; if (e.made) r.tpm++; } }
         r.shots.push({ t: e.t, x: e.x, y: e.y, made: !!e.made, value: v });
@@ -233,7 +265,8 @@ window.PAGES['review'] = {
         tl.forEach(function (e) {
           if (e.team !== side) return;
           var v = Number(e.value || 2);
-          st.points += e.made ? v : 0;
+          if (e.result === 'unknown') return;
+          st.points += e.counts_for_score !== false && e.made ? v : 0;
           if (e.made) { if (v === 1) st.ftm++; else { st.fgm++; if (v === 3) st.tpm++; } }
           if (v === 1) st.fta++; else { st.fga++; if (v === 3) st.tpa++; }
         });
@@ -251,14 +284,11 @@ window.PAGES['review'] = {
     },
 
     /** 一键批量：把所有剩余低置信度出手按「保持原判但标记为已确认」处理（演示用） */
-    confirmAll: function () {
+    confirmAll: async function () {
       var self = this;
-      var left = this.rows.filter(function (r) { return !r._corrected; });
+      var left = this.rows.filter(function (r) { return !r._corrected && !self.isUnknown(r); });
       if (!left.length) { this.$message.info('没有待处理的出手'); return; }
-      left.forEach(function (r, i) {
-        setTimeout(function () { self.correct(r, r.made, r.value); }, i * 220);
-      });
-      this.$message.success('已按「维持原判」确认 ' + left.length + ' 次出手（置信度置为 100%）');
+      for (var r of left) await self.correct(r, r.made, r.value);
     }
   },
   template: [
@@ -270,7 +300,7 @@ window.PAGES['review'] = {
     '  <template v-else>',
     '    <!-- ① 说明与统计 -->',
     '    <div class="card">',
-    '      <h3 class="card-title">人工复核 <span class="sub">数据来源：GET /api/games/{{ S.jobId }}（game.needs_review）· 改判提交 POST /api/games/{{ S.jobId }}/shots/{index}/correct</span>',
+    '      <h3 class="card-title">人工复核',
     '        <span class="grow"></span>',
     '        <el-tag :type="canSubmit ? \'success\' : \'warning\'" size="small" effect="dark">',
     '          {{ canSubmit ? \'改判将写回后端\' : \'演示模式：仅本地改判\' }}',
@@ -278,18 +308,17 @@ window.PAGES['review'] = {
     '      </h3>',
     '      <div class="grid grid-4">',
     '        <div class="kpi"><div class="k">自动识别出手</div><div class="v">{{ stats.total }}</div><div class="d">整场事件流</div></div>',
-    '        <div class="kpi"><div class="k">低置信度待复核</div><div class="v" style="color:#f5a623">{{ stats.need }}</div><div class="d">置信度 &lt; 0.6</div></div>',
+    '        <div class="kpi"><div class="k">待复核出手</div><div class="v" style="color:#f5a623">{{ stats.need }}</div><div class="d">含结果未知与系统建议</div></div>',
     '        <div class="kpi"><div class="k">已人工确认</div><div class="v" style="color:#22a06b">{{ stats.done }}</div><div class="d">本次会话内</div></div>',
-    '        <div class="kpi"><div class="k">自动判定准确率参考值</div><div class="v">{{ (stats.rate*100).toFixed(1) }}%</div><div class="d">= 1 - 待复核 / 总出手</div></div>',
+    '        <div class="kpi"><div class="k">无需复核占比</div><div class="v">{{ (stats.rate*100).toFixed(1) }}%</div><div class="d">= 1 - 待复核 / 总出手</div></div>',
     '      </div>',
     '      <div class="hint" style="margin-top:12px">',
-    '        后端计分规则引擎用<b>加权投票 + 置信度</b>融合「球穿筐 / 记分牌 OCR / 网动」多路证据，',
-    '        置信度低于阈值的出手进入本队列而不是硬判 —— 这是「可解释、可干预」的产品差异点。',
-    '        改判后<b>会写回统计口径</b>：该次出手的分值与命中重新参与比分、球队/球员统计与热区聚合，',
-    '        导出与战报随之更新（后端会把 outcome_source 标记为 <code>manual</code>）。',
+    '        系统建议尚未计入命中统计。请核对视频后逐球确认；批量维持原判会跳过结果未知的出手。',
+    '        确认后更新比赛统计。球队或分值不确定时，还需核对归属与分值。',
     '      </div>',
-    '      <div class="row" style="margin-top:10px">',
+    '      <div class="row" style="margin-top:10px;flex-wrap:wrap">',
     '        <el-switch v-model="showAll" active-text="显示全部出手（含高置信度）" />',
+    '        <el-checkbox v-model="onlyInferred">只看待确认建议</el-checkbox>',
     '        <el-button size="small" @click="build">重新载入待复核队列</el-button>',
     '        <el-button size="small" type="primary" plain :disabled="!stats.left" @click="confirmAll">批量维持原判</el-button>',
     '      </div>',
@@ -312,7 +341,7 @@ window.PAGES['review'] = {
 
     '    <!-- ② 复核列表 -->',
     '    <div class="card">',
-    '      <h3 class="card-title">待复核出手 <span class="sub">{{ showAll ? \'全部出手（\' + list.length + \' 条）\' : \'低置信度出手（\' + list.length + \' 条）\' }}</span></h3>',
+    '      <h3 class="card-title">出手列表 <span class="sub">当前筛选 {{ list.length }} 条</span></h3>',
     '      <div class="rev-row rev-head">',
     '        <div>时刻 / 节次</div><div>球员与位置</div><div>位置缩略图</div><div>当前判定</div><div>改判操作</div>',
     '      </div>',
@@ -331,15 +360,25 @@ window.PAGES['review'] = {
     '        </div>',
     '        <div v-html="thumb(row)"></div>',
     '        <div>',
-    '          <el-tag size="small" :type="row.made ? \'success\' : \'danger\'" effect="dark">',
-    '            {{ row.made ? \'命中\' : \'未中\' }} {{ row.value }} 分',
+    '          <el-tag size="small" :type="isUnknown(row) ? \'info\' : row.made ? \'success\' : \'danger\'" effect="dark">',
+    '            {{ resultLabel(row) }} {{ row.value }} 分',
     '          </el-tag>',
-    '          <div class="muted" style="font-size:12px;margin-top:6px">置信度 {{ conf(row) }}%</div>',
-    '          <div class="conf-bar"><i :style="{width: conf(row) + \'%\', background: conf(row)<40 ? \'#e5484d\' : \'#f5a623\'}"></i></div>',
+    '          <div v-if="unknownReason(row)" style="margin-top:8px">',
+    '            <div><strong>判定依据：</strong>{{ unknownReason(row) }}</div>',
+    '            <div v-if="row.crossing_t != null">建议核对 {{ mmss(row.crossing_t) }} 附近画面</div>',
+    '          </div>',
+    '          <div v-if="hasSuggestion(row)" style="margin-top:8px">',
+    '            <strong>系统建议：{{ row.suggested_made ? \'进球\' : \'未中\' }}</strong>',
+    '            <div>{{ suggestionReason(row) }}。尚未计入命中统计。</div>',
+    '            <div v-if="row.crossing_t != null">建议核对 {{ mmss(row.crossing_t) }} 附近画面</div>',
+    '          </div>',
+    '          <div v-else class="muted" style="font-size:12px;margin-top:6px">置信度 {{ conf(row) }}%</div>',
+    '          <div v-if="!hasSuggestion(row)" class="conf-bar"><i :style="{width: conf(row) + \'%\', background: conf(row)<40 ? \'#e5484d\' : \'#f5a623\'}"></i></div>',
     '          <el-tag v-if="row._corrected" size="small" type="success" effect="plain" style="margin-top:6px">已改判</el-tag>',
     '        </div>',
     '        <div>',
-    '          <div class="row" style="gap:6px">',
+    '          <el-button v-if="hasSuggestion(row)" size="small" :disabled="busyIdx !== -1" @click="correct(row, row.suggested_made, row.value)">确认此建议</el-button>',
+    '          <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px">',
     '            <el-button size="small" type="success" :loading="busyIdx===row._index" @click="correct(row, true, row.value)">判为命中</el-button>',
     '            <el-button size="small" type="danger" plain :loading="busyIdx===row._index" @click="correct(row, false, row.value)">判为未中</el-button>',
     '          </div>',
@@ -351,7 +390,7 @@ window.PAGES['review'] = {
     '          </div>',
     '        </div>',
     '      </div>',
-    '      <el-empty v-if="!list.length" :image-size="70" description="没有需要复核的出手：所有出手置信度都不低于阈值，或已全部处理" />',
+    '      <el-empty v-if="!list.length" :image-size="70" description="当前筛选下没有待复核出手" />',
     '    </div>',
 
     '    <!-- ③ 改判记录：答辩时用来说明「写回口径」 -->',
@@ -361,7 +400,7 @@ window.PAGES['review'] = {
     '        <el-table-column prop="t" label="时刻" width="90" />',
     '        <el-table-column prop="player" label="球员" width="120" />',
     '        <el-table-column label="改判前" min-width="140">',
-    '          <template #default="s">{{ s.row.before.made ? \'命中\' : \'未中\' }} {{ s.row.before.value }} 分（置信度 {{ (s.row.confidence*100).toFixed(0) }}%）</template>',
+    '          <template #default="s">{{ resultLabel(s.row.before) }} {{ s.row.before.value }} 分（置信度 {{ (s.row.confidence*100).toFixed(0) }}%）</template>',
     '        </el-table-column>',
     '        <el-table-column label="改判后" min-width="120">',
     '          <template #default="s">{{ s.row.made ? \'命中\' : \'未中\' }} {{ s.row.value }} 分</template>',

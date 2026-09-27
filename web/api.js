@@ -68,6 +68,20 @@
       .finally(t.done);
   };
 
+  API.deleteJSON = function (url, ms) {
+    var t = withTimeout(ms || 20000);
+    return fetch(url, { method: 'DELETE', signal: t.signal })
+      .then(function (r) {
+        if (r.ok) return r.json();
+        return r.json().catch(function () { return null; }).then(function (j) {
+          var msg = (j && (j.detail || j.message)) || '';
+          if (typeof msg !== 'string') { msg = JSON.stringify(msg); }
+          throw new Error(msg || ('HTTP ' + r.status + ' @ ' + url));
+        });
+      })
+      .finally(t.done);
+  };
+
   API.postJSON = function (url, body, ms) {
     var t = withTimeout(ms || 30000);
     return fetch(url, {
@@ -430,6 +444,19 @@
   API.getCalibration = function (videoPath) {
     return API.getJSON(API.base + '/api/calibrate?video_path=' +
       encodeURIComponent(videoPath), 10000);
+  };
+  /** 撤销这段视频的标定（标错了要能重来；revision 做乐观锁） */
+  API.deleteCalibration = function (videoPath, revision) {
+    return API.deleteJSON(API.base + '/api/calibrate?video_path=' +
+      encodeURIComponent(videoPath) + '&revision=' + (revision || 0));
+  };
+  /** 原片的播放地址（给标定页的 <video> 用；后端支持 Range 才能拖动定位） */
+  API.videoUrl = function (videoPath) {
+    return API.base + '/api/video?video_path=' + encodeURIComponent(videoPath);
+  };
+  /** 机器上现成的视频清单（示例素材 + 已上传）—— 新手上手第一步用 */
+  API.samples = function () {
+    return API.getJSON(API.base + '/api/samples', 20000);
   };
   /** 随机抽 N 个画面（多画面标定用）。给了 center 就抽那一时刻附近的帧
    *  —— 这几帧属于同一镜头，标点才能叠加到同一坐标系。 */

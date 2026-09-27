@@ -1,4 +1,4 @@
-﻿"""一键跑完所有自检 —— 答辩前每次改动后跑这个。
+"""一键跑完所有自检 —— 答辩前每次改动后跑这个。
 
 包含：
   1. Python 端到端自检（tests/test_plan_a.py，11 项，零第三方依赖）
@@ -18,6 +18,7 @@ Windows 上如果 PowerShell 的执行策略拦住了 .ps1，用这个 .py 入�
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -26,7 +27,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PY = sys.executable
 ENV = {
-    "PYTHONPATH": str(ROOT / "src"),
+    "PYTHONPATH": os.pathsep.join([str(ROOT / "src")] + [p for p in os.environ.get("PYTHONPATH", "").split(os.pathsep) if p]),
     # 关键：子进程强制 UTF-8 输出。否则 Windows 上子进程按 GBK 写管道，
     # 中文会变成乱码，甚至产生无法回写的替换字符（UnicodeEncodeError）。
     "PYTHONIOENCODING": "utf-8",
@@ -85,6 +86,27 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     results: list[tuple[str, bool]] = []
+    results.append(("投篮可见性回归", run("投篮可见性与遮挡单元测试",
+        [PY, "-B", "-m", "unittest", "discover", "-s", "tests", "-p", "test_shot*.py"], required=not args.quick)))
+    results.append(("外部检测报告回归", run("外部检测报告单元测试",
+        [PY, "-B", "tests/test_external_report.py"], required=not args.quick)))
+
+    results.append(("穿筐判据回归（米制下限/筐口外推）", run(
+        "穿筐判据单元测试 tests/test_cross_metric.py",
+        [PY, "-B", "tests/test_cross_metric.py"], required=not args.quick)))
+
+    # nybo 两个假进球（贴筐掠过被误判成进）的合成回归：原片已不在本机，
+    # 用几何用例固化，见 eval/ground_truth/nybo回归说明.md
+    results.append(("贴筐掠过不许判进（nybo 合成回归）", run(
+        "贴筐掠过回归 tests/test_rim_graze_nybo.py",
+        [PY, "-B", "tests/test_rim_graze_nybo.py"], required=not args.quick)))
+
+    # 「球不是质点」的净空判据：球心偏移超过 (1-球直径/筐内径)×rx 时球体压住篮圈，
+    # 不许判进 —— 真实假进球（nathan 3.40s：贴筐掠过被判成"穿过筐心"）的回归，
+    # 见 docs/假进球_nathan3.4s_2026-09-26.md
+    results.append(("球净空判据（假进球回归）", run(
+        "球净空 + 筐位不确定度单元测试 tests/test_hoop_uncertainty.py",
+        [PY, "-B", "tests/test_hoop_uncertainty.py"], required=not args.quick)))
 
     results.append(("Python 端到端自检（11 项）", run(
         "1/9 Python 端到端自检 tests/test_plan_a.py",
@@ -126,7 +148,25 @@ def main(argv=None) -> int:
     if node:
         ok1 = run("8/9 前端功能自检 web/_test.js", [node, "web/_test.js"])
         ok2 = run("8/9 前端口径校验 web/_validate.js", [node, "web/_validate.js"])
-        results.append(("前端自检", ok1 and ok2))
+        # 复核页「系统建议」的 7 项行为检查（unknown 状态、建议筛选、批量跳过未知、
+        # 保存失败不本地改判…）—— 单独一个文件，很容易在门禁里漏掉，所以显式纳入。
+        ok3 = run("8b/9 复核页建议行为检查 tests/test_review_suggestions.js",
+                  [node, "tests/test_review_suggestions.js"])
+        ok4 = run("8c/9 复核事件定位检查 tests/test_review_matching.js",
+                  [node, "tests/test_review_matching.js"])
+        # 「结果未知」的渲染口径：待确认不能显示成"未中"（徽章配色 + tooltip 文案 + 样式存在）
+        ok5 = run("8d/9 未知结果渲染检查 tests/test_unknown_style.js",
+                  [node, "tests/test_unknown_style.js"])
+        # 上传页「开始分析」的请求体契约：没标定球场时必须带 allow_no_calibration，
+        # 否则后端 JobCreate 默认 False 会直接把任务判失败（用户实测踩过：
+        # "不标定球场他就是不给分析"，而引导里写着"不标也能分析"）。
+        ok6 = run("8e/9 上传请求体契约 tests/test_upload_payload.js",
+                  [node, "tests/test_upload_payload.js"])
+        # 界面去重与首页：用户 2026-09-27 提的 5 条（标球场按钮重复、进球标注/随机种子
+        # 不该在主流程、顶栏与侧栏导航重复、要有主界面、菜单指向不存在的页）
+        ok7 = run("8f/9 界面去重与首页 tests/test_ui_home.js",
+                  [node, "tests/test_ui_home.js"])
+        results.append(("前端自检", ok1 and ok2 and ok3 and ok4 and ok5 and ok6 and ok7))
     else:
         _safe_print("\n[skip] 未找到 node，跳过前端自检（不影响后端功能）")
 

@@ -159,8 +159,13 @@ window.PAGES['overview'] = {
       var self = this;
       return rows.filter(function (e) {
         if (self.filterTeam !== 'all' && e.team !== self.filterTeam) return false;
-        if (self.filterMade === 'made' && !e.made) return false;
-        if (self.filterMade === 'miss' && e.made) return false;
+        // 「待确认」的判据与徽章/文案**共用同一个**（`resultClass` → `D.isUnknown`）：
+        // 结果未知时 made 是 null，光看 `e.result` 会把"缺 result 但结果为空"的行
+        // 漏到"未中"里、同时从"待确认"里漏掉（实测这处边界不一致）。
+        var unknown = self.resultClass(e) === 'needs';
+        if (self.filterMade === 'made' && (!e.made || unknown)) return false;
+        if (self.filterMade === 'miss' && (unknown || e.made)) return false;
+        if (self.filterMade === 'unknown' && !unknown) return false;
         return true;
       });
     },
@@ -255,6 +260,17 @@ window.PAGES['overview'] = {
   methods: {
     teamName: function (s) { return window.D.teamName(this.game, s); },
     mmss: function (t) { return window.D.mmss(t); },
+    /**
+     * 时间轴徽章配色：命中=绿、未中=灰、**待确认=橙**。
+     * 为什么单独抽一个方法：结果未知时 `e.made` 是 null（后端已显式输出 null，
+     * 不再用 false 占位），直接写 `e.made?'made':'miss'` 会把"待确认"配成"未中"的灰。
+     * 待确认沿用既有但一直没被用到的 `.needs` 样式 —— 语义就是"需要人工复核"。
+     */
+    resultClass: function (e) {
+      if (!e) return 'miss';
+      if (window.D.isUnknown(e)) return 'needs';
+      return e.made ? 'made' : 'miss';
+    },
     /** 点击事件行：有视频就 seek，没有视频只高亮 */
     gotoEvent: function (row, idx) {
       this.activeRow = idx;
@@ -353,6 +369,7 @@ window.PAGES['overview'] = {
     '            <el-radio-button label="all">全部</el-radio-button>',
     '            <el-radio-button label="made">仅命中</el-radio-button>',
     '            <el-radio-button label="miss">仅未中</el-radio-button>',
+      '            <el-radio-button label="unknown">待确认</el-radio-button>',
     '          </el-radio-group>',
     '          <el-select v-model="filterTeam" size="small" style="width:130px">',
     '            <el-option label="双方" value="all" />',
@@ -364,7 +381,7 @@ window.PAGES['overview'] = {
     '          <div v-for="(e,i) in timeline" :key="i" class="tl-row" :class="{active: activeRow===i}" @click="gotoEvent(e,i)">',
     '            <span class="t">{{ mmss(e.t) }}</span>',
     '            <span><span class="tl-badge" :class="e.team===\'home\'?\'h\':\'a\'">{{ e.team===\'home\' ? teamName(\'home\') : teamName(\'away\') }}</span>',
-    '              <span class="tl-badge" :class="e.made?\'made\':\'miss\'" style="margin-left:4px">{{ e.made ? (e.counts_for_score===false ? \'+\' + e.value + \' 未确认\' : (e.value_estimated ? \'+\' + e.value + \' 待确认\' : \'+\'+(e.points||e.value))) : \'未中\' }}</span></span>',
+    '              <span class="tl-badge" :class="resultClass(e)" style="margin-left:4px">{{ resultClass(e) === \'needs\' ? \'待确认\' : e.made ? (e.counts_for_score===false ? \'+\' + e.value + \' 未确认\' : (e.value_estimated ? \'+\' + e.value + \' 待确认\' : \'+\'+(e.points||e.value))) : \'未中\' }}</span></span>',
     '            <span class="pl">第{{ e.period }}节 {{ e.player }} · {{ e.zone }} · {{ e.value }}分出手 · {{ e.source }}</span>',
     '            <span class="mono muted" style="font-size:12px">{{ (e.confidence*100).toFixed(0) }}%</span>',
     '          </div>',

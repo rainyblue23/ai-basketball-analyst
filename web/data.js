@@ -37,9 +37,19 @@
     var m = Math.floor(t / 60), s = Math.floor(t % 60);
     return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
   };
-  // 出手结果标签
+  // 「结果未知」的唯一判据：后端对未知结果显式输出 made=null，同时 result='unknown'。
+  // 两者都要认 —— 只看 result 会把"缺 result 但结果为空"的行当成"未中"（实测这处边界
+  // 在徽章/文案/筛选之间不一致过）。徽章配色、tooltip 文案、时间轴筛选、投篮图兜底
+  // 全部走这一个判据，避免各写一套。
+  D.isUnknown = function (e) {
+    return !!e && (e.result === 'unknown' || e.made === null || e.made === undefined);
+  };
+
+  // 出手结果标签（made 为 null 表示"结果未知"，不能说成"未中"）
   D.shotLabel = function (value, made) {
-    return (made ? '命中' : '未中') + ({ 1: '罚球', 2: '两分', 3: '三分' }[value] || value + '分');
+    var head = (made === null || made === undefined) ? '待确认'
+      : (made ? '命中' : '未中');
+    return head + ({ 1: '罚球', 2: '两分', 3: '三分' }[value] || value + '分');
   };
   D.teamName = function (game, side) {
     var t = game && game.teams && game.teams[side];
@@ -184,11 +194,14 @@
   /**
    * 从 players.json / game.timeline 兜底重建投篮点集。
    * 后端没给 shotchart.json（或演示数据只有 game+players）时使用。
+   * 未知结果一律不进图（与后端 `rules.shot_chart` 的口径一致），
+   * 判据统一用 `D.isUnknown`，避免"缺 result 但结果为空"漏成红点。
    */
   D.shotsFromPlayers = function (players) {
     var pts = [];
     (players || []).forEach(function (p) {
       (p.shots || []).forEach(function (s) {
+        if (D.isUnknown(s)) return;
         pts.push({
           x: Number(s.x), y: Number(s.y), made: !!s.made, value: Number(s.value || 2),
           t: Number(s.t || 0), player_id: p.player_id, team: p.team,
@@ -200,7 +213,7 @@
   };
 
   D.shotsFromTimeline = function (game) {
-    return (game && game.timeline || []).map(function (e) {
+    return (game && game.timeline || []).filter(function(e){return !D.isUnknown(e);}).map(function (e) {
       return {
         x: Number(e.x), y: Number(e.y), made: !!e.made, value: Number(e.value || 2),
         t: Number(e.t || 0), player_id: e.player_id, team: e.team,

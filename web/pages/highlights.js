@@ -269,7 +269,7 @@ window.PAGES['highlights'] = {
     '               @error="onErr(i)" style="width:100%"></video>',
     '        <div v-else class="thumb" @click="play(c,i)">',
     '          <span>▶</span>',
-    '          <span class="lab">{{ c.made ? \'+\' + c.value + \' 分\' : \'未中\' }}</span>',
+    '          <span class="lab">{{ c.result === \'unknown\' ? \'待确认\' : c.made ? \'+\' + c.value + \' 分\' : \'未中\' }}</span>',
     '        </div>',
     '        <div class="body">',
     '          <div class="ttl">',
