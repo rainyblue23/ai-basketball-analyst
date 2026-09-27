@@ -71,6 +71,8 @@ def build_report_json(game: dict, players: list[dict], shots: list[Shot],
 def _hot_zones(shots: list[Shot], n: int = 4) -> list[dict]:
     agg: dict[str, dict] = {}
     for s in shots:
+        if s.result == "unknown":
+            continue
         z = zone_of(s.x, s.y)
         d = agg.setdefault(z, {"zone": z, "att": 0, "made": 0, "points": 0})
         d["att"] += 1
@@ -173,6 +175,9 @@ def build_report_md(game: dict, players: list[dict], shots: list[Shot],
     if any("value_estimated" in (s.tags or []) for s in shots):
         A("> ℹ 本片段的 2/3 分值是**视觉估计**（没有可用的球场标定，也没有比分牌"
           "跳变作为依据）。这些出手已经在「复核页」列出，可以手动改成 2 分或 3 分。")
+    n_outcome_unknown = sum(s.result == "unknown" for s in shots)
+    if n_outcome_unknown:
+        A(f"> 有 **{n_outcome_unknown}** 次出手的结果待确认，暂不计入命中率及得分；以下统计仅依据已有判定。")
     n_team_unknown = sum(1 for s in shots if "team_unknown" in (s.tags or []))
     if n_team_unknown:
         A(f"> ⚠️ **有 {n_team_unknown} 次进球的「哪一队进的」判不出来**：这段素材里"

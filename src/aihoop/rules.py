@@ -131,7 +131,7 @@ class Evidence:
 def fuse_outcome(evidences: Iterable[Evidence], cfg: Optional[RulesConfig] = None):
     """加权投票融合多路命中证据。
 
-    返回 (made, confidence, source)。
+    返回 (made, confidence, source)。无有效证据或票数完全相抵时 made 为 None。
     confidence = |加权票差| / 总权重，落在 [0, 1]。
     单路证据时 confidence 就是该路自身的置信度。
     """
@@ -145,7 +145,7 @@ def fuse_outcome(evidences: Iterable[Evidence], cfg: Optional[RulesConfig] = Non
     }
     evs = list(evidences)
     if not evs:
-        return False, 0.0, OutcomeSource.SYNTHETIC.value
+        return None, 0.0, OutcomeSource.SYNTHETIC.value
 
     total = 0.0
     score = 0.0
@@ -158,8 +158,10 @@ def fuse_outcome(evidences: Iterable[Evidence], cfg: Optional[RulesConfig] = Non
             score -= w
 
     if total <= 0:
-        return False, 0.0, evs[0].source
+        return None, 0.0, evs[0].source
 
+    if abs(score) < 1e-9:
+        return None, 0.0, evs[0].source
     made = score > 0
     if len(evs) == 1:
         conf = evs[0].confidence
@@ -261,26 +263,35 @@ def build_shots(attempts: list[dict],
     sb = scoreboard_events or []
     shots: list[Shot] = []
 
+    def match(edges):
+        assigned, used = {}, set()
+        for _, attempt, evidence in sorted(edges):
+            if attempt not in assigned and evidence not in used:
+                assigned[attempt] = evidence
+                used.add(evidence)
+        return assigned
+    rim_matches = match([(abs(h.t-float(a['t'])), i, j)
+                         for i,a in enumerate(attempts) for j,h in enumerate(rim_hits)
+                         if 0 <= h.t-float(a['t']) <= cfg.rim_window*4])
+    sb_matches = match([(float(event['t'])-float(a['t']), i, j)
+                        for i,a in enumerate(attempts) for j,event in enumerate(sb)
+                        if event.get('team') == a.get('team') and a.get('team')
+                        and 0.5 <= float(event['t'])-float(a['t']) <= 4.0
+                        and int(event.get('delta',0)) == (a.get('forced_value') or
+                            (1 if a.get('is_free_throw') else shot_value(a['x'],a['y'])))])
     for i, a in enumerate(attempts):
         t = float(a["t"])
         evidences: list[Evidence] = []
 
-        # 证据 1：球穿筐
-        for h in rim_hits:
-            if abs(h.t - t) <= cfg.rim_window * 4:
-                evidences.append(Evidence(OutcomeSource.BALL_THROUGH_RIM.value,
-                                          h.through, h.t, h.conf))
-                break
-        # 证据 2：记分牌跳变（出手后 0.5~4s 内）
-        for s in sb:
-            if s.get("team") == a.get("team") and 0.5 <= s["t"] - t <= 4.0:
-                exp = 1 if a.get("is_free_throw") else shot_value(a["x"], a["y"])
-                if int(s.get("delta", 0)) >= exp:
-                    evidences.append(Evidence(OutcomeSource.SCOREBOARD_OCR.value,
-                                              True, s["t"], 0.9))
-                break
+        # Evidence assignments are computed once, never reused by nearby attempts.
+        if i in rim_matches:
+            h = rim_hits[rim_matches[i]]
+            evidences.append(Evidence(OutcomeSource.BALL_THROUGH_RIM.value, h.through, h.t, h.conf))
+        if i in sb_matches:
+            event = sb[sb_matches[i]]
+            evidences.append(Evidence(OutcomeSource.SCOREBOARD_OCR.value, True, event['t'], 0.9))
         # 证据 3：先验标签（广播比分牌 / 球穿筐 / 合成数据 / 人工复核）
-        if "made" in a:
+        if a.get("made") is not None:
             src_prior = {
                 "scoreboard": OutcomeSource.BROADCAST_SCOREBOARD.value,
                 "ball_rim": OutcomeSource.BALL_THROUGH_RIM.value,
@@ -289,6 +300,8 @@ def build_shots(attempts: list[dict],
                                       float(a.get("conf", 1.0))))
 
         made, conf, src = fuse_outcome(evidences, cfg)
+        if a.get("manual") and a.get("made") is not None:
+            made, conf, src = bool(a["made"]), 1.0, OutcomeSource.MANUAL.value
 
         # 罚球既可以由 is_free_throw 标出，也可以由 forced_value==1 标出
         # （广播比分牌给出的 +1 跳变就属于后者）
@@ -304,7 +317,7 @@ def build_shots(attempts: list[dict],
         if a.get("manual"):
             src = OutcomeSource.MANUAL.value
 
-        tags = []
+        tags = list(dict.fromkeys(a.get("tags") or []))
         if conf < cfg.review_threshold:
             tags.append("needs_review")
         if value == 3:
@@ -337,18 +350,27 @@ def build_shots(attempts: list[dict],
         if not bool(a.get("counts_for_score", True)):
             tags.append("scoreboard_unconfirmed")
 
+        if made is not None:
+            tags = [tag for tag in tags if tag != "outcome_unknown"]
+        if src == OutcomeSource.MANUAL.value:
+            tags = [tag for tag in tags if tag not in {"needs_review", "low_confidence"}]
+
         shots.append(Shot(
             t=t, team=a.get("team", ""), player_id=a.get("player_id", ""),
-            x=float(a["x"]), y=float(a["y"]), value=value, made=made,
+            x=float(a["x"]), y=float(a["y"]), value=value, made=bool(made),
             counts_for_score=bool(a.get("counts_for_score", True)),
-            result=ShotResult.MADE.value if made else ShotResult.MISSED.value,
+            result=(ShotResult.UNKNOWN.value if made is None else
+                    ShotResult.MADE.value if made else ShotResult.MISSED.value),
             period=int(a.get("period", 1)), clock=float(a.get("clock", 0.0)),
             contest=float(a.get("contest", 0.0)),
             outcome_source=src, confidence=conf,
             release_frame=int(a.get("release_frame", 0)),
             clip_start=max(0.0, t - cfg.clip_pad_before),
             clip_end=t + cfg.clip_pad_after,
-            tags=tags,
+            tags=list(dict.fromkeys(tags)),
+            evidence=a.get("evidence", ""),
+            crossing_t=a.get("crossing_t"),
+            suggested_made=a.get("suggested_made"),
         ))
     return shots
 
@@ -366,6 +388,7 @@ class TeamStats:
     tpa: int = 0
     ftm: int = 0
     fta: int = 0
+    unknown: int = 0
 
     @property
     def fg_pct(self) -> float:
@@ -386,6 +409,9 @@ def compute_team_stats(shots: list[Shot], team: str) -> TeamStats:
     st = TeamStats(team=team)
     for s in shots:
         if s.team != team:
+            continue
+        if s.result == ShotResult.UNKNOWN.value:
+            st.unknown += 1
             continue
         st.points += s.score_points
         if s.value == ShotValue.FREE_THROW.value:
@@ -414,6 +440,8 @@ def compute_player_stats(shots: list[Shot],
     def row(pid: str, team: str) -> dict:
         if pid not in rows:
             p = players.get(pid)
+            if p and p.team in ("home", "away") and p.team != team:
+                raise ValueError(f"球员 {pid} 队别冲突：球员表 {p.team}，事件 {team}")
             rows[pid] = {
                 "player_id": pid,
                 "name": p.name if p else pid,
@@ -422,12 +450,17 @@ def compute_player_stats(shots: list[Shot],
                 "points": 0, "fgm": 0, "fga": 0, "tpm": 0, "tpa": 0,
                 "ftm": 0, "fta": 0,
                 "reb": 0, "ast": 0, "stl": 0, "blk": 0, "tov": 0, "pf": 0,
-                "shots": [],
+                "shots": [], "unknown": 0,
             }
+        if rows[pid]["team"] != team:
+            raise ValueError(f"球员 {pid} 在事件中存在冲突队别")
         return rows[pid]
 
     for s in shots:
         r = row(s.player_id, s.team)
+        if s.result == ShotResult.UNKNOWN.value:
+            r["unknown"] += 1
+            continue
         r["points"] += s.score_points
         if s.value == ShotValue.FREE_THROW.value:
             r["fta"] += 1
@@ -518,6 +551,7 @@ def shot_chart(shots: list[Shot], team: Optional[str] = None,
     if team:
         shots = [s for s in shots if s.team == team]
 
+    shots = [s for s in shots if s.result != ShotResult.UNKNOWN.value]
     points = [{"x": s.x, "y": s.y, "made": s.made, "value": s.value,
                "t": s.t, "player_id": s.player_id, "zone": zone_of(s.x, s.y),
                "distance": round(s.distance, 2)} for s in shots]

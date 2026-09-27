@@ -260,19 +260,87 @@ def _solve_linear(A: list[list[float]], b: list[float]) -> list[float]:
     return x
 
 
+def _normalize(pts: Sequence[Sequence[float]]) -> tuple[list[list[float]],
+                                                        list[list[float]]]:
+    """Hartley 归一化：平移到质心、缩放到平均距离 √2。返回 (归一化点, 3x3 变换)。"""
+    n = len(pts)
+    cx = sum(float(p[0]) for p in pts) / n
+    cy = sum(float(p[1]) for p in pts) / n
+    mean = sum(math.hypot(float(p[0]) - cx, float(p[1]) - cy) for p in pts) / n
+    s = (math.sqrt(2.0) / mean) if mean > 1e-12 else 1.0
+    T = [[s, 0.0, -s * cx], [0.0, s, -s * cy], [0.0, 0.0, 1.0]]
+    out = [[s * (float(p[0]) - cx), s * (float(p[1]) - cy)] for p in pts]
+    return out, T
+
+
+def _mat_mul3(A: Matrix3, B: Matrix3) -> Matrix3:
+    return [[sum(A[i][k] * B[k][j] for k in range(3)) for j in range(3)]
+            for i in range(3)]
+
+
+def _invert3(M: Matrix3) -> Matrix3:
+    det = (M[0][0] * (M[1][1] * M[2][2] - M[1][2] * M[2][1])
+           - M[0][1] * (M[1][0] * M[2][2] - M[1][2] * M[2][0])
+           + M[0][2] * (M[1][0] * M[2][1] - M[1][1] * M[2][0]))
+    if abs(det) < 1e-18:
+        raise ValueError("单应矩阵求解失败：点共线或退化，请重新选点")
+    return [[(M[1][1] * M[2][2] - M[1][2] * M[2][1]) / det,
+             (M[0][2] * M[2][1] - M[0][1] * M[2][2]) / det,
+             (M[0][1] * M[1][2] - M[0][2] * M[1][1]) / det],
+            [(M[1][2] * M[2][0] - M[1][0] * M[2][2]) / det,
+             (M[0][0] * M[2][2] - M[0][2] * M[2][0]) / det,
+             (M[0][2] * M[1][0] - M[0][0] * M[1][2]) / det],
+            [(M[1][0] * M[2][1] - M[1][1] * M[2][0]) / det,
+             (M[0][1] * M[2][0] - M[0][0] * M[2][1]) / det,
+             (M[0][0] * M[1][1] - M[0][1] * M[1][0]) / det]]
+
+
 def find_homography(src: Sequence[Sequence[float]],
                     dst: Sequence[Sequence[float]]) -> Matrix3:
-    """求 H 使得 dst ~ H @ src。至少需要 4 组点。"""
+    """求 H 使得 dst ~ H @ src。**4 个点及 4 个以上都支持**。
+
+    为什么必须支持多于 4 个点：界面上写着"同一帧里点 6 个以上、不要都在同一条线上"
+    （多点是**唯一**能发现"某个点的名称和位置对不上"的办法），但旧实现是纯方阵
+    DLT —— 只有 4 个点时方程才是方的，点 5 个以上直接
+    `IndexError: list index out of range`（实测：点 6 个 → 界面报"解算标定失败"）。
+    于是"按提示多点几个点"这条路反而必然失败，用户只能退回 4 个点，也就失去了
+    自我校验的能力。旧版（HoopAI）用的是最小二乘，n≥4 都能解 —— 这里补回来。
+
+    做法：4 个点保持原来的精确解（行为不变）；多于 4 个点时用
+    **归一化坐标 + 最小二乘**（Hartley 归一化，先按质心/尺度归一，
+    再解 (AᵀA)h = Aᵀb），这样既是超定最小二乘、数值上也稳
+    （不归一化时像素量级 1e3、米量级 1e0，条件数极差）。
+    """
     if len(src) < 4 or len(dst) != len(src):
         raise ValueError("至少需要 4 组对应点")
+    if len(src) == 4:
+        A, b = [], []
+        for (x, y), (u, v) in zip(src, dst):
+            A.append([x, y, 1, 0, 0, 0, -u * x, -u * y])
+            b.append(u)
+            A.append([0, 0, 0, x, y, 1, -v * x, -v * y])
+            b.append(v)
+        h = _solve_linear(A, b)
+        return [[h[0], h[1], h[2]], [h[3], h[4], h[5]], [h[6], h[7], 1.0]]
+
+    s_n, T_src = _normalize(src)
+    d_n, T_dst = _normalize(dst)
     A, b = [], []
-    for (x, y), (u, v) in zip(src, dst):
-        A.append([x, y, 1, 0, 0, 0, -u * x, -u * y])
+    for (x, y), (u, v) in zip(s_n, d_n):
+        A.append([x, y, 1.0, 0.0, 0.0, 0.0, -u * x, -u * y])
         b.append(u)
-        A.append([0, 0, 0, x, y, 1, -v * x, -v * y])
+        A.append([0.0, 0.0, 0.0, x, y, 1.0, -v * x, -v * y])
         b.append(v)
-    h = _solve_linear(A, b)
-    return [[h[0], h[1], h[2]], [h[3], h[4], h[5]], [h[6], h[7], 1.0]]
+    ATA = [[sum(A[r][i] * A[r][j] for r in range(len(A))) for j in range(8)]
+           for i in range(8)]
+    ATb = [sum(A[r][i] * b[r] for r in range(len(A))) for i in range(8)]
+    h = _solve_linear(ATA, ATb)
+    Hn = [[h[0], h[1], h[2]], [h[3], h[4], h[5]], [h[6], h[7], 1.0]]
+    H = _mat_mul3(_invert3(T_dst), _mat_mul3(Hn, T_src))
+    if abs(H[2][2]) < 1e-15:
+        raise ValueError("单应矩阵求解失败：点共线或退化，请重新选点")
+    k = H[2][2]
+    return [[v / k for v in H[0]], [v / k for v in H[1]], [v / k for v in H[2]]]
 
 
 def apply_homography(H: Matrix3, x: float, y: float) -> tuple[float, float]:

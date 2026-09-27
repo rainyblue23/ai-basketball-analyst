@@ -116,6 +116,9 @@ class Shot:
     clip_start: float = 0.0
     clip_end: float = 0.0
     tags: list[str] = field(default_factory=list)
+    evidence: str = ""
+    crossing_t: Optional[float] = None
+    suggested_made: Optional[bool] = None
 
     @property
     def points(self) -> int:
@@ -136,6 +139,8 @@ class Shot:
 
     def to_dict(self) -> dict:
         d = asdict(self)
+        if self.result == ShotResult.UNKNOWN.value:
+            d["made"] = None
         d["points"] = self.points
         d["score_points"] = self.score_points
         d["distance"] = round(self.distance, 3)

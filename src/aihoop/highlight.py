@@ -35,6 +35,7 @@ class Clip:
     label: str
     path: Optional[str] = None
     available: bool = False
+    result: str = "missed"
 
     def to_dict(self) -> dict:
         return self.__dict__.copy()
@@ -91,7 +92,7 @@ def make_highlights(shots: list[Shot], video_path: Optional[str],
         label = _label(s)
         clips.append(Clip(index=i, t=round(s.t, 2), start=round(start, 2),
                           end=round(end, 2), made=s.made, value=s.value,
-                          team=s.team, player_id=s.player_id, label=label))
+                          team=s.team, player_id=s.player_id, label=label, result=s.result))
 
     ff = ffmpeg_path()
     note = ""
@@ -158,7 +159,7 @@ def _label(s: Shot) -> str:
     # 分区名里常已含「三分」，避免出现「底角三分三分命中」
     if kind in zone:
         kind = ""
-    res = "命中" if s.made else "未中"
+    res = "待确认" if s.result == "unknown" else ("命中" if s.made else "未中")
     return f"第{s.period}节 {_mmss(s.t)} {s.team} {s.player_id} " \
            f"{zone}{kind}{res}"
 

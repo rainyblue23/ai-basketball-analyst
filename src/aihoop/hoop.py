@@ -24,7 +24,8 @@
 
   出手      一条轨迹出现「明显上升段」，且上升段之后落点在篮筐水平范围内
   命中      轨迹**向下穿过篮筐所在的那条水平线**，且穿越点的 x 落在篮筐内
-  不中      到了篮筐水平范围内但穿越点偏出，或者干脆没到
+  不中      连续下降穿过篮筐高度，交点明确偏出篮圈
+  待确认    飞出画面、被遮挡或篮圈边缘证据不足
 
   穿越点用相邻两帧线性插值算 —— 30fps 下球穿过篮筐往往只有 1~2 帧，
   不插值就会漏掉大量进球。
@@ -94,6 +95,20 @@ class HoopConfig:
     rim_inner: float = 0.85         # 穿越点落在篮圈内圈的判定系数
     # 只对短间隔做穿越插值；轨迹中间断了一大截时线性插值会把穿越点算飞
     cross_max_gap_s: float = 0.15
+    # 穿越时的下落速度上限（像素/秒）。物理约束：球在画面里下落不可能比这更快，
+    # 超过就说明这是插值插出来的假穿越 —— 用来兜住「轨迹有空洞时插值算飞了」。
+    max_cross_speed_px: float = 1200.0
+    # 轨迹有检测空洞时，穿越点必须落得更靠筐心才采信（越小越严）。
+    hole_rim_tighten: float = 0.8
+    # 是否允许「跨越检测空洞」的插值判进。默认**关**（与既有的严格行为一致，
+    # 见 tests/test_shot_visibility.py 里"短遮挡不许插值出进球"那条）。
+    # 为什么把它做成开关而不是直接放开：实测一段罚球素材，5 个进球里有 1 个
+    # 正好卡在这条上 —— 球在篮网后漏检 0.43s，两端点连起来下落 62px、
+    # 穿越点离筐心 18px（筐半径 31px），人工真值是"进"。放开能把召回从
+    # 4/5 提到 5/5，代价是理论上多一类"靠插值凑出来"的进球。
+    # 这是召回率 vs 精确率的取舍，需要人来定，所以留开关、默认不开。
+    allow_hole_interpolation: bool = False
+    max_track_gap_s: float = 0.6   # 长遮挡后的球不能直接当作同一次飞行
     min_shot_gap_s: float = 0.5     # 两次出手之间的最小间隔（去重；集锦里可能连续有进球）
     # 机位允许的移动幅度（占画面宽度的比例）。
     # 手持/摇摄下篮筐漂移几十像素是正常的；但超过这个比例就说明镜头在
@@ -112,8 +127,60 @@ class HoopConfig:
     # ---- 进球判定精度 ----
     max_cross_gap_s: float = 0.6      # 穿过篮筐平面上下的最大时间间隔
     min_cross_drop_frac: float = 1.0  # 最小下落距离（篮圈半高 ry 的倍数）
+    # **米制下限**：除了"ry 的倍数"，再要求下落距离 ≥ 这么多米。
+    # 为什么必须有：`ry` 是篮圈在**视向方向**上的像素尺度，篮圈接近正侧视时
+    # 它趋于 0（实测手标薄筐 ry 只有 3.9px，物理上约 4cm），于是"必须下落 1 倍 ry"
+    # 这条门槛实际只要求下落 3.9 像素 —— 同一段素材里球一帧就能走 10 像素，
+    # 门槛随标注方式漂移，这正是"出口证据差 0.16 像素就判不出来"的根因。
+    # 米制下限与标注无关：用篮板高（真实 1.05m，若检测到篮板）或篮圈半径
+    # （0.225m）反算"篮筐处 1 米 ≈ 多少像素"，再要求下落 ≥ 0.10m（约球半径 0.12m
+    # 的保守版）。它只会**收紧**门槛，不会放宽，因此不会新增误报。
+    min_cross_drop_m: float = 0.10
     min_cross_speed_px: float = 25.0  # 穿越时的最小下落速度（像素/秒）
+    # 轨迹在筐口**断掉**（球被网/板/人挡住）时，是否允许用**趋势外推**补一次穿越判定。
+    # 默认关：与 allow_hole_interpolation 一样属于策略开关，见 tests/test_shot_visibility.py
+    # 里"短遮挡不许插值出进球"那条。打开后仍有独立护栏（见 extrap_rim_inner、
+    # extrap_max_bracket_s、extrap_min_pts），并且只对"更靠近筐心"的落点放行。
+    # 实测价值：一段罚球素材里 5 个进球被判出 4 个，漏的那个正是"球在网后漏检 0.43s"，
+    # 打开后 5/5（A/B 见 docs/开源调研_提高投篮识别率_2026-09-24.md）。
+    allow_extrapolated_crossing: bool = False
+    extrap_rim_inner: float = 0.6      # 外推档的横向门槛（× rx，比正常档 0.85 更严）
+                                       # 注意：与球净空门槛取**更严者**（0.467×rx），
+                                       # 所以默认配置下真正生效的是净空那条。
+    extrap_max_bracket_s: float = 0.6  # 外推档允许的"上→下"总时长上限
+    extrap_min_pts: int = 3            # 外推至少要几个点才拟合
+    # 篮筐位置本身的不确定度（像素，横向）。None = 自动取 HoopTrack 在**该时刻附近**
+    # 的局部不确定度（原始样本相对中值滤波轨迹的残差），手工标点（常数 Hoop）按 0。
+    hoop_uncertainty_px: Optional[float] = None
+    # 局部不确定度的统计窗口（秒）。
+    hoop_uncertainty_window_s: float = 1.5
+    # 不确定度达到篮圈半径的这么多倍时，**不再判进也不判不中**，只报"结果未知"。
+    hoop_uncertainty_max_frac: float = 0.5
+    # ---- 球不是质点：净空判据 ----
+    # 球要**干净穿过**篮圈，球心必须落在 (篮圈内半径 - 球半径) 以内，也就是
+    #   偏移 ≤ (1 - 球直径/篮圈内径) × rx。
+    # 取 FIBA 尺寸（球 0.24m、篮圈内径 0.45m）→ 0.467 × rx，比原来的 rim_inner=0.85
+    # 严得多。为什么必须这样：实测 nathan 3.40s 那一球，球心相对**当时**筐心偏移
+    # 0.63×rx，球半径 16px / 筐半径 29px ≈ 0.55 —— 球体在**图像平面**上已经和篮圈
+    # 重叠（人工复核："贴着筐沿/网外掉下去"，即不中），而 0.85 的门槛把它判成了
+    # "穿过筐心"。**措辞注意**：这里是图像平面的保守判据，单目投影下"像面重叠"
+    # 既不等于也不排除三维接触，所以结论只能是"不足以支撑干净穿筐"，不能断言
+    # "一定碰到了筐"（队友侧在复核页文案上纠正过这一点，我同意）。
+    # 实测比值 16/29 = 0.55 与 0.24/0.45 = 0.53 一致，所以用物理常数而不是噪声更大的
+    # 逐帧框宽。见 docs/假进球根因_球净空判据_2026-09-27.md（根因）与
+    # docs/假进球_nathan3.4s_2026-09-26.md（首次报告，其根因段已被更正）
+    ball_diameter_m: float = 0.24
+    rim_diameter_m: float = 0.45
     max_track_turns: int = 12         # 轨迹方向变化上限，过滤噪声轨迹
+    # 方向变化**速率**上限（次/秒）。为什么还需要它：球在整段素材里常常是
+    # 连续被检出的（运球、捡球、出手是同一条轨迹），一条 10 秒的轨迹光运球
+    # 就能攒出十几次反转 —— 用"次数"当闸门会把真进球整条丢掉（实测一段
+    # 罚球素材 5 个进球全漏，而球每帧都被检出、置信度 1.0）。
+    # 噪声轨迹的特征是**又短又抖**（反转次数/秒极高），所以按速率判才对。
+    max_track_turn_rate: float = 6.0
+    # 把"球在最低点"（y 由增转减）当作切点，把一条长轨迹切成
+    # 「上升→顶点→下落」的若干条弧线。一次出手 = 一条弧线。
+    arc_split_min_px: float = 6.0     # 低于该幅度的来回抖动不算一次弧线
     # 统计轨迹方向变化时忽略的小抖动幅度（像素）。球在篮筐附近会被检出
     # 一串几像素的上下抖动，不能算成真实的转向，否则真进球会被过滤掉。
     track_turn_min_amp_px: float = 4.0
@@ -283,6 +350,7 @@ class HoopTrack:
     # 中值滤波半径（采样点数）。球穿过篮筐时会被误检成篮圈，
     # 单点离群值会把进球判定用的篮筐中心拽偏十几像素，必须先滤掉。
     smooth_window: int = 2
+    identity_trace: list = field(default_factory=list)
 
     @property
     def coverage(self) -> float:
@@ -379,6 +447,42 @@ class HoopTrack:
         return (rng([h.cx for _t, h in self.samples]),
                 rng([h.cy for _t, h in self.samples]))
 
+    def local_uncertainty(self, t: float, window_s: float = 1.5) -> float:
+        """t 时刻附近"筐心到底在哪"的不确定度（像素，横向）。
+
+        **这不是概率置信区间**，只是"原始样本相对中值滤波轨迹的横向残差尺度"的
+        覆盖值（10%~90% 区间宽度）—— 用来判断"这一刻的筐位够不够可信到可以下结论"。
+
+        **为什么不用整段漂移量**：手持/摇摄素材里篮筐在画面里本来就一直在动
+        （实测 nathan 整段稳健漂移 31px ≈ 一个篮圈半径），但那是**真实的镜头运动**、
+        被跟踪得好好的 —— 它不代表"这一刻不知道筐心在哪"。拿它当不确定度会让所有
+        判进都被否决（实测踩过：nathan 3 个真进球全变成"未知"，召回 0/5）。
+        真正的不确定度来源是**检测抖动/离群** —— 同一段素材在 t=3.40s 附近的残差
+        只有 2.5px（0.09×rx）。
+
+        **边界**：窗口内样本不足 3 个时，这里会**退回整段残差**（不是严格局部）；
+        采样率很低或镜头切换附近时不保证局部性。这一点由队友侧指出，当前保留该回退
+        （宁可有值也不返回 0）。
+        """
+        raw = list(self.samples or [])
+        if len(raw) < 3:
+            return 0.0                       # 单点/两点：没有抖动可言（含手标筐）
+        try:
+            smoothed = self._smooth_samples()
+        except Exception:                    # noqa: BLE001  诊断量不该拖垮主流程
+            return 0.0
+        if len(smoothed) != len(raw):
+            return 0.0
+        vals = sorted(h.cx - s.cx for (rt, h), (st, s) in zip(raw, smoothed)
+                      if abs(rt - t) <= window_s)
+        if len(vals) < 3:
+            vals = sorted(h.cx - s.cx for (rt, h), (st, s) in zip(raw, smoothed))
+        if len(vals) < 3:
+            return 0.0
+        lo = vals[max(0, int(0.1 * (len(vals) - 1)))]
+        hi = vals[min(len(vals) - 1, int(0.9 * (len(vals) - 1)))]
+        return max(0.0, hi - lo)
+
     def to_dict(self) -> dict:
         dx, dy = self.drift()
         rdx, rdy = self.robust_drift()
@@ -389,8 +493,10 @@ class HoopTrack:
                 "drift_px": [round(dx, 1), round(dy, 1)],
                 "robust_drift_px": [round(rdx, 1), round(rdy, 1)],
                 "cut_times": [round(c, 3) for c in self.cut_times],
-                "samples": [[round(t, 2), h.to_dict()]
-                            for t, h in self.samples[::5]]}
+                "identity_trace": self.identity_trace,
+                "samples_complete": True,
+                "samples": [[round(t, 6), h.to_dict()]
+                            for t, h in self.samples]}
 
 def _init_hoop_from_samples(samples, cfg) -> Optional[tuple]:
     """用段内前几帧「得分最高」的候选估计初始篮筐位置。
@@ -408,6 +514,24 @@ def _init_hoop_from_samples(samples, cfg) -> Optional[tuple]:
     xs = sorted(p[0] for p in tops)
     ys = sorted(p[1] for p in tops)
     return xs[len(xs) // 2], ys[len(ys) // 2]
+
+
+def _select_rim_candidate(candidates, previous, cfg):
+    """Select one observed identity; never replace a lost target with a distant box."""
+    valid = [h for h in candidates if all(math.isfinite(v) for v in
+             (h.cx, h.cy, h.rx, h.ry, h.confidence)) and h.rx > 0 and h.ry > 0]
+    if not valid:
+        return None, "no_valid_candidate"
+    if previous is None:
+        return max(valid, key=lambda h: h.confidence), "initial_lock"
+    nearby = [h for h in valid if
+              math.hypot(h.cx-previous.cx, h.cy-previous.cy) <= cfg.max_step_px
+              and 0.45 * previous.rx <= h.rx <= 2.2 * previous.rx
+              and 0.45 * previous.ry <= h.ry <= 2.2 * previous.ry]
+    if not nearby:
+        return None, "identity_gate_rejected"
+    return min(nearby, key=lambda h: (math.hypot(h.cx-previous.cx, h.cy-previous.cy),
+                                    -h.confidence)), "identity_matched"
 
 
 def detect_hoop_track_yolo(video_path: str, weights: str,
@@ -436,6 +560,8 @@ def detect_hoop_track_yolo(video_path: str, weights: str,
     step = max(1, int(round(fps / max(0.1, sample_fps))))
     model = YOLO(weights)
     samples = []
+    identity_trace = []
+    previous = None
     i = 0
     while i < total:
         cap.set(cv2.CAP_PROP_POS_FRAMES, i)
@@ -444,20 +570,24 @@ def detect_hoop_track_yolo(video_path: str, weights: str,
             break
         r = model.predict(fr, conf=conf, imgsz=imgsz, device=device,
                           verbose=False)[0]
+        candidates = []
         if r.boxes is not None:
-            best = None
             for b in r.boxes:
                 if str(r.names[int(b.cls[0])]).lower() != "rim":
                     continue
                 x1, y1, x2, y2 = [float(v) for v in b.xyxy[0]]
-                if best is None or float(b.conf[0]) > best[0]:
-                    best = (float(b.conf[0]), x1, y1, x2, y2)
-            if best is not None:
-                _c, x1, y1, x2, y2 = best
-                samples.append((i / fps, Hoop(
-                    cx=(x1 + x2) / 2, cy=(y1 + y2) / 2,
-                    rx=max(6.0, (x2 - x1) / 2), ry=max(4.0, (y2 - y1) / 2),
-                    votes=1, confidence=1.0)))
+                if not all(math.isfinite(v) for v in (x1, y1, x2, y2)) or x2 <= x1 or y2 <= y1:
+                    continue
+                candidates.append(Hoop(cx=(x1+x2)/2, cy=(y1+y2)/2,
+                    rx=max(6.0,(x2-x1)/2), ry=max(4.0,(y2-y1)/2),
+                    votes=1, confidence=float(b.conf[0])))
+        selected, reason = _select_rim_candidate(candidates, previous, cfg)
+        identity_trace.append({"t": round(i/fps, 6), "reason": reason,
+                               "candidates": [h.to_dict() for h in candidates],
+                               "selected": selected.to_dict() if selected else None})
+        if selected is not None:
+            samples.append((i/fps, selected))
+            previous = selected
         i += step
     cap.release()
     if len(samples) < max(3, cfg.min_rim_votes):
@@ -467,7 +597,21 @@ def detect_hoop_track_yolo(video_path: str, weights: str,
             "可能是这个机位没在训练集里 —— 用 scripts/label_rim.py 点几次补数据。")
     tr = HoopTrack(samples=samples, fps=fps, duration=total / fps if fps else 0.0,
                    votes=len(samples), frames=max(1, total // step),
-                   width=W, cut_times=[])
+                   width=W, cut_times=[], identity_trace=identity_trace)
+    # 与颜色启发式那条路**同一道闸门**。为什么检测器这条路也必须查：
+    # 模型每帧只挑"最像篮筐"的那个框，镜头上大幅移动（手持/摇摄）或者
+    # 画面里出现别的橙色物体时，它会把不同物体当成同一个篮筐 —— 轨迹照样
+    # 拉得出来，但「球从篮筐上方落到下方」这套判据已经不成立了。
+    # 实测一段夜间手持素材：检测到的篮筐在 960px 宽的画面里漂了 780px，
+    # 系统仍报出「进球」，其实是巧合。**这种情况必须放弃，而不是硬判。**
+    dx, dy = tr.robust_drift()
+    if W and dx > cfg.max_drift_frac * W:
+        raise RuntimeError(
+            f"篮筐轨迹不稳定：检测到的篮筐稳健漂移 {dx:.0f} 像素"
+            f"（画面宽 {W}，阈值 {cfg.max_drift_frac:.0%}；纵向漂移 {dy:.0f}）。"
+            "这类镜头下「球从篮筐上方落到下方」这套判据不成立，"
+            "所以放弃视觉判定。把机位固定住再拍，或在画面上手工标一次篮筐"
+            "（移动镜头下按逐帧位置判定）。")
     return tr
 
 
@@ -659,14 +803,18 @@ class ShotEvent:
     t: float                       # 出手时刻（轨迹上升段起点）
     release_x: float               # 出手点（像素）
     release_y: float
-    made: bool
+    made: Optional[bool]          # None: 出手可见，但结果证据不足
     apex_y: float                  # 轨迹最高点（图像 y 越小越高）
     cross_x: Optional[float] = None   # 向下穿越篮筐水平线时的 x
     approach: float = 0.0          # 轨迹末端离篮筐中心的水平距离
     confidence: float = 0.5
     quality: float = 0.0           # 穿筐质量：下落速度/时间间隔，用于去重
     player_box: Optional[list] = None
+    crossing_t: Optional[float] = None  # 落到篮筐平面的时刻，与出手时刻分开
     cluster: int = -1              # 属于第几条轨迹（调试用）
+    # 这一球是"怎么判进"的：cross_measured = 逐帧看到穿筐；
+    # cross_extrapolated = 筐口有检测空洞、用趋势拟合补出来的（置信度已降档）。
+    evidence: str = ""
 
     def to_dict(self) -> dict:
         return {"t": round(self.t, 2), "release_x": round(self.release_x, 1),
@@ -676,7 +824,8 @@ class ShotEvent:
                 "approach": round(self.approach, 1),
                 "confidence": round(self.confidence, 3),
                 "quality": round(self.quality, 2),
-                "player_box": self.player_box, "cluster": self.cluster}
+                "player_box": self.player_box, "cluster": self.cluster,
+                "crossing_t": self.crossing_t, "evidence": self.evidence}
 
 
 def _crossing_x(a, b, y_line: float) -> Optional[float]:
@@ -688,6 +837,61 @@ def _crossing_x(a, b, y_line: float) -> Optional[float]:
         return None
     k = (y_line - a[1]) / dy
     return a[0] + (b[0] - a[0]) * k
+
+
+def _px_per_m(hoop) -> float:
+    """篮筐处「1 米 ≈ 多少像素」。优先篮板高（真实 1.05m），否则篮圈半径（0.225m）。
+
+    为什么不用 `ry`：`ry` 是篮圈在**视向方向**上的像素尺度，篮圈接近正侧视时
+    它趋于 0（实测手标薄筐只有 3.9px），拿它当尺度，门槛会随标注方式漂移。
+    返回 0 表示算不出来（此时调用方应退回到原来的像素倍数判据）。
+    """
+    board = getattr(hoop, "board", None)
+    if board:
+        try:
+            bh = float(board[3])
+        except (TypeError, ValueError, IndexError):
+            bh = 0.0
+        if bh >= 8.0:                    # 太小的框不是篮板
+            return bh / 1.05
+    try:
+        rx = float(getattr(hoop, "rx", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        rx = 0.0
+    return rx / 0.225 if rx > 1.0 else 0.0
+
+
+def _fitted_crossing(relative, ts, above_i: int, below_i: int, cfg):
+    """用「入筐→出筐」之间的**所有点**拟合一条线，求它与篮筐平面（y=0）的交点。
+
+    比"首尾两点插值"稳：中间有丢帧（球被网挡住）时，两端点连成的直线会被
+    空洞带飞，而多点拟合会跟着真实趋势走。返回 (got, crossing_t, speed) 或 None。
+    护栏：
+      * 至少 `extrap_min_pts` 个点；
+      * 斜率必须向下（y 增大）——回升的球不算穿筐；
+      * 交点时刻必须落在 bracket 内或其后很短的时间里。
+    """
+    idx = [i for i in range(above_i, below_i + 1)]
+    if len(idx) > 8:                     # 点太多时只用靠近筐口的一段
+        idx = idx[-8:]
+    pts = [(float(ts[i]), float(relative[i][0]), float(relative[i][1])) for i in idx]
+    if len(pts) < max(3, int(getattr(cfg, "extrap_min_pts", 3))):
+        return None
+    m = len(pts)
+    tbar = sum(p[0] for p in pts) / m
+    sxx = sum((p[0] - tbar) ** 2 for p in pts)
+    if sxx <= 1e-9:
+        return None
+    ybar = sum(p[2] for p in pts) / m
+    xbar = sum(p[1] for p in pts) / m
+    by = sum((p[0] - tbar) * (p[2] - ybar) for p in pts) / sxx
+    bx = sum((p[0] - tbar) * (p[1] - xbar) for p in pts) / sxx
+    if by <= 1e-6:                       # 没在往下走
+        return None
+    t_star = -ybar / by + tbar
+    if not (pts[0][0] - 0.05 <= t_star <= pts[-1][0] + 0.15):
+        return None
+    return xbar + bx * (t_star - tbar), t_star, by
 
 
 def _turns(vals, min_amp: float = 0.0) -> int:
@@ -720,6 +924,84 @@ def _turns(vals, min_amp: float = 0.0) -> int:
 
 
 
+def _arc_cuts(seg, min_amp: float) -> list[int]:
+    """找「球在最低点」的下标：y 由增转减的拐点。
+
+    为什么必须切：球在整段素材里往往是**连续**被检出的 —— 运球、捡球、出手
+    落在同一条轨迹上，而「一次出手」只是其中一段「上升→顶点→下落」的弧线。
+    不切开的话，一条 10 秒的轨迹只算**一次**出手，而且运球造成的十来次反转
+    会让它被当成噪声直接丢掉（实测：一段罚球素材球每帧都被检出、置信度 1.0，
+    5 个进球却全部漏判）。
+    """
+    if len(seg) < 3:
+        return []
+    # Track the actual extremum on every sample. Small steps must accumulate;
+    # otherwise a slow reversal moves the cut away from the physical low point.
+    cuts: list[int] = []
+    ext_i, ext_v = 0, float(seg[0].y)
+    direction = 0
+    for i in range(1, len(seg)):
+        value = float(seg[i].y)
+        if direction == 0:
+            if abs(value - ext_v) >= min_amp:
+                direction = 1 if value > ext_v else -1
+                ext_i, ext_v = i, value
+        elif direction > 0:
+            if value >= ext_v:
+                ext_i, ext_v = i, value
+            elif ext_v - value >= min_amp:
+                cuts.append(ext_i)
+                direction, ext_i, ext_v = -1, i, value
+        else:
+            if value <= ext_v:
+                ext_i, ext_v = i, value
+            elif value - ext_v >= min_amp:
+                direction, ext_i, ext_v = 1, i, value
+    return [c for c in cuts if 0 < c < len(seg) - 1]
+
+
+def _arcs(track_id: int, seg: list, min_amp: float, hoop=None):
+    """把一段轨迹按最低点切成若干条弧线；相邻弧线共用那个最低点。"""
+    if min_amp <= 0 or len(seg) < 3:
+        yield track_id, seg
+        return
+    start = 0
+    # Use the same camera-relative plane as the subsequent shot classifier.
+    from types import SimpleNamespace
+    relative = [SimpleNamespace(y=p.y - (hoop.at(p.t).cy if isinstance(hoop, HoopTrack)
+                                        else hoop.cy if hoop is not None else 0)) for p in seg]
+    for c in _arc_cuts(relative, min_amp):
+        yield track_id, seg[start:c + 1]
+        start = c
+    if start < len(seg) - 1:
+        yield track_id, seg[start:]
+
+
+def _shot_segments(tracks, hoop, max_gap, arc_split_min_px: float = 0.0):
+    """Break unsupported temporal bridges, retaining the original track ID."""
+    cuts = sorted(getattr(hoop, 'cut_times', []) or [])
+    for track_id, track in enumerate(tracks):
+        segment = []
+        for point in track:
+            # Predicted/inpainted points may draw a track, but cannot witness an event.
+            inferred = str(getattr(point, 'source', '')).lower() in {
+                'interp', 'interpolated', 'inpaint', 'inpainted', 'kalman', 'predicted'}
+            if inferred or not all(math.isfinite(float(v)) for v in (point.t, point.x, point.y)):
+                if segment:
+                    yield from _arcs(track_id, segment, arc_split_min_px, hoop)
+                segment = []
+                continue
+            if segment:
+                previous = float(segment[-1].t)
+                dt = float(point.t) - previous
+                if dt <= 0 or dt > max_gap or any(previous < c <= point.t for c in cuts):
+                    yield from _arcs(track_id, segment, arc_split_min_px, hoop)
+                    segment = []
+            segment.append(point)
+        if segment:
+            yield from _arcs(track_id, segment, arc_split_min_px, hoop)
+
+
 def detect_shots(tracks: Sequence[Sequence], hoop,
                  cfg: Optional[HoopConfig] = None) -> list[ShotEvent]:
     """从像素空间的球轨迹里找出手，并判断有没有穿筐。
@@ -732,28 +1014,55 @@ def detect_shots(tracks: Sequence[Sequence], hoop,
     """
     cfg = cfg or HoopConfig()
     get_hoop = hoop.at if isinstance(hoop, HoopTrack) else (lambda _t: hoop)
+    # 球不是质点：干净穿过要求球心落在 (1 - 球直径/筐内径) × rx 以内。
+    # 这条**与标注方式无关**（物理常数），而且比原来的 rim_inner=0.85 严得多，
+    # 见 HoopConfig.ball_diameter_m 的注释与 docs/假进球根因_球净空判据_2026-09-27.md。
+    clearance = 1.0 - (cfg.ball_diameter_m / max(1e-6, cfg.rim_diameter_m))
+
+    def hoop_unc_at(t: Optional[float]) -> float:
+        """t 时刻的筐位不确定度（像素）。不确定度大时不许判进也不许判不中。"""
+        if cfg.hoop_uncertainty_px is not None:
+            return float(cfg.hoop_uncertainty_px)
+        if t is None:
+            return 0.0
+        fn = getattr(hoop, "local_uncertainty", None)
+        if not callable(fn):
+            return 0.0                       # 常数 Hoop（手标筐）没有抖动
+        try:
+            return float(fn(t, cfg.hoop_uncertainty_window_s))
+        except Exception:                     # noqa: BLE001  诊断信息不该拖垮主流程
+            return 0.0
     out: list[ShotEvent] = []
-    for ti, tr in enumerate(tracks):
+    for ti, tr in _shot_segments(tracks, hoop, cfg.max_track_gap_s,
+                                 getattr(cfg, "arc_split_min_px", 0.0)):
         if len(tr) < cfg.min_track_pts:
             continue
         pts = [(float(c.x), float(c.y), float(c.t)) for c in tr]
         ts = [p[2] for p in pts]
         if ts[-1] - ts[0] < 0.25:
             continue
-        ys = [p[1] for p in pts]
+        # Translation from camera panning must not look like a ball rising/falling.
+        relative = [(p[0] - get_hoop(p[2]).cx, p[1] - get_hoop(p[2]).cy, p[2]) for p in pts]
+        ys = [p[1] for p in relative]
         # 方向变化太多的轨迹直接丢掉：球飞行最多「升->降」一两次，
         # 不会像噪声轨迹一样来回横跳。
+        # 但判据必须按**速率**而不是次数：长轨迹（连续跟住球的运球段）
+        # 反转次数天然就多，按次数会把真进球整条丢掉。
         y_turns = _turns(ys, getattr(cfg, "track_turn_min_amp_px", 0.0))
-        if y_turns > cfg.max_track_turns:
+        _span = max(1e-3, ts[-1] - ts[0])
+        if (y_turns > cfg.max_track_turns
+                and y_turns / _span > getattr(cfg, "max_track_turn_rate", 6.0)):
             continue
         apex_i = int(min(range(len(pts)), key=lambda i: ys[i]))
-        apex_y = ys[apex_i]
+        apex_y = pts[apex_i][1]
         hp_apex = get_hoop(ts[apex_i])
 
-        made = False
+        made = None
+        crossing_t = None
         cross_x = None
         cross_speed = 0.0
         quality = 0.0
+        evidence = ""            # "cross_measured" / "cross_extrapolated"
 
         # ---- 主判据：明确从篮筐上方穿到下方 ----
         # ---- 主判据：明确从篮筐上方穿到下方 ----
@@ -773,33 +1082,101 @@ def detect_shots(tracks: Sequence[Sequence], hoop,
                 break
         if above_i is not None and below_i is not None:
             gap = ts[below_i] - ts[above_i]
-            drop = pts[below_i][1] - pts[above_i][1]
+            drop = relative[below_i][1] - relative[above_i][1]
             hp_cross = get_hoop(ts[below_i])
-            if gap <= cfg.max_cross_gap_s and drop >= hp_cross.ry * cfg.min_cross_drop_frac:
-                hp = get_hoop(ts[below_i])
+            observed_gap = max(ts[j + 1] - ts[j] for j in range(above_i, below_i))
+            got = (_crossing_x(relative[above_i], relative[below_i], 0.0)
+                   if gap > 0 else None)
+            if got is not None:
                 # 直接在「最后一个上方点 -> 第一个下方点」之间插值。
                 # 这样即使球最后几帧贴筐/被遮，也不会把穿越点算到很远的地方。
-                xc = pts[above_i][0]
-                got = _crossing_x(pts[above_i], pts[below_i], hp.cy)
-                if got is not None:
-                    xc = got
-                cross_x = xc
-                cross_speed = drop / max(1e-3, gap)
-                if (abs(xc - hp.cx) <= hp.rx * cfg.rim_inner
-                        and cross_speed >= cfg.min_cross_speed_px):
-                    made = True
-                    quality = cross_speed / max(0.03, gap)
+                cross_speed = drop / gap
+                # 下落距离的**米制下限**：与标注方式无关（见 HoopConfig.min_cross_drop_m）。
+                # 算不出像素/米时退回原来的「ry 的倍数」，行为与改动前一致。
+                px_per_m = _px_per_m(hp_cross)
+                drop_need_px = hp_cross.ry * cfg.min_cross_drop_frac
+                if px_per_m > 0 and cfg.min_cross_drop_m > 0:
+                    drop_need_px = max(drop_need_px, cfg.min_cross_drop_m * px_per_m)
+                # 轨迹中间有**检测空洞**（球被篮网/篮板/人挡住或漏检）时，
+                # 插值出的穿越点有可能只是巧合。默认**不采信**（严格）；
+                # 打开 cfg.allow_hole_interpolation 后要求插值结果"物理上说得通"
+                # 才放行：下落速度落在球该有的区间、落点更靠筐心。
+                hole = observed_gap > cfg.cross_max_gap_s
+                credible = (
+                    0 < gap <= cfg.max_cross_gap_s
+                    and drop >= drop_need_px
+                    and cfg.min_cross_speed_px <= cross_speed
+                    <= cfg.max_cross_speed_px
+                    and (not hole or abs(got) <= hp_cross.rx
+                         * min(cfg.rim_inner, clearance) * cfg.hole_rim_tighten)
+                )
+                cross_by_extrapolation = False
+                if hole:
+                    credible = credible and bool(cfg.allow_hole_interpolation)
+                    # 空洞档的独立开关：不改"首尾插值"，而是用 bracket 内所有点
+                    # 拟合出交点，并且只对**更靠筐心**的落点放行（默认关）。
+                    if (not credible and cfg.allow_extrapolated_crossing
+                            and 0 < gap <= min(cfg.extrap_max_bracket_s, cfg.max_cross_gap_s)
+                            and drop >= drop_need_px):
+                        fit = _fitted_crossing(relative, ts, above_i, below_i, cfg)
+                        if fit is not None:
+                            got_f, t_f, speed_f = fit
+                            if (abs(got_f) <= hp_cross.rx
+                                    * min(cfg.extrap_rim_inner, clearance)
+                                    and cfg.min_cross_speed_px <= speed_f
+                                    <= cfg.max_cross_speed_px):
+                                got, crossing_t, cross_speed = got_f, t_f, speed_f
+                                credible = True
+                                cross_by_extrapolation = True
+                if credible:
+                    if not cross_by_extrapolation:
+                        fraction = -relative[above_i][1] / drop
+                        crossing_t = ts[above_i] + fraction * gap
+                    cross_x = got + get_hoop(crossing_t).cx
+                    # 两种横向门槛取更严的那个：
+                    #   ① 球不是质点 —— (1 - 球直径/筐内径) = 0.467（物理净空，见上）
+                    #   ② 各档自己的系数（rim_inner / extrap_rim_inner，可以更严）
+                    inner = min(cfg.extrap_rim_inner if cross_by_extrapolation
+                                else cfg.rim_inner, clearance)
+                    # 筐位本身的不确定度：整段漂移量**不能**用（那是镜头运动，见
+                    # HoopTrack.local_uncertainty）。只有"这一刻筐心就抖得厉害"时，
+                    # 才既不许判进也不许判不中 —— 那是凭误差下结论。
+                    unc = hoop_unc_at(crossing_t)
+                    unc_frac = unc / max(1.0, hp_cross.rx)
+                    if unc_frac >= cfg.hoop_uncertainty_max_frac:
+                        evidence = "cross_hoop_uncertain"
+                    elif abs(got) <= hp_cross.rx * inner:
+                        made = True
+                        quality = cross_speed / max(0.03, gap)
+                        evidence = ("cross_extrapolated" if cross_by_extrapolation
+                                    else "cross_interpolated" if hole
+                                    else "cross_measured")
+                    elif (not cross_by_extrapolation
+                          and abs(got) > hp_cross.rx * 1.15):
+                        # 明显从篮圈**外侧**落下去 → 判定不中
+                        made = False
+                    elif abs(got) <= hp_cross.rx + unc:
+                        # 球心的横向偏移已经大到"球体在**图像平面**上与篮圈重叠"，
+                        # 但还没到"明显从圈外落下去" → "贴筐掠过（结果未知）"。
+                        # 注意措辞：这是**图像平面**的保守判断 —— 单目投影下
+                        # "像面上重叠"既不等于也不排除三维接触（球可能从筐前面/后面
+                        # 掠过），所以这里**只敢说"可能擦筐、无法判定"，不敢断言碰到**
+                        # （这一点由队友侧在复核页文案上纠正，我同意）。
+                        # 能确定的只有一件事：这种偏移**不足以支撑"干净穿筐"的结论**，
+                        # 所以既不算进也不算不中，交人工。
+                        evidence = "cross_rim_contact"
+                # Rim-edge overlap is ambiguous; do not force a miss.
 
         # 不再用「球在筐内被采到就算进」这种弱判据 —— 静止的橙色物体
         # （球衣、手、篮网）经常正好落在筐内，会糊出假命中。
         # 命中必须满足上面的「明确从上方穿到下方」主判据。
 
         # ---- 再看有没有上升段（用来认定「这是一次出手」）----
-        rise = (max(ys[:apex_i + 1]) - apex_y) if apex_i > 0 else 0.0
+        rise = (max(ys[:apex_i + 1]) - ys[apex_i]) if apex_i > 0 else 0.0
         speed = 0.0
         if apex_i >= 2:
             dt = max(1e-3, ts[apex_i] - ts[0])
-            speed = (ys[0] - apex_y) / dt
+            speed = (ys[0] - ys[apex_i]) / dt
         saw_rise = (rise >= cfg.min_rise_px
                     and (apex_i < 2 or speed >= cfg.min_rise_speed))
 
@@ -807,12 +1184,8 @@ def detect_shots(tracks: Sequence[Sequence], hoop,
 
         if saw_rise:
             release = pts[0]
-            for i in range(0, apex_i + 1):
-                if abs(pts[i][0] - hp_apex.cx) < abs(release[0] - hp_apex.cx):
-                    release = pts[i]
-                    break
             t_rel = release[2]
-            if apex_y > hp_apex.cy + hp_apex.ry * 2.5:
+            if ys[apex_i] > hp_apex.ry * 2.5:
                 continue
             if approach > hp_apex.rx * cfg.rim_x_tol:
                 continue
@@ -830,17 +1203,28 @@ def detect_shots(tracks: Sequence[Sequence], hoop,
             conf = max(0.5, conf - 0.1)
         if made and cross_speed < cfg.min_cross_speed_px:
             conf = max(0.5, conf - 0.1)
+        # 外推档拿到的"进"要降置信度：证据来自趋势拟合，不是逐帧看到的穿越。
+        if made and evidence in {"cross_extrapolated", "cross_interpolated"}:
+            conf = max(0.5, conf - 0.1)
         out.append(ShotEvent(t=t_rel, release_x=release[0], release_y=release[1],
                              made=made, apex_y=apex_y, cross_x=cross_x,
                              approach=approach,
                              confidence=max(0.2, round(conf, 3)),
-                             quality=round(quality, 2), cluster=ti))
+                             quality=round(quality, 2), cluster=ti,
+                             crossing_t=crossing_t,
+                             evidence=evidence))
 
     # 去重：同一时刻附近只留一条；优先保留命中的、置信度高的。
     out.sort(key=lambda s: (not s.made, -s.confidence, -s.quality, s.t))
     kept: list[ShotEvent] = []
     for s in out:
-        if any(abs(s.t - k.t) < cfg.min_shot_gap_s for k in kept):
+        # Fragments can start far apart while observing the very same crossing.
+        # Distinct observed crossings take precedence over near release times.
+        def same_event(k):
+            if s.crossing_t is not None and k.crossing_t is not None:
+                return abs(s.crossing_t - k.crossing_t) < min(.2, cfg.min_shot_gap_s)
+            return abs(s.t - k.t) < cfg.min_shot_gap_s
+        if any(same_event(k) for k in kept):
             continue
         kept.append(s)
     kept.sort(key=lambda s: s.t)

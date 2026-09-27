@@ -262,7 +262,12 @@ def cmd_video(args) -> int:
     from .court import Calibration
     from .sources import VideoSource
     from .pipeline import run_pipeline
-    cal = Calibration.load(args.cal)
+    if args.cal:
+        cal = Calibration.load(args.cal)
+    elif args.fast and args.score_policy == "scoreboard":
+        cal = Calibration(name="unavailable", method="unavailable")
+    else:
+        raise ValueError("此分析需要 --cal；仅比分模式可使用 --fast --score-policy scoreboard")
     print(f"[info] 标定 {cal.name}，重投影误差 {cal.reproj_error_m} m")
     # 「篮下判进球」的阈值：默认配置 + 命令行覆盖
     sight_cfg = None
@@ -596,7 +601,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     v = sub.add_parser("video", help="真视频推理（需要 ultralytics/opencv）")
     v.add_argument("--video", required=True)
-    v.add_argument("--cal", required=True, help="标定文件 calibration.json")
+    v.add_argument("--cal", default=None, help="标定文件；仅比分模式 --fast --score-policy scoreboard 可省略")
     v.add_argument("--weights", default="yolov8n.pt")
     v.add_argument("--device", default=None, help="cpu / 0 / 0,1")
     v.add_argument("--stride", type=int, default=1,

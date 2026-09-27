@@ -40,27 +40,27 @@ def write_stats_csv(path: str, players: list[dict],
 def write_shots_csv(path: str, shots: list[Shot]) -> None:
     cols = ["t", "period", "team", "player_id", "value", "made", "points",
             "counts_for_score", "x", "y", "distance", "zone",
-            "outcome_source", "confidence", "tags"]
+            "outcome_source", "confidence", "tags", "result"]
     with open(path, "w", encoding="utf-8-sig", newline="") as f:
         w = csv.writer(f)
         w.writerow(cols)
         for s in sorted(shots, key=lambda x: x.t):
             w.writerow([round(s.t, 2), s.period, s.team, s.player_id, s.value,
-                        int(s.made), s.score_points, int(s.counts_for_score),
+                        ("" if s.result == "unknown" else int(s.made)), s.score_points, int(s.counts_for_score),
                         round(s.x, 3), round(s.y, 3),
                         round(s.distance, 3), zone_of(s.x, s.y),
-                        s.outcome_source, s.confidence, "|".join(s.tags)])
+                        s.outcome_source, s.confidence, "|".join(s.tags), s.result])
 
 
 def shots_to_csv_string(shots: list[Shot]) -> str:
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["t", "period", "team", "player_id", "value", "made", "points",
-                "x", "y", "zone"])
+                "x", "y", "zone", "result"])
     for s in sorted(shots, key=lambda x: x.t):
         w.writerow([round(s.t, 2), s.period, s.team, s.player_id, s.value,
-                    int(s.made), s.score_points, round(s.x, 3), round(s.y, 3),
-                    zone_of(s.x, s.y)])
+                    ("" if s.result == "unknown" else int(s.made)), s.score_points, round(s.x, 3), round(s.y, 3),
+                    zone_of(s.x, s.y), s.result])
     return buf.getvalue()
 
 

@@ -443,6 +443,25 @@ def value_of(cal, x: float, y: float, is_free_throw: bool = False,
         return int(default_value), "visual_estimate"
 
 
+def calibration_hoop_error_m(cal, hoop_px) -> Optional[float]:
+    """画面里的篮筐经这份标定投到地面后，离真篮筐 (0, ±1.575) 多少米。
+
+    返回 None 表示没有可用标定或投影失败。**单独给出这个数值**是为了让"保存标定"
+    能分级：投偏 4m 和投偏 90m 不是一回事 —— 前者还可以存下来让人去修（位置结论
+    一律标注未校验），后者是彻底错的东西，没有必要存。以前只有 True/False，
+    于是"误差 3.1m"与"误差 90m"被同样对待（都直接拒绝保存）。
+    """
+    if cal is None or not getattr(cal, "H", None) or hoop_px is None:
+        return None
+    try:
+        hx, hy = cal.to_court(float(hoop_px[0]), float(hoop_px[1]))
+    except Exception:  # noqa: BLE001
+        return None
+    if not (math.isfinite(hx) and math.isfinite(hy)):
+        return None
+    return min(math.hypot(hx, hy - 1.575), math.hypot(hx, hy + 1.575))
+
+
 def calibration_sane_for_scoring(cal, hoop_px,
                                  max_dist_m: float = 3.0) -> tuple[bool, str]:
     """这份标定能不能用来判「这个球值 2 分还是 3 分」？
@@ -463,7 +482,9 @@ def calibration_sane_for_scoring(cal, hoop_px,
         hx, hy = cal.to_court(float(hoop_px[0]), float(hoop_px[1]))
     except Exception as e:  # noqa: BLE001
         return False, f"标定投影失败：{type(e).__name__}: {e}"
-    d = min(math.hypot(hx, hy - 1.575), math.hypot(hx, hy + 1.575))
+    d = calibration_hoop_error_m(cal, hoop_px)
+    if d is None:
+        return False, "标定投影失败：算不出篮筐落点"
     if d > max_dist_m:
         return False, (f"标定把画面里的篮筐投到了 ({hx:.1f}, {hy:.1f})，"
                        f"离真实篮筐 {d:.1f}m —— 这份标定不属于这个视角，"
