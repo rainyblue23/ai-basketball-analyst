@@ -1099,7 +1099,7 @@ window.PAGES['upload'] = {
     '      <el-button size="small" @click="useSample" :disabled="!samples.length">用它</el-button>',
     '      <span class="hint" v-if="!samples.length">（没找到现成素材：点第 1 步的「选择本地文件」上传你自己的视频）</span>',
     '      <span class="grow"></span>',
-    '      <span class="hint" v-if="!S.backendOk" style="color:#c45656">后端没连上：先双击项目根目录的「启动后端.bat」</span>',
+    '      <span class="hint" v-if="!S.backendOk" style="color:#c45656">后端没连上：先双击项目根目录的「启动后端.bat」，并确认那个窗口一直开着（里面有「接口文档 / 健康检查 / 自动重启」三行才算起来了）。起来后本页会自动重连（每 5 秒试一次），也可以点右上角「重新探测」或按 F5。</span>',
     '    </div>',
     '  </div>',
     '  <div class="card" v-else style="padding:10px 14px">',

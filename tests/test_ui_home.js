@@ -51,7 +51,24 @@ assert.ok(!html.includes('class="topnav"') && !html.includes('topnav-item'),
 assert.ok(html.includes("x.group === 'flow'") && html.includes("x.group === 'output'"),
   '左侧栏应按 group 分组');
 assert.ok(html.includes('pages/home.js'), '首页脚本必须被加载');
-assert.ok(html.includes('?v=34'), '改前端后要 +1 缓存击穿版本号');
+// 缓存击穿：**每个** script 都要带 ?v= 参数。以前这条断言写死成 '?v=34'，
+// 一 +1 就得改测试（等于没在守纪律）；改成守"都带参数"这个真正的不变量。
+const scriptTags = html.match(/<script src="[^"]+"><\/script>/g) || [];
+assert.ok(scriptTags.length >= 10, '应当加载应用脚本');
+const noVer = scriptTags.filter(t => !/\?v=[\w.\-]+/.test(t));
+assert.equal(noVer.length, 0,
+  '每个 script 都要带 ?v= 缓存击穿参数，缺的：' + JSON.stringify(noVer));
+
+// ---- 后端自动重连（"先开页面、后起后端"不再需要手点「重新探测」）----
+const appSrc2 = read('web/app.js');
+assert.ok(/autoReconnect:\s*function/.test(appSrc2) && /stopReconnect:\s*function/.test(appSrc2),
+  'app.js 要有 autoReconnect / stopReconnect');
+assert.ok(/this\.autoReconnect\(\)/.test(appSrc2), 'mounted 里要启动自动重连');
+assert.ok(/reconnectTimer:\s*null/.test(appSrc2), '要有一个定时器句柄可以停');
+assert.ok(/stopReconnect\(\)/.test(appSrc2.split('probe: function')[1] || ''),
+  '手动「重新探测」成功后要停掉自动重连，避免重复轮询');
+assert.ok(read('web/pages/upload.js').includes('本页会自动重连'),
+  '后端未连接时的提示要告诉用户会自动重连');
 
 // ---- 首页 ----
 require(path.join(ROOT, 'web/pages/home.js'));

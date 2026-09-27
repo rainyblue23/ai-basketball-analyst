@@ -250,7 +250,8 @@
         isFileProtocol: window.API.isFileProtocol,
         currentPage: null,
         job: window.makeJob(),
-        ticking: null
+        ticking: null,
+        reconnectTimer: null
       };
     },
     computed: {
@@ -272,6 +273,7 @@
         window.API.probe().then(function (ok) {
           self.state.backendOk = ok;
           if (ok) {
+            self.stopReconnect();
             self.$message.success('后端已连接：' + window.API.base);
             bootstrap();
           } else {
@@ -293,6 +295,40 @@
           }).catch(function () {});
         }, 3000);
       },
+      /**
+       * 后端起来之前打开的页面**自动重连** —— 不用再让用户自己点「重新探测」。
+       *
+       * 为什么必须有：`backendOk` 只在页面加载时探测一次（见 bootstrap），之后不会重试。
+       * 于是"先开页面、后起后端"（或者后端正在自动重启的那两三秒）就会一直停在
+       * "未检测到后端"：上传、标篮筐、标球场按钮全是灰的，用户以为界面坏了 ——
+       * 实测反复踩到。这里每 5 秒探一次，连上就自动切回真实数据。
+       */
+      autoReconnect: function () {
+        var self = this;
+        if (self.reconnectTimer) return;
+        var tries = 0;
+        self.reconnectTimer = setInterval(function () {
+          if (self.state.backendOk) { self.stopReconnect(); return; }
+          if (++tries > 120) {                 // 约 10 分钟还没等到 → 停手，按钮仍在
+            self.stopReconnect();
+            self.$message.warning('仍未探测到后端：启动后端后点右上角「重新探测」');
+            return;
+          }
+          window.API.probe().then(function (ok) {
+            if (!ok) return;
+            self.stopReconnect();
+            self.state.backendOk = true;
+            self.$message.success('后端已连接：' + window.API.base);
+            bootstrap();
+          }).catch(function () { /* 后端还没起来，下一轮继续 */ });
+        }, 5000);
+      },
+      stopReconnect: function () {
+        if (this.reconnectTimer) {
+          clearInterval(this.reconnectTimer);
+          this.reconnectTimer = null;
+        }
+      },
       /** 供上传页调用：登记正在跑的任务 */
       registerJob: function (job) { this.job = job; this.trackJob(); }
     },
@@ -301,6 +337,7 @@
       window.addEventListener('hashchange', function () { self.syncRoute(); });
       this.syncRoute();
       bootstrap();
+      this.autoReconnect();      // 后端晚起来也能自动连上（见该方法注释）
       // 暴露给页面组件用（避免每个页面重复挂 window）
       window.APP = this;
     }
