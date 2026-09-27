@@ -370,7 +370,13 @@
   API.addManualShot = function (jobId, payload) {
     return API.postJSON(API.base + '/api/games/' + jobId + '/shots/add', payload);
   };
-  API.videoUrl = function (jobId) { return API.base + '/api/games/' + jobId + '/video'; };
+  // 注意：这里原来叫 API.videoUrl(jobId)，而文件后面**又**定义了一个
+  // API.videoUrl(videoPath)（标定页用），后一个把前一个覆盖掉 —— 于是总览页/高光页
+  // 传 jobId 进去得到 `/api/video?video_path=<jobId>` 这种永远打不开的地址（实测发现）。
+  // 现在拆成两个名字，各管一种入参：
+  //   jobVideoUrl(jobId)  → /api/games/{jobId}/video  （按任务取原视频）
+  //   videoUrl(videoPath) → /api/video?video_path=... （按文件路径取，标定页用）
+  API.jobVideoUrl = function (jobId) { return API.base + '/api/games/' + jobId + '/video'; };
   API.mediaUrl = function (jobId, path) {
     return API.base + '/api/media/' + jobId + '/' + String(path).replace(/^\/+/, '');
   };

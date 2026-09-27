@@ -172,8 +172,14 @@ def main(argv=None) -> int:
         # 这条回归是队友侧加的，之前没接进门禁 —— 不接线就等于没有保护。
         ok8 = run("8g/9 只标中心的篮筐接入 tests/test_shot_center_hint.py",
                   [PY, "-B", "tests/test_shot_center_hint.py"])
+        # 前端接线：API.videoUrl 曾被定义两次（互相覆盖）导致总览/高光页拿不到原视频；
+        # 取帧类按钮也曾只判断后端状态、没判断"表单里有没有视频"，点了只弹个提示就
+        # return，用户看到的是"没法取帧"。两条都用测试钉住。
+        ok9 = run("8h/9 前端接线检查 tests/test_frontend_wiring.js",
+                  [node, "tests/test_frontend_wiring.js"])
         results.append(("前端自检", ok1 and ok2 and ok3 and ok4 and ok5 and ok6 and ok7))
         results.append(("只标中心的篮筐接入（hoopsight）", ok8))
+        results.append(("前端接线（videoUrl / 取帧前置条件）", ok9))
     else:
         _safe_print("\n[skip] 未找到 node，跳过前端自检（不影响后端功能）")
 

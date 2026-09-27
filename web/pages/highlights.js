@@ -97,7 +97,7 @@ window.PAGES['highlights'] = {
     },
     videoSrc: function () {
       if (this.isDemo || !this.S.jobId) return '';
-      return window.API.videoUrl(this.S.jobId);
+      return window.API.jobVideoUrl(this.S.jobId);
     },
     /* ------------------------------------------------------------------
        进球确认（人工判断 → 过滤误报 + 攒训练数据）

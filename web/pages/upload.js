@@ -279,6 +279,10 @@ window.PAGES['upload'] = {
       else if (!(ry > 0)) ry = rx * 0.42;   // 上下沿没标时按篮圈扁率估算（只影响薄筐的下落下限）
       return { cx: c.x, cy: c.y, rx: rx, ry: ry, measured: rx > 0 };
     },
+    /** 表单里有没有可用视频（取帧、标点、开工都必须先有它） */
+    hasVideoPath: function () {
+      return !!String((this.form && this.form.video_path) || '').trim();
+    },
     statusTag: function () {
       return { queued: 'info', running: 'warning', done: 'success', error: 'danger' }[this.job.status] || 'info';
     },
@@ -1146,7 +1150,7 @@ window.PAGES['upload'] = {
     // ---- 在画面上标篮筐：这是「分析前你先告诉我篮筐在哪」的入口 ----
     '        <el-form-item v-if="form.source===\'video\'" label="篮筐标点">',
     '          <div class="row">',
-    '            <el-button size="small" type="primary" plain :disabled="!S.backendOk" @click="openMark">在画面上标篮筐</el-button>',
+    '            <el-button size="small" type="primary" plain :disabled="!S.backendOk || !hasVideoPath" @click="openMark">在画面上标篮筐</el-button>',
     // 这里原来还有一个「标球场」按钮，跟下面「球场标定」那一行完全重复 ——
     // 用户反馈（2026-09-27）："篮筐标点的地方就已经有标球场的选项了，后面又有一个球场标注就重复了"。
     // 现在只有「篮筐标点」管篮筐，「球场标定」管球场，各一处。
@@ -1158,6 +1162,12 @@ window.PAGES['upload'] = {
     // 这里原来还有一个「未标点（走自动检测）」标签 —— 用户反馈（2026-09-27）"把未标点删了"。
     // 没标点时不显示任何标签：没有徽章就是"还没标"，不需要多一个灰标签占地方。
     '          </div>',
+    // 用户反馈（2026-09-27）："标定球筐和球场不行，没法取帧" —— 实际原因是**表单里没有视频路径**
+    // （没上传/没填/没选示例），此时按钮以前只是弹一个一闪而过的提示就 return 了，
+    // 连取帧请求都没发出去，看起来像功能坏了。现在按钮直接灰掉并常驻说明原因。
+    '          <el-alert v-if="!hasVideoPath" type="warning" :closable="false" show-icon',
+    '            style="margin-top:6px" title="先选一段视频，按钮才会亮"',
+    '            description="取帧、标篮筐、标球场都需要先有视频：用上面的「示例视频 → 用它」、或「选择本地视频上传」、或直接在「文件路径」里填一段本机视频的绝对路径。" />',
     '          <div class="hint"><b>只点一下篮筐中心就够了</b>：框心当起点，筐位仍逐帧跟随镜头，',
     '            判进球的尺度由检测器量（实测 480p 手持素材 ~30px）。想让尺度完全由你定，',
     '            再点一下圈的左缘或右缘即可（那时就以你的为准，不再跑检测器）。</div>',
@@ -1165,12 +1175,14 @@ window.PAGES['upload'] = {
     // ---- 标球场：用户建议「不一定要标篮筐，别的有特色的点也可以」----
     '        <el-form-item v-if="form.source===\'video\'" label="球场标定">',
     '          <div class="row">',
-    '            <el-button size="small" plain :disabled="!S.backendOk" @click="openCourt">标球场（点场地特征点）</el-button>',
+    '            <el-button size="small" plain :disabled="!S.backendOk || !hasVideoPath" @click="openCourt">标球场（点场地特征点）</el-button>',
     '            <el-tag v-if="calInfo" size="small" type="success" effect="plain">',
     '              已标定：重投影误差 {{ calInfo.reproj_error_m }} m',
     '            </el-tag>',
     '            <el-tag v-else size="small" type="warning" effect="plain">未标定（也能分析：热区不出、战术图退化成「自动逐帧标定」、2/3 分只能估）</el-tag>',
     '          </div>',
+    '          <el-alert v-if="!hasVideoPath" type="info" :closable="false" show-icon style="margin-top:6px"',
+    '            title="先选一段视频才能抽帧标定" description="同上：没有视频路径就无法取帧。" />',
     '          <div class="hint">点 4 个以上<b>场地特征点</b>（四角 / 中线两端 / 中圈中心 / 罚球线中点 / 篮筐），',
     '            自动解出这段视频的球场标定。<b>热区、战术图、球场坐标全靠它</b> —— 用别的视频的标定会整片错位。',
     '            没有标定时：战术图仍会用<b>自动逐帧标定</b>算球员坐标（结果上会明确标注「位置未校验」），但热区不出。</div>',

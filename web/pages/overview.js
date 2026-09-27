@@ -170,7 +170,7 @@ window.PAGES['overview'] = {
     },
     videoUrl: function () {
       if (!this.S.jobId || this.S.demoMode) return '';
-      return window.API.videoUrl(this.S.jobId);
+      return window.API.jobVideoUrl(this.S.jobId);
     },
     /** 时间轴：来自 game.timeline，可按球队/命中与否过滤 */
     timeline: function () {
