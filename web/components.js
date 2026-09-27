@@ -151,7 +151,7 @@
       '    <div class="team home">' +
       '      <div class="nm">{{ name("home") }}</div>' +
       '      <div class="pts">{{ displayScore.home }}</div>' +
-      '      <div class="meta">投篮 {{ st("home").fgm }}/{{ st("home").fga }} · 命中率 {{ pct(st("home").fg_pct) }}<br>' +
+      '      <div class="meta">已判定投篮 {{ st("home").fgm }}/{{ st("home").fga }} · 待确认 {{ st("home").unknown || 0 }}<br>已判定记录命中率 {{ pct(st("home").fg_pct) }}（非全部出手）<br>' +
       '        三分 {{ st("home").tpm }}/{{ st("home").tpa }} · 罚球 {{ st("home").ftm }}/{{ st("home").fta }}</div>' +
       '    </div>' +
       '    <div class="mid">' +
@@ -170,7 +170,7 @@
       '    <div class="team away">' +
       '      <div class="nm">{{ name("away") }}</div>' +
       '      <div class="pts">{{ displayScore.away }}</div>' +
-      '      <div class="meta">投篮 {{ st("away").fgm }}/{{ st("away").fga }} · 命中率 {{ pct(st("away").fg_pct) }}<br>' +
+      '      <div class="meta">已判定投篮 {{ st("away").fgm }}/{{ st("away").fga }} · 待确认 {{ st("away").unknown || 0 }}<br>已判定记录命中率 {{ pct(st("away").fg_pct) }}（非全部出手）<br>' +
       '        三分 {{ st("away").tpm }}/{{ st("away").tpa }} · 罚球 {{ st("away").ftm }}/{{ st("away").fta }}</div>' +
       '    </div>' +
       '  </div>' +

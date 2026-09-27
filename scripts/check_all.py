@@ -166,7 +166,14 @@ def main(argv=None) -> int:
         # 不该在主流程、顶栏与侧栏导航重复、要有主界面、菜单指向不存在的页）
         ok7 = run("8f/9 界面去重与首页 tests/test_ui_home.js",
                   [node, "tests/test_ui_home.js"])
+        # 只标篮筐中心时的接入：hoopsight 路径原来会因为 rx=0 的单样本篮筐被
+        # `_visible_hoops` 拒绝而报 hoopsight_error（fixedcam 页面显示 1/4 的直接原因），
+        # 现在只有 rx、ry 都为正才用人手筐，否则把中心当 hoop_hint 交给检测器。
+        # 这条回归是队友侧加的，之前没接进门禁 —— 不接线就等于没有保护。
+        ok8 = run("8g/9 只标中心的篮筐接入 tests/test_shot_center_hint.py",
+                  [PY, "-B", "tests/test_shot_center_hint.py"])
         results.append(("前端自检", ok1 and ok2 and ok3 and ok4 and ok5 and ok6 and ok7))
+        results.append(("只标中心的篮筐接入（hoopsight）", ok8))
     else:
         _safe_print("\n[skip] 未找到 node，跳过前端自检（不影响后端功能）")
 

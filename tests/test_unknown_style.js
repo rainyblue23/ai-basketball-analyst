@@ -41,7 +41,7 @@ assert.equal(vm.resultClass({}), 'needs');
 
 // ---- ② 徽章文案（从模板里取真实表达式求值，而不是抄一份） --------------------
 const src = fs.readFileSync(path.join(root, 'web', 'pages', 'overview.js'), 'utf8');
-const badgeLine = src.split('\n').find(function (l) {
+const badgeLine = page.template.split('\n').find(function (l) {
   return l.indexOf('class="tl-badge" :class="resultClass(e)"') >= 0;
 });
 assert.ok(badgeLine, '时间轴徽章必须走 resultClass(e)');
@@ -50,13 +50,13 @@ const textOf = new Function('e', 'resultClass', 'return (' + expr + ');');
 const texts = ROWS.map(function (e) {
   return textOf(e, function (row) { return vm.resultClass(row); });
 });
-assert.deepEqual(texts, ['+2', '未中', '待确认', '待确认', '待确认', '+3'], '徽章文案');
+assert.deepEqual(texts, ['命中', '未中', '未知（待确认）', '未知（待确认）', '未知（待确认）', '命中'], '徽章文案');
 ROWS.forEach(function (e, i) {
-  assert.equal(texts[i] === '待确认', badges[i] === 'needs',
+  assert.equal(texts[i] === '未知（待确认）', badges[i] === 'needs',
     '第 ' + (i + 1) + ' 行：文案与徽章对"待确认"的判断必须一致');
 });
 assert.ok(!/:class="e\.made\?/.test(src), '不该再出现直接按 e.made 配色的写法');
-assert.ok(page.template.includes("{{ resultClass(e) === 'needs' ? '待确认'"),
+assert.ok(page.template.includes("{{ resultClass(e) === 'needs' ? '未知（待确认）'"),
   '文字与颜色必须使用同一未知结果判据');
 
 // ---- ③ 时间轴筛选：三种口径必须与徽章一一对应 -------------------------------
@@ -75,6 +75,29 @@ assert.deepEqual(visible('all'), [1, 2, 3, 4, 5, 6], '不过滤时全在');
 assert.deepEqual(visible('made'), [1, 6], '命中筛选只留 made=true');
 assert.deepEqual(visible('miss'), [2], '"未中"筛选不能把待确认算进来');
 assert.deepEqual(visible('unknown'), [3, 4, 5], '待确认筛选必须能找到缺 result 的行');
+
+// 总数独立于筛选；所有未知都保留，不拿已判定数冒充总出手数。
+assert.deepEqual(vm.shotCounts, {total:6, made:2, miss:1, unknown:3});
+assert.ok(page.template.indexOf('<video') < page.template.indexOf('投篮记录'));
+assert.ok(page.template.indexOf('投篮记录') < page.template.indexOf('<big-scoreboard'));
+assert.ok(!page.template.includes('showVideo'), '原视频默认可见');
+let plays = 0;
+vm.$refs = {video: {currentTime:0, duration:30, play:function(){plays++;}}};
+Object.defineProperty(vm, 'videoUrl', {value:'/video', configurable:true});
+vm.gotoEvent(ROWS[4], 0);
+assert.equal(vm.activeRow, 4, '筛选后高亮按原始记录定位');
+assert.equal(vm.$refs.video.currentTime, 0, '未加载时不能丢掉待跳转时刻');
+vm.onVideoMeta();
+assert.equal(vm.$refs.video.currentTime, 4.4);
+assert.equal(plays, 1);
+vm.gotoEvent({t:19.36, crossing_t:21.141}, 0, true);
+assert.equal(vm.$refs.video.currentTime, 20.141, '篮下入口看穿筐时刻，而不是出手时刻');
+vm.gotoEvent({t:100}, 0);
+assert.equal(vm.$refs.video.currentTime, 29.95, '过期时间不超过视频末尾');
+page.watch.videoUrl.call(vm);
+assert.equal(vm.pendingSeek, null);
+assert.equal(vm.videoReady, false);
+assert.equal(vm.activeRow, -1);
 
 // ---- ④ 投篮图兜底：未知一律不进图（与后端 rules.shot_chart 口径一致） --------
 assert.deepEqual(D.shotsFromTimeline({ timeline: ROWS }).map(function (p) { return p.t; }),

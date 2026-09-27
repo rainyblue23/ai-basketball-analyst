@@ -645,7 +645,7 @@ def _hoop_at(samples, t: float, fallback):
 # --------------------------------------------------------------------------
 def scan_hoopsight(video_path: str, cfg: Optional[SightConfig] = None,
                    hoop_cfg: Optional[HoopConfig] = None,
-                   hoop_track=None, weights: str = "",
+                   hoop_track=None, weights: str = "", hoop_hint=None,
                    device: str = "cpu",
                    progress: Optional[Callable[[float, str], None]] = None
                    ) -> SightScan:
@@ -655,7 +655,7 @@ def scan_hoopsight(video_path: str, cfg: Optional[SightConfig] = None,
 
     if hoop_track is None:
         hoop_track = detect_hoop_track(video_path, hoop_cfg or HoopConfig(),
-                                       weights=weights, device=device,
+                                       weights=weights, device=device, hint=hoop_hint,
                                        progress=progress)
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():

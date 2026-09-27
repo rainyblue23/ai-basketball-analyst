@@ -1748,7 +1748,15 @@ class VideoSource:
 
         # 有「人工标点」就直接用它，别跑检测器 —— 见 manual_hoop 的说明
         ht = None
+        hoop_hint = self.hoop_hint
         if self.manual_hoop is not None:
+            hoop_hint = (float(self.manual_hoop.cx), float(self.manual_hoop.cy))
+        have_radius = (self.manual_hoop is not None
+                       and float(self.manual_hoop.rx or 0) > 0
+                       and float(self.manual_hoop.ry or 0) > 0)
+        if self.manual_hoop is not None and not have_radius:
+            rt.detections_meta["hoop_source"] = "manual_center+detector_geometry"
+        if have_radius:
             from .hoop import Hoop, HoopTrack
             h = self.manual_hoop
             h.method = h.method or "manual"
@@ -1761,7 +1769,7 @@ class VideoSource:
             scan = scan_hoopsight(
                 self.video_path, cfg,
                 hoop_cfg=self.hoop_cfg, weights=self.hoop_weights,
-                device=(self.device or "cpu"), hoop_track=ht,
+                device=(self.device or "cpu"), hoop_track=ht, hoop_hint=hoop_hint,
                 progress=(lambda p, m: progress(0.78 + 0.06 * p, m))
                 if progress else None)
         except HoopSightError as e:
