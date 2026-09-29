@@ -474,6 +474,12 @@ def _evidence_meta(rt: RawTrack) -> dict:
         }
     if d.get("scoreboard_bar"):
         meta["scoreboard_bar"] = d["scoreboard_bar"]
+    if d.get("shot_engine"):
+        meta["shot_engine"] = d["shot_engine"]
+    if d.get("legacy_shots"):
+        legacy = d["legacy_shots"]
+        meta["shot_engine_details"] = {k: legacy.get(k) for k in
+            ("version", "config", "model_path", "model_sha256", "real_ball_frames", "rim_frames", "trace_schema", "rim_tracking")}
     if d.get("visual"):
         meta["visual"] = d["visual"]
     if d.get("hoop"):
@@ -661,8 +667,12 @@ def _shot_event(s: Shot, rt: RawTrack) -> dict:
             "made": None if s.result == "unknown" else s.made, "result": s.result,
             "points": s.score_points, "counts_for_score": s.counts_for_score,
             "value_estimated": "value_estimated" in s.tags,
+            "value_assumed": "value_assumed" in s.tags,
+            "location_unknown": "location_unknown" in s.tags,
+            "clip_start": s.clip_start, "clip_end": s.clip_end,
+            "decision_t": s.decision_t, "release_source": s.release_source,
             "x": round(s.x, 2), "y": round(s.y, 2),
-            "zone": zone_of(s.x, s.y), "confidence": s.confidence,
+            "zone": "位置未知" if "location_unknown" in s.tags else zone_of(s.x, s.y), "confidence": s.confidence,
             "source": s.outcome_source, "period": s.period,
             "tags": s.tags, "evidence": s.evidence,
-            "crossing_t": s.crossing_t, "suggested_made": s.suggested_made}
+            "crossing_t": s.crossing_t, "review_t": s.review_t, "suggested_made": s.suggested_made}

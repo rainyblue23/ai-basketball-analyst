@@ -201,7 +201,7 @@
     var pts = [];
     (players || []).forEach(function (p) {
       (p.shots || []).forEach(function (s) {
-        if (D.isUnknown(s)) return;
+        if (D.isUnknown(s) || s.location_unknown || (s.tags || []).indexOf("location_unknown") >= 0) return;
         pts.push({
           x: Number(s.x), y: Number(s.y), made: !!s.made, value: Number(s.value || 2),
           t: Number(s.t || 0), player_id: p.player_id, team: p.team,
@@ -213,7 +213,7 @@
   };
 
   D.shotsFromTimeline = function (game) {
-    return (game && game.timeline || []).filter(function(e){return !D.isUnknown(e);}).map(function (e) {
+    return (game && game.timeline || []).filter(function(e){return !D.isUnknown(e) && !e.location_unknown && (e.tags || []).indexOf("location_unknown") < 0;}).map(function (e) {
       return {
         x: Number(e.x), y: Number(e.y), made: !!e.made, value: Number(e.value || 2),
         t: Number(e.t || 0), player_id: e.player_id, team: e.team,

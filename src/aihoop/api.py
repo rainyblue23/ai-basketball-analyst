@@ -20,7 +20,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Literal
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, WebSocket, \
     WebSocketDisconnect
@@ -166,7 +166,8 @@ class JobCreate(BaseModel):
     # 报告却写 0:0"是用户最不能接受的错法（实测踩到）。
     # court/visual：一律按场上检测到的进球计分（比分牌只作参考）；
     # scoreboard：强制用比分牌带入分 + 事件。
-    score_policy: str = "auto"
+    # 比赛复盘默认按场上出手；auto / scoreboard 仍可显式选择比分牌优先。
+    score_policy: str = "court"
     # 没有球场标定时，视觉命中默认按几分计（2 或 3）
     visual_shot_value: int = 2
     # 显式声明"不要球场坐标"：允许在没有标定的情况下跑完整视觉路径，
@@ -185,6 +186,8 @@ class JobCreate(BaseModel):
     # 为什么必须在 API 里暴露：没有它，网页上传的视频只能走"橙色色块"那条
     # 线索（每帧 70 个噪声候选），传球网络必然是空的 —— 而这条路只有在
     # 专用球检测器下才可能出东西。
+    shot_engine: Literal["legacy", "geometry"] = "legacy"
+    legacy_center_lock: bool = False  # 实验：固定机位中心约束，整段回归前不默认开启
     ball_weights: str = ""
     # 推理设备："0" = 第一块 GPU，"cpu" = CPU。
     # ⚠️ 之前这里没有这个字段，所有视频任务都默认跑在 CPU 上 ——
@@ -338,6 +341,7 @@ def _run_job(job_id: str, req: JobCreate) -> None:
                                         f"{n_made} 个标为进球")
 
             src = VideoSource(req.video_path, cal, stride=max(1, req.stride),
+                              shot_engine=req.shot_engine, legacy_center_lock=req.legacy_center_lock,
                               player_stride=max(1, req.player_stride),
                               detect_players=req.detect_players,
                               score_policy=getattr(req, "score_policy", "auto"),
@@ -2585,7 +2589,7 @@ def _code_rev() -> dict:
     """源码最后修改时间 —— 和进程启动时间一比就知道服务是不是旧代码。"""
     root = Path(__file__).resolve().parent
     newest = 0.0
-    for p in root.glob("*.py"):
+    for p in root.rglob("*.py"):
         try:
             newest = max(newest, p.stat().st_mtime)
         except OSError:

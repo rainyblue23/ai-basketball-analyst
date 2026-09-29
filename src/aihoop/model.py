@@ -118,6 +118,9 @@ class Shot:
     tags: list[str] = field(default_factory=list)
     evidence: str = ""
     crossing_t: Optional[float] = None
+    review_t: Optional[float] = None  # suggested review instant; not a measured crossing
+    decision_t: Optional[float] = None
+    release_source: str = ""
     suggested_made: Optional[bool] = None
 
     @property
@@ -129,6 +132,17 @@ class Shot:
     def score_points(self) -> int:
         """计入总分的分数；视觉未确认命中会是 0。"""
         return self.value if (self.made and self.counts_for_score) else 0
+
+    @property
+    def location_known(self) -> bool:
+        """出手位置是不是**真实测量**出来的。
+
+        旧引擎没有球场标定时给的是占位坐标（`(0, -1.575)`，贴着被进攻篮筐），
+        `rules.build_shots` 会给这类出手打上 `location_unknown` 标签。
+        凡是拿 `x/y` 去算距离、分区、热区的输出，都必须先问这个属性 ——
+        否则导出的 CSV、战报 JSON、热区都会变成"所有出手都在禁区 0 米"的假数据。
+        """
+        return "location_unknown" not in self.tags
 
     @property
     def distance(self) -> float:
@@ -143,7 +157,7 @@ class Shot:
             d["made"] = None
         d["points"] = self.points
         d["score_points"] = self.score_points
-        d["distance"] = round(self.distance, 3)
+        d["distance"] = None if not self.location_known else round(self.distance, 3)
         return d
 
 

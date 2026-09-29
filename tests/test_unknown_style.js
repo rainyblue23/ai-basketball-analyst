@@ -173,3 +173,48 @@ for (const name of ['made','miss','a','h']) {
   assert.ok(ratio>=4.5, name+' text contrast '+ratio);
   console.log(name+': '+ratio.toFixed(2)+':1');
 }
+
+// 旧引擎遮挡无 crossing_t 时仍可定位判定收尾；无位置的点不能进任何兜底图。
+const hiddenShot={t:1,decision_t:4,crossing_t:null,made:true,result:'made',tags:['location_unknown']};
+const normalShot={t:2,made:true,result:'made',x:1,y:4};
+assert.equal(D.shotsFromTimeline({timeline:[hiddenShot,normalShot]}).length,1);
+assert.equal(D.shotsFromPlayers([{shots:[hiddenShot,normalShot]}]).length,1);
+const seekVm={game:{timeline:[hiddenShot]},videoUrl:'video',pendingSeek:null,$refs:{},seekVideo(){}};
+page.methods.gotoEvent.call(seekVm,hiddenShot,0,true);
+assert.equal(seekVm.pendingSeek,3,'判定收尾前一秒');
+assert.ok(page.template.includes('v-else-if="e.decision_t != null"'));
+assert.ok(page.template.includes('看判定收尾'));
+assert.ok(page.template.includes('时间来源：'));
+assert.ok(page.template.includes('分值尚未确认'));
+console.log('Legacy review navigation and location checks passed');
+
+// 跟踪摘要来自真实 game.meta，不把未记录的旧任务显示成“已锁定”。
+assert.equal(page.computed.rimTracking.call({game:{meta:{}}}),null);
+const rimSummary={lock_enabled:false,transitions:[{t:12,reason:'reacquired_far'}]};
+assert.equal(page.computed.rimTracking.call({game:{meta:{shot_engine_details:{rim_tracking:rimSummary}}}}),rimSummary);
+assert.equal(page.methods.rimTransitionLabel('reacquired_far'),'失效后在远处重新确认');
+const rimSeek={$refs:{},videoUrl:'video',pendingSeek:null,seekVideo(){}};
+page.methods.gotoRimTransition.call(rimSeek,{t:12});
+assert.equal(rimSeek.pendingSeek,11);
+assert.ok(page.template.includes('篮筐跟踪与标注反馈'));
+assert.ok(page.template.includes('rimTracking.first_confirmed.hint_relation'));
+assert.ok(page.template.includes('rimTracking.rejected_candidates'));
+assert.ok(page.template.includes('@click="gotoRimTransition(r)"'));
+console.log('Rim tracking visibility and seek checks passed');
+
+assert.ok(page.template.includes('框外不代表标注错误'));
+assert.ok(!page.template.includes('在首次确认框外，请核对标注'));
+
+const suggestedSeek={game:{timeline:[]},videoUrl:'video',pendingSeek:null,$refs:{},seekVideo(){}};
+page.methods.gotoEvent.call(suggestedSeek,{t:15.22,review_t:16.483,decision_t:16.75},0,true);
+assert.equal(suggestedSeek.pendingSeek,15.483,'核对时刻前一秒');
+page.methods.gotoEvent.call(suggestedSeek,{t:4,review_t:0},0,true);
+assert.equal(suggestedSeek.pendingSeek,0);
+page.methods.gotoEvent.call(suggestedSeek,{t:4,review_t:NaN,crossing_t:6},0,true);
+assert.equal(suggestedSeek.pendingSeek,5);
+assert.ok(page.template.includes('看待确认位置'));
+assert.equal(page.computed.rimAvailability.call({rimTracking:null}),null);
+assert.equal(page.computed.rimAvailability.call({rimTracking:{}}),null);
+assert.ok(page.template.includes('没有记录不代表没有出手'));
+assert.ok(page.template.includes('不是识别准确率'));
+console.log('Review seek priority and availability warning passed');

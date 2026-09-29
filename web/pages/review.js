@@ -116,6 +116,10 @@ window.PAGES['review'] = {
       }
     },
     isUnknown: function (row) { return row.result === 'unknown' || row.made == null; },
+    suggestionReviewTime: function (row) {
+      var t = row.review_t != null ? row.review_t : row.crossing_t;
+      return typeof t === 'number' && Number.isFinite(t) && t >= 0 ? t : null;
+    },
     unknownReason: function (row) {
       if (!this.isUnknown(row)) return '';
       var codes = [row.evidence].concat(row.tags || []);
@@ -128,6 +132,7 @@ window.PAGES['review'] = {
     },
     resultLabel: function (row) { return this.isUnknown(row) ? '结果未知' : row.made ? '命中' : '未中'; },
     suggestionReason: function (row) {
+      if (row.evidence === 'legacy_occlusion_descent') return '筐口短暂遮挡后，连续观测到球在筐下下降；尚未确认穿筐，请回看核实';
       return row.evidence === 'cross_extrapolated' ? '筐口轨迹缺失，依据趋势拟合推算' : '筐口轨迹缺失，依据前后位置插值推算';
     },
     teamName: function (s) { return window.D.teamName(this.game, s); },
@@ -370,7 +375,7 @@ window.PAGES['review'] = {
     '          <div v-if="hasSuggestion(row)" style="margin-top:8px">',
     '            <strong>系统建议：{{ row.suggested_made ? \'进球\' : \'未中\' }}</strong>',
     '            <div>{{ suggestionReason(row) }}。尚未计入命中统计。</div>',
-    '            <div v-if="row.crossing_t != null">建议核对 {{ mmss(row.crossing_t) }} 附近画面</div>',
+    '            <div v-if="suggestionReviewTime(row) != null">建议核对 {{ mmss(suggestionReviewTime(row)) }} 附近画面</div>',
     '          </div>',
     '          <div v-else class="muted" style="font-size:12px;margin-top:6px">置信度 {{ conf(row) }}%</div>',
     '          <div v-if="!hasSuggestion(row)" class="conf-bar"><i :style="{width: conf(row) + \'%\', background: conf(row)<40 ? \'#e5484d\' : \'#f5a623\'}"></i></div>',

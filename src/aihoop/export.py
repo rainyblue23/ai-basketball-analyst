@@ -45,10 +45,15 @@ def write_shots_csv(path: str, shots: list[Shot]) -> None:
         w = csv.writer(f)
         w.writerow(cols)
         for s in sorted(shots, key=lambda x: x.t):
+            # 位置未知（占位坐标）的出手：距离导出为空、区域写"位置未知"。
+            # 不能照抄 x/y 算出来的 0.0 米/禁区 —— 那是"所有出手都在篮下"的假数据，
+            # 与界面/战报里"位置未知、不给热区"的说法自相矛盾。
+            known = s.location_known
             w.writerow([round(s.t, 2), s.period, s.team, s.player_id, s.value,
                         ("" if s.result == "unknown" else int(s.made)), s.score_points, int(s.counts_for_score),
                         round(s.x, 3), round(s.y, 3),
-                        round(s.distance, 3), zone_of(s.x, s.y),
+                        (round(s.distance, 3) if known else ""),
+                        (zone_of(s.x, s.y) if known else "位置未知"),
                         s.outcome_source, s.confidence, "|".join(s.tags), s.result])
 
 
@@ -60,7 +65,7 @@ def shots_to_csv_string(shots: list[Shot]) -> str:
     for s in sorted(shots, key=lambda x: x.t):
         w.writerow([round(s.t, 2), s.period, s.team, s.player_id, s.value,
                     ("" if s.result == "unknown" else int(s.made)), s.score_points, round(s.x, 3), round(s.y, 3),
-                    zone_of(s.x, s.y), s.result])
+                    (zone_of(s.x, s.y) if s.location_known else "位置未知"), s.result])
     return buf.getvalue()
 
 

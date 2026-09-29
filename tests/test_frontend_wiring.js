@@ -85,4 +85,20 @@ assert.ok(tpl.includes('先选一段视频，按钮才会亮'),
 assert.ok(/先选一个视频/.test(up.methods.openMark.toString()), 'openMark 仍要守卫');
 assert.ok(/先选一个视频/.test(up.methods.openCourt.toString()), 'openCourt 仍要守卫');
 
-console.log('Frontend wiring: videoUrl/jobVideoUrl + 取帧前置条件 (checks passed)');
+// ---- 4) 位置未知的出手不许变成热区（报告页要有常驻说明）----
+// 后端已按同一口径挡掉（`export.py` 的 CSV、`report._hot_zones`），这里守前端：
+// 既不能自己用占位坐标兜底出热区，也要告诉用户"为什么没有热区"。
+global.window = { STORE: {} };
+require(path.join(ROOT, 'web/pages/report.js'));
+const rp = global.window.PAGES.report;
+assert.ok(rp.computed.noLocation, 'report 页要有 noLocation computed');
+const nl = rp.computed.noLocation;
+assert.equal(nl.call({ game: { timeline: [{ tags: ['location_unknown'] }, { tags: [] }] } }), 1,
+  'noLocation 应数出 location_unknown 的出手条数');
+assert.equal(nl.call({ game: {} }), 0, '没有 timeline 时为 0');
+assert.equal(nl.call({}), 0, 'game 缺失也不能崩');
+assert.ok(rp.template.includes('noLocation'),
+  '热区卡片要引用 noLocation，否则用户不知道"没有热区"是因为位置未知');
+assert.ok(/占位估计/.test(rp.template), '要有常驻说明：为什么不给热区');
+
+console.log('Frontend wiring: videoUrl/jobVideoUrl + 取帧前置条件 + 位置未知不出热区 (checks passed)');

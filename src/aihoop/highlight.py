@@ -85,8 +85,11 @@ def make_highlights(shots: list[Shot], video_path: Optional[str],
 
     clips: list[Clip] = []
     for i, s in enumerate(picks):
-        start = max(0.0, s.t - cfg.clip_pad_before)
-        end = s.t + cfg.clip_pad_after
+        # 旧产物的 0/0 表示未提供范围；合法范围必须覆盖出手时刻。
+        explicit = (s.clip_start is not None and s.clip_end is not None
+                    and 0 <= s.clip_start <= s.t < s.clip_end)
+        start = max(0.0, s.clip_start if explicit else s.t - cfg.clip_pad_before)
+        end = s.clip_end if explicit else s.t + cfg.clip_pad_after
         if duration:
             end = min(end, duration)
         label = _label(s)
@@ -154,8 +157,10 @@ def _cut(src: str, dst: Path, start: float, end: float) -> bool:
 
 
 def _label(s: Shot) -> str:
-    zone = zone_of(s.x, s.y)
+    zone = "位置未知" if "location_unknown" in s.tags else zone_of(s.x, s.y)
     kind = {1: "罚球", 2: "两分", 3: "三分"}[s.value]
+    if "value_assumed" in s.tags:
+        kind = "分值待确认"
     # 分区名里常已含「三分」，避免出现「底角三分三分命中」
     if kind in zone:
         kind = ""

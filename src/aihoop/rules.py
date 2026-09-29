@@ -295,6 +295,7 @@ def build_shots(attempts: list[dict],
             src_prior = {
                 "scoreboard": OutcomeSource.BROADCAST_SCOREBOARD.value,
                 "ball_rim": OutcomeSource.BALL_THROUGH_RIM.value,
+                "legacy_ball_rim": OutcomeSource.BALL_THROUGH_RIM.value,
             }.get(a.get("source", ""), OutcomeSource.SYNTHETIC.value)
             evidences.append(Evidence(src_prior, bool(a["made"]), t,
                                       float(a.get("conf", 1.0))))
@@ -366,10 +367,11 @@ def build_shots(attempts: list[dict],
             outcome_source=src, confidence=conf,
             release_frame=int(a.get("release_frame", 0)),
             clip_start=max(0.0, t - cfg.clip_pad_before),
-            clip_end=t + cfg.clip_pad_after,
+            clip_end=max(t + cfg.clip_pad_after, float(a.get("clip_end") or 0)),
             tags=list(dict.fromkeys(tags)),
             evidence=a.get("evidence", ""),
-            crossing_t=a.get("crossing_t"),
+            crossing_t=a.get("crossing_t"), review_t=a.get("review_t"),
+            decision_t=a.get("decision_t"), release_source=a.get("release_source", ""),
             suggested_made=a.get("suggested_made"),
         ))
     return shots
@@ -551,7 +553,8 @@ def shot_chart(shots: list[Shot], team: Optional[str] = None,
     if team:
         shots = [s for s in shots if s.team == team]
 
-    shots = [s for s in shots if s.result != ShotResult.UNKNOWN.value]
+    shots = [s for s in shots if s.result != ShotResult.UNKNOWN.value
+             and "location_unknown" not in s.tags]
     points = [{"x": s.x, "y": s.y, "made": s.made, "value": s.value,
                "t": s.t, "player_id": s.player_id, "zone": zone_of(s.x, s.y),
                "distance": round(s.distance, 2)} for s in shots]

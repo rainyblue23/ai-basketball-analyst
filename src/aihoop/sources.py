@@ -68,7 +68,11 @@ class Attempt:
     tags: list = field(default_factory=list)
     evidence: str = ""
     crossing_t: Optional[float] = None
+    review_t: Optional[float] = None  # suggested review instant; not a measured crossing
     suggested_made: Optional[bool] = None
+    decision_t: Optional[float] = None
+    release_source: str = ""
+    clip_end: Optional[float] = None  # 复核片段须覆盖判定收尾，不能只截离手后 1.5s
 
     def attach_shot_evidence(self, shot) -> None:
         """Keep inferred outcomes reviewable without treating them as observations."""
@@ -867,7 +871,12 @@ class VideoSource:
                  manual_hoop=None,
         scoreboard_events=None,
                  basket_labels=None,
-                 basket_model=None):
+                 basket_model=None,
+                 shot_engine: str = "legacy", legacy_center_lock: bool = False):
+        if shot_engine not in ("legacy", "geometry"):
+            raise ValueError("shot_engine 必须为 legacy 或 geometry")
+        self.shot_engine = shot_engine
+        self.legacy_center_lock = legacy_center_lock
         self.video_path = video_path
         self.cal = calibration
         self.weights = weights
@@ -1145,6 +1154,20 @@ class VideoSource:
             if progress:
                 progress(p, msg)
 
+        legacy = None
+        legacy_persons = []
+        if self.shot_engine == "legacy":
+            from .legacy_shots.stream import LegacyShotStream
+            from .legacy_shots.detector import Det as LegacyDet
+            hint = self.hoop_hint
+            if hint is None and self.manual_hoop is not None:
+                hint = (self.manual_hoop.cx, self.manual_hoop.cy)
+            legacy = LegacyShotStream(fps, W, manual_hoop=self.manual_hoop, hint=hint,
+                config={"detect": {"center_lock_widths": 3. if self.legacy_center_lock else 0.}})
+            rt.detections_meta["shot_engine"] = "legacy"
+            if ball_model is None:
+                rt.detections_meta["visual_error"] = "旧版投篮引擎需要球/筐联合检测权重，当前没有可用权重"
+
         # ---- 1) 逐帧检测：球员框（含球衣颜色）+ 球候选 ----
         step(0.02, "检测球员与篮球")
         # track_id -> {"n": 帧数, "bins": {粗bin: 次数}}（众数色，抗混色）
@@ -1168,6 +1191,8 @@ class VideoSource:
             if not ok:
                 break
             t = idx / fps
+            legacy_cut = False
+            legacy_detections = []
             hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             motion = cv2.absdiff(gray, prev_gray) \
@@ -1196,6 +1221,7 @@ class VideoSource:
                 mad = float(motion.mean())
                 if corr < 0.55 and mad > 25.0:
                     cuts.append(round(t, 3))
+                    legacy_cut = True
             prev_hist = hist
 
             res = None
@@ -1203,6 +1229,7 @@ class VideoSource:
             run_players = model is not None and (
                 self.player_stride <= 1 or idx % self.player_stride == 0)
             if run_players:
+                legacy_persons = []
                 # BoT-SORT（带 ReID）比默认的 ByteTrack 抗遮挡得多 ——
                 # 广播/手持画面里球员互相遮挡是常态，ByteTrack 一遮就换 ID，
                 # 实测 15 秒裂出 27 条轨迹。跟踪不稳，后面阵型/传球全乱。
@@ -1211,11 +1238,17 @@ class VideoSource:
                                   tracker=self.tracker, verbose=False)[0]
             # ---- 球：优先用专用球检测器 ----
             if ball_model is not None:
-                rb = ball_model.predict(frame, conf=self.conf, imgsz=self.imgsz,
-                                        device=self.device, verbose=False)[0]
+                predict_options = dict(conf=self.conf, imgsz=self.imgsz,
+                                       device=self.device, verbose=False)
+                if legacy is not None:
+                    predict_options.update(conf=.25, imgsz=640, iou=.5)
+                rb = ball_model.predict(frame, **predict_options)[0]
                 if rb.boxes is not None:
                     for b in rb.boxes:
                         nm = str(rb.names.get(int(b.cls[0]), "")).lower()
+                        if legacy is not None:
+                            legacy_detections.append(LegacyDet(nm, float(b.conf[0]),
+                                tuple(float(v) for v in b.xyxy[0])))
                         if "ball" in nm:
                             bx = [float(v) for v in b.xyxy[0]]
                             bw, bh = bx[2] - bx[0], bx[3] - bx[1]
@@ -1252,6 +1285,8 @@ class VideoSource:
                         if float(b.conf[0]) < self.player_conf:
                             continue          # 人用更高的置信度门槛
                         pid = f"T{tid}"
+                        if legacy is not None:
+                            legacy_persons.append(LegacyDet("person",float(b.conf[0]),tuple(xyxy),pid))
                         if pid not in rt.players:
                             rt.players[pid] = Player(pid, pid, "home")
                         player_pos.setdefault(pid, []).append(
@@ -1293,6 +1328,9 @@ class VideoSource:
                                     acc["bins"][b] = acc["bins"].get(b, 0) + c
                                 jersey_sum.setdefault(pid, {"n": 0, "bins": {}})["n"] += 1
 
+            if legacy is not None:
+                legacy.update(idx, t, legacy_detections, legacy_persons, cut=legacy_cut)
+
             # 颜色线索（YOLO 漏掉的球靠它兜底）；背景运动量已经在上面的 bg_motion 里融合。
             # 但**有专用球检测器时直接跳过** —— 广播画面下这条线索是纯噪声
             # （实测每帧 ~70 个橙色候选，球衣/地板/皮肤全中）。
@@ -1318,6 +1356,22 @@ class VideoSource:
             idx += 1
         cap.release()
         self._cuts = cuts
+        self._legacy_events = legacy.finish(idx, idx / fps) if legacy is not None else []
+        if legacy is not None:
+            import hashlib
+            meta = legacy.to_dict()
+            meta["model_path"] = self.ball_weights
+            if self.ball_weights and Path(self.ball_weights).is_file():
+                with open(self.ball_weights, "rb") as model_file:
+                    digest = hashlib.sha256()
+                    for chunk in iter(lambda: model_file.read(1024*1024), b""):
+                        digest.update(chunk)
+                meta["model_sha256"] = digest.hexdigest()
+            rt.detections_meta["legacy_shots"] = meta
+            if not legacy.rim_seen:
+                rt.detections_meta["visual_error"] = "没有检测到可用篮筐，无法确认投篮结果"
+            elif not legacy.real_seen:
+                rt.detections_meta["visual_error"] = "没有有效的真实篮球观测，无法确认投篮结果"
 
         # ---- 2) 球轨迹连接 ----
         step(0.56, "连接球轨迹")
@@ -1669,22 +1723,49 @@ class VideoSource:
         # ⚠ 顺序很重要：**必须放在球员像素观测（player_obs）填好之后**。
         # 之前把它放在第 3 步之前，导致「向前找」那条判队逻辑拿不到任何
         # 球员观测、静默退回"筐下没人"（实测就这样白跑了一轮）。
-        if not sb_ok:
-            step(0.78, "篮下判进球（球从筐里下去）")
-            self._hoopsight_attempts(rt, progress=step)
-            if not rt.attempts:
-                step(0.82, "识别篮筐并判断进球")
-                self._visual_attempts(
-                    rt, progress=step,
-                    counts_for_score=getattr(self, "_visual_counts_for_score",
-                                             True))
+        use_legacy = self.shot_engine == "legacy" and (
+            self.score_policy in ("court", "visual") or not sb_ok)
+        if use_legacy:
+            # 场上口径：比分牌仍留在 meta 作参考，不改变旧状态机的三态结果。
+            rt.scoreboard_events = []
+        if use_legacy or not sb_ok:
+            self._dispatch_shot_engine(rt, step)
 
         # ---- 6) 位置归因 + 打铁候选 ----
         step(0.94, "融合出手")
-        self.extract_attempts(rt)
+        if use_legacy:
+            # 状态机已含未中/未知，不再用另一套近筐候选补入重复事件或改写位置。
+            rt.detections_meta["attempts"] = {
+                "total": len(rt.attempts), "from_legacy": len(rt.attempts),
+                "from_scoreboard": 0, "from_ball_track": 0, "miss_candidates": 0}
+        else:
+            self.extract_attempts(rt)
         if progress:
             progress(1.0, "推理完成")
         return rt
+
+    def _dispatch_shot_engine(self, rt, progress=None):
+        progress = progress or (lambda *args: None)
+        if self.shot_engine == "legacy":
+            from .legacy_shots.adapter import to_attempts
+            progress(0.82, "整理逐次投篮：命中、未中与未知")
+            rt.attempts = to_attempts(self._legacy_events, rt, self.cal,
+                value=self.visual_shot_value,
+                counts_for_score=getattr(self,"_visual_counts_for_score",True))
+            rt.detections_meta["visual"] = {
+                "engine": "legacy", "shots": len(rt.attempts),
+                "made": sum(a.made is True for a in rt.attempts),
+                "missed": sum(a.made is False for a in rt.attempts),
+                "unknown": sum(a.made is None for a in rt.attempts),
+                "method": "逐帧跟踪球与篮筐，先记录出手，再区分命中、未中和未知"}
+        else:
+            rt.detections_meta["shot_engine"] = "geometry"
+            progress(0.78, "篮下判进球（球从筐里下去）")
+            self._hoopsight_attempts(rt, progress=progress)
+            if not rt.attempts:
+                progress(0.82, "识别篮筐并判断进球")
+                self._visual_attempts(rt, progress=progress,
+                    counts_for_score=getattr(self,"_visual_counts_for_score",True))
 
     # ------------------------------------------------------------------
     def _label_says_made(self, t: float, tol: float = 1.2) -> bool:

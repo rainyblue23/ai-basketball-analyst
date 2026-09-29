@@ -11,7 +11,7 @@
   所以这里用最朴素、哪都能跑的办法：
 
     用 subprocess 起 uvicorn（stdio 直接继承），
-    每秒看一眼 src/aihoop/*.py 的修改时间，变了就杀掉重启。
+    每秒看一眼 src/aihoop/**/*.py 的修改时间，变了就杀掉重启。
 
   不依赖任何花哨机制，也不会把服务输出吃掉。
 
@@ -36,7 +36,7 @@ POLL_S = 1.0
 def snapshot() -> dict:
     """当前源码指纹：每个 .py 的修改时间。"""
     out = {}
-    for p in WATCH_DIR.glob("*.py"):
+    for p in WATCH_DIR.rglob("*.py"):
         try:
             out[str(p)] = p.stat().st_mtime
         except OSError:
@@ -73,7 +73,7 @@ def jobs_running(port: str) -> bool:
                 f"http://127.0.0.1:{port}/api/jobs", timeout=2.0) as r:
             rows = json.loads(r.read().decode("utf-8", "replace"))
     except Exception:  # noqa: BLE001
-        return False
+        return True  # 状态未知时不自动杀进程；宁可延后重载
     return any(str(j.get("status")) in ("queued", "running") for j in rows)
 
 
@@ -116,6 +116,13 @@ def main(argv=None) -> int:
             while proc.poll() is None:
                 time.sleep(POLL_S)
                 if autoreload and snapshot() != before:
+                    # 必须在停止子进程之前等任务结束；不能先杀服务再查任务。
+                    if jobs_running(port):
+                        time.sleep(4)
+                        continue
+                    settle()
+                    if jobs_running(port):
+                        continue
                     restart = True
                     break
         except KeyboardInterrupt:
@@ -127,15 +134,6 @@ def main(argv=None) -> int:
         if not restart:
             # 进程自己退出了（端口被占、启动报错等），不要无限重启
             return proc.returncode or 0
-        # 改动可能还没停（我常连着改好几个文件），等它稳定
-        settle()
-        # 有任务在跑就等它跑完再重启 —— 别把用户几十分钟的分析杀掉
-        waited = 0.0
-        while jobs_running(port) and waited < 1800:
-            if waited == 0.0:
-                print("[autoreload] 有任务正在运行，等它跑完再重启…")
-            time.sleep(5)
-            waited += 5
         print("\n[autoreload] 检测到源码变更，正在重启后端 …")
         time.sleep(0.5)
 

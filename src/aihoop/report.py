@@ -73,6 +73,10 @@ def _hot_zones(shots: list[Shot], n: int = 4) -> list[dict]:
     for s in shots:
         if s.result == "unknown":
             continue
+        # 位置未知的出手不进热区：占位坐标全贴在篮下，会把热区算成"全在禁区"，
+        # 与战报里"没有球场坐标就不给热区"的说法自相矛盾（`rules.shot_chart` 早就这么挡了）。
+        if not s.location_known:
+            continue
         z = zone_of(s.x, s.y)
         d = agg.setdefault(z, {"zone": z, "att": 0, "made": 0, "points": 0})
         d["att"] += 1
@@ -91,9 +95,13 @@ def _key_shots(shots: list[Shot], game: dict, n: int = 5) -> list[dict]:
     cand = [s for s in shots if s.made and
             (s.period >= 4 or s.value == ShotValue.THREE.value)]
     cand.sort(key=lambda s: (-s.period, -s.value, s.t))
+    # 位置未知的出手仍是真实事件，保留在关键球里，但**不给假的区域/距离**
+    # （占位坐标算出来必然是"禁区 0 米"，会让战报和前端表格一起说谎）。
     return [{"t": round(s.t, 1), "period": s.period, "player_id": s.player_id,
-             "team": s.team, "value": s.value, "zone": zone_of(s.x, s.y),
-             "distance": round(s.distance, 2)} for s in cand[:n]]
+             "team": s.team, "value": s.value,
+             "zone": zone_of(s.x, s.y) if s.location_known else "位置未知",
+             "distance": round(s.distance, 2) if s.location_known else None}
+            for s in cand[:n]]
 
 
 def build_report_md(game: dict, players: list[dict], shots: list[Shot],

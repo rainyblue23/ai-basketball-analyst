@@ -44,6 +44,12 @@ window.PAGES['overview'] = {
       return counts;
     },
     game: function () { return this.S.game; },
+    rimTracking: function () {
+      return (((this.game || {}).meta || {}).shot_engine_details || {}).rim_tracking || null;
+    },
+    rimAvailability: function () {
+      return this.rimTracking && this.rimTracking.availability || null;
+    },
     duration: function () { return (this.game && this.game.duration) || 0; },
     /**
      * 证据来源：直接读 game.meta，把「这次判定用了哪几路证据、质量如何」
@@ -62,6 +68,10 @@ window.PAGES['overview'] = {
       if (m.hoopsight_error) {
         out.push({k: '篮下识别未完成', v: '本次结果可能漏球',
           d: m.hoopsight_error + '；请检查篮筐标注与尺寸，不能将本次统计视为完整比赛结果。'});
+      }
+      if (m.shot_engine === 'legacy') {
+        out.push({ k: '投篮检测', v: '逐次出手引擎',
+          d: '保留命中、未中与未知；推算建议不自动计分，检测次数仍需复核。' });
       }
       var vis = m.visual;
       if (vis) {
@@ -290,10 +300,24 @@ window.PAGES['overview'] = {
       if (window.D.isUnknown(e)) return 'needs';
       return e.made ? 'made' : 'miss';
     },
+    rimPosition: function (r) {
+      return r ? '(' + Math.round(r.cx) + ', ' + Math.round(r.cy) + ')' : '未确认';
+    },
+    rimTransitionLabel: function (reason) {
+      return ({initialized:'开始跟踪',reacquired_near:'失效后重新确认',
+        reacquired_far:'失效后在远处重新确认',cut:'切镜，结束旧跟踪'})[reason] || '跟踪状态变化';
+    },
+    gotoRimTransition: function (row) {
+      if (!this.videoUrl || !Number.isFinite(Number(row.t))) return;
+      this.activeRow=-1; this.pendingSeek=Math.max(0,Number(row.t)-1); this.seekVideo();
+      var v=this.$refs.video;
+      if (v && v.scrollIntoView) v.scrollIntoView({block:'nearest'});
+    },
     /** 保留原始事件身份，筛选后仍高亮同一条；元数据未就绪时延后跳转。 */
     gotoEvent: function (row, idx, crossing) {
       this.activeRow = ((this.game && this.game.timeline) || []).indexOf(row);
-      var t = Number(crossing && row.crossing_t != null ? row.crossing_t : row.t);
+      var target = crossing ? [row.review_t, row.crossing_t, row.decision_t, row.t].find(function (v) { return typeof v === "number" && Number.isFinite(v) && v >= 0; }) : row.t;
+      var t = Number(target);
       if (!Number.isFinite(t) || !this.videoUrl) return;
       this.pendingSeek = Math.max(0, t - (crossing ? 1 : 0.6));
       this.seekVideo();
@@ -359,12 +383,41 @@ window.PAGES['overview'] = {
     '            <span><span class="tl-badge" :class="e.team===\'home\'?\'h\':\'a\'">{{ e.team===\'home\' ? teamName(\'home\') : teamName(\'away\') }}</span>',
     "              <span class=\"tl-badge\" :class=\"resultClass(e)\" style=\"margin-left:4px\">{{ resultClass(e) === 'needs' ? '未知（待确认）' : e.made ? '命中' : '未中' }}</span></span>",
     "            <span class=\"pl\">{{ e.player || \"球员未识别\" }} · {{ e.zone || \"位置未知\" }}</span>",
-    "            <button v-if=\"e.crossing_t != null\" class=\"el-button el-button--small\" @click=\"gotoEvent(e,i,true)\">看篮下 {{ mmss(e.crossing_t) }}</button>",
+    "            <button v-if=\"e.review_t != null\" class=\"el-button el-button--small\" @click=\"gotoEvent(e,i,true)\">看待确认位置 {{ mmss(e.review_t) }}</button>",
+    "            <button v-else-if=\"e.crossing_t != null\" class=\"el-button el-button--small\" @click=\"gotoEvent(e,i,true)\">看篮下 {{ mmss(e.crossing_t) }}</button>",
+    "            <button v-else-if=\"e.decision_t != null\" class=\"el-button el-button--small\" @click=\"gotoEvent(e,i,true)\">看判定收尾 {{ mmss(e.decision_t) }}</button>",
+    "            <span v-if=\"e.release_source\" class=\"hint\">时间来源：{{ e.release_source === 'player_feet' ? '球员位置回溯' : '球轨迹' }}</span>",
     '          </div>',
     '          <el-empty v-if="!timeline.length" description="无符合条件的事件" :image-size="70" />',
     '        </div>',
     '    </div>',
+    '    <section class="card" v-if="rimAvailability && rimAvailability.unavailable_ranges.length" aria-label="检测覆盖范围">',
+    '      <h3 class="card-title">部分时段无法持续判定投篮</h3>',
+    '      <p>以下时段连续至少 2 秒没有可用的篮筐跟踪，可能漏掉投篮；没有记录不代表没有出手。可回看原视频核对。</p>',
+    '      <p class="hint">可用篮筐覆盖 {{ rimAvailability.usable_frames }} / {{ rimAvailability.sampled_frames }} 个采样帧（{{ Math.round(rimAvailability.usable_fraction * 100) }}%）。这是跟踪可用性，不是识别准确率；有筐也不保证球可见。</p>',
+    '      <ul><li v-for="(gap,i) in rimAvailability.unavailable_ranges" :key="i">',
+    '        <button class="el-button el-button--small" :disabled="!videoUrl" @click="gotoRimTransition({t:gap.start})">回看 {{ mmss(gap.start) }}–{{ mmss(gap.end) }}</button>',
+    '      </li></ul>',
+    '    </section>',
+    '    <details class="card" v-if="rimTracking">',
+    '      <summary>篮筐跟踪与标注反馈</summary>',
+    '      <p>中心约束：{{ rimTracking.lock_enabled ? "已启用（实验）" : "未启用" }}；拒绝 {{ rimTracking.rejected_candidates }} 个候选，涉及 {{ rimTracking.rejected_frames }} / {{ rimTracking.frames }} 帧。</p>',
+    '      <p v-if="rimTracking.lock_requested && !rimTracking.center_hint">没有中心提示点，中心约束未生效。</p>',
+    '      <p v-if="rimTracking.center_hint">提示点：({{ rimTracking.center_hint.join(", ") }})</p>',
+    '      <p v-if="rimTracking.first_confirmed">首次确认的筐：{{ rimPosition(rimTracking.first_confirmed.tracked_rim) }}，{{ mmss(rimTracking.first_confirmed.t) }}</p>',
+    '      <p v-else>尚未确认篮筐，请检查标注和原视频，不能将无结果理解为没有投篮。</p>',
+    '      <p v-if="rimTracking.first_confirmed && rimTracking.first_confirmed.hint_relation">提示点{{ rimTracking.first_confirmed.hint_relation.inside_box ? "在首次确认框内" : "在首次确认框外" }}，距框中心 {{ Math.round(rimTracking.first_confirmed.hint_relation.distance_px) }} 像素。这只表示与检测框的位置关系；框外不代表标注错误，可回看画面确认。</p>',
+    '      <p>片尾跟踪位置：{{ rimPosition(rimTracking.last_tracked) }}{{ rimTracking.last_tracked && !rimTracking.last_tracked.fresh ? "（已失效，不用于新判定）" : "" }}</p>',
+    '      <p class="hint">以下记录表示跟踪段重新建立或切镜，不代表已确认换成另一个物理篮筐。重新建立时会断开旧投篮证据链。</p>',
+    '      <ul style="max-height:260px;overflow:auto">',
+    '        <li v-for="(r,i) in rimTracking.transitions" :key="i" style="margin:8px 0">',
+    '          <button class="el-button el-button--small" :disabled="!videoUrl" @click="gotoRimTransition(r)">回看 {{ mmss(r.t) }}</button>',
+    '          {{ rimTransitionLabel(r.reason) }}：{{ rimPosition(r.previous) }} → {{ rimPosition(r.current) }}；收尾 {{ r.closed_attempts }} 条未决出手',
+    '        </li>',
+    '      </ul>',
+    '    </details>',
     '    <h2>分模块分析</h2>',
+    '    <p v-if="(game.timeline || []).some(e => e.value_assumed || (e.tags || []).includes(\'value_assumed\'))" class="hint">分值尚未确认：当前按每次命中 2 分暂计，不代表已识别两分或三分。位置未知的出手不生成热区或出手距离，请标定球场并复核出手位置。</p>',
     '    <p class="hint">以下统计基于当前已识别与已确认的记录；未知结果不计入命中率。</p>',
     // 这次分析什么都没出时，**先把原因说清楚**：用户看到 0:0 + 空列表会以为功能坏了，
     // 实际多半是上游判据放弃（镜头在动 / 球太小 / 没有记分牌），页面必须自己讲明白。

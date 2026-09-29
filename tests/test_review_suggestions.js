@@ -39,3 +39,15 @@ console.log('Unknown evidence reasons and suggestion exclusion passed');
 const reasonBlock = page.template.split('v-if="unknownReason(row)"')[1].split('v-if="hasSuggestion(row)"')[0];
 assert.ok(reasonBlock.includes('v-if="row.crossing_t != null"'));
 assert.ok(reasonBlock.includes('建议核对 {{ mmss(row.crossing_t) }} 附近画面'));
+
+const gapRow={result:'unknown',made:null,suggested_made:true,evidence:'legacy_occlusion_descent',review_t:16.483,crossing_t:null};
+assert.equal(vm.hasSuggestion(gapRow),true);
+assert.equal(vm.suggestionReviewTime(gapRow),16.483);
+assert.ok(vm.suggestionReason(gapRow).includes('尚未确认穿筐'));
+assert.equal(vm.suggestionReviewTime({crossing_t:3}),3);
+assert.equal(vm.suggestionReviewTime({review_t:0,crossing_t:3}),0);
+assert.equal(vm.suggestionReviewTime({}),null);
+assert.equal(vm.suggestionReviewTime({review_t:NaN}),null);
+assert.equal(vm.suggestionReviewTime({review_t:-1}),null);
+assert.ok(page.template.includes('mmss(suggestionReviewTime(row))'));
+console.log('Gap suggestion review time and copy passed');
