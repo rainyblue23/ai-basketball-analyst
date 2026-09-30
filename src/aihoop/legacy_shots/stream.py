@@ -10,7 +10,11 @@ from .scorer import ScoreEngine
 DEFAULT_CONFIG = {
     'detect': {'imgsz': 640, 'ball_conf': .25, 'rim_min_conf': .35,
                'ball_min_w_ratio': .012, 'ball_max_w_ratio': .24,
-               'ball_jump_px_per_frame': 90., 'rim_min_aspect': 1.2, 'center_lock_widths': 0.},
+               'ball_jump_px_per_frame': 90., 'rim_min_aspect': 1.2, 'center_lock_widths': 0.,
+               # 候选出手层（只提示、不计分）的阈值；见 shot_candidates()
+               'cand_window_s': .6, 'cand_rise_px': 25., 'cand_fall_px': 12.,
+               'cand_near_rim_widths': 3., 'cand_dedupe_s': 1.2,
+               'cand_close_start_widths': 3.5, 'cand_match_tol_s': 1.5, 'cand_max': 40},
     'score': {'enable_three_point': False, 'make_radius_ratio': .65,
               'make_exit_radius_ratio': 1., 'in_rim_below_ratio': .6,
               'make_window_s': .9, 'make_allow_occluded_entry': False,
@@ -49,6 +53,209 @@ def rim_availability(frames, fps):
     return dict(sampled_frames=len(frames), usable_frames=usable,
                 usable_fraction=usable / len(frames), unavailable_ranges=gaps,
                 min_gap_s=2.0)
+
+def ball_visibility(frames, fps):
+    """球可见性摘要：哪几段**缺少球检测证据**（与筐可用性是两件事）。
+
+    只统计"真实观测"（predicted=False）。用途是让用户知道"这段没看到球"，
+    而不是把"没有记录"当成"没有投篮"。旧 trace 没有 ball 字段时不伪造数字。
+    """
+    if not frames or any('ball' not in r for r in frames):
+        return None
+    def observed(row):
+        ball = row.get('ball') or {}
+        return bool(ball.get('xyxy')) and not ball.get('predicted')
+    seen = sum(1 for r in frames if observed(r))
+    gaps, start, longest = [], None, 0.0
+    for row in frames:
+        t = float(row['t'])
+        if not observed(row):
+            if start is None:
+                start = t
+            longest = max(longest, t - start)
+        elif start is not None:
+            if t - start >= 2.0:
+                gaps.append(dict(start=round(start, 3), end=round(t, 3)))
+            longest = max(longest, t - start)
+            start = None
+    if start is not None:
+        end = float(frames[-1]['t']) + 1 / max(float(fps), 1)
+        if end - start >= 2.0:
+            gaps.append(dict(start=round(start, 3), end=round(end, 3)))
+        longest = max(longest, end - start)
+    return dict(sampled_frames=len(frames), observed_frames=seen,
+                observed_fraction=seen / len(frames), blind_ranges=gaps,
+                longest_blind_s=round(longest, 3), min_gap_s=2.0,
+                note='按真实球观测统计；predicted 帧不计，缺证据不等于没有投篮。')
+
+def shot_candidates(frames, config, events=None):
+    """**待核对的轨迹候选**（独立候选层）：只提示与回看，不参与出手次数与命中统计。
+
+    为什么单独一层：现在的出手依赖"球接近一个可用篮筐"，球看不清、筐暂时失效、
+    或篮下连续补篮时整次出手会被漏掉；而判定层（进/未中/未知）不该为了补召回而放宽。
+    所以这里只做"发现"，判定仍由 ScoreEngine 负责。
+
+    规则（用真实球观测，全部相对当时的筐归一）：
+      1. **先按切镜与跟踪段断开**（cut 帧、evidence_segment / tracked_rim.segment 变化），
+         禁止跨段拼接（否则切镜前后的坐标跳变会被误当成一条弧线）；
+      2. 在 ±window 秒的滚动窗口里找局部顶点（y 最小 = 最高点）；
+      3. 顶点前上升 ≥ rise_px、顶点后下落 ≥ fall_px；
+      4. 该段轨迹曾接近篮筐（到筐心最小距离 ≤ near_rim_widths × 筐宽）；
+      5. dedupe 秒内只留上升最高的一个；
+      6. 弧线起点离筐 < close_start_widths × 筐宽 的记为 near 类（补篮/二次进攻/打铁反弹），
+         其余记为 far 类 —— 两类都只是提示，不能自动算投篮；
+      7. 每条候选与**已有事件**做关联（出手时刻最近、容差 match_tol_s），
+         标出 matched / matched_event_t：已识别为出手的弧线不算"漏检"。
+    另补一类 `vanish`：上升后球消失（对应飞出画面/被遮挡）。
+    """
+    if not frames or any('ball' not in r for r in frames):
+        return None
+    # 兜底用模块默认值（旧 trace 的 config 里可能没有新增的键，两处默认值不能分叉）
+    d = {**DEFAULT_CONFIG['detect'], **((config or {}).get('detect') or {})}
+    win = float(d.get('cand_window_s', .6))
+    rise_min = float(d.get('cand_rise_px', 25.))
+    fall_min = float(d.get('cand_fall_px', 12.))
+    near_w = float(d.get('cand_near_rim_widths', 3.))
+    dedupe = float(d.get('cand_dedupe_s', 1.2))
+    close_w = float(d.get('cand_close_start_widths', 3.5))
+    match_tol = float(d.get('cand_match_tol_s', 1.5))
+    cap = int(d.get('cand_max', 40))
+
+    obs = []
+    block = 0
+    prev_seg = None
+    for r in frames:
+        seg = ((r.get('evidence_segment') if 'evidence_segment' in r else None),
+               ((r.get('tracked_rim') or {}).get('segment')))
+        cut = bool(r.get('cut'))
+        # 切镜标记来自"当前帧 vs 上一帧"的直方图/帧差突变（sources.py），
+        # 也就是 **cut 标的是新镜头的首帧**：这一帧的检测属于新镜头，
+        # 因此它必须开新段（不能划给上一段，否则仍会跨镜头拼接）。
+        # 跟踪段变化（无 cut 标记时）同样在处理前开新段。
+        if cut or (prev_seg is not None and seg != prev_seg):
+            block += 1
+        prev_seg = seg
+        ball = r.get('ball') or {}
+        box = ball.get('xyxy')
+        if box and not ball.get('predicted'):
+            tr = r.get('tracked_rim') or {}
+            obs.append(dict(t=float(r['t']), x=(box[0] + box[2]) / 2, y=(box[1] + box[3]) / 2,
+                            block=block,
+                            rim=(tr if tr.get('fresh') else None),
+                            rcx=tr.get('cx'), rcy=tr.get('cy'), rw=tr.get('w')))
+    def _scan(respect_block):
+        """在 ±win 秒窗口里找局部顶点。respect_block=True 只用同一段内的点（主列表口径，
+        避免把切镜前后两个镜头的球点拼成一条弧线）；False 时不受段边界限制。"""
+        raw = []
+        for o in obs:
+            back = [p for p in obs if o['t'] - win <= p['t'] <= o['t']
+                    and (not respect_block or p['block'] == o['block'])]
+            fwd = [p for p in obs if o['t'] <= p['t'] <= o['t'] + win
+                   and (not respect_block or p['block'] == o['block'])]
+            if not back:
+                continue
+            seg_pts = back + fwd
+            apex_is_min = o['y'] == min(p['y'] for p in seg_pts)
+            near = None
+            if any(p['rim'] for p in seg_pts):
+                near = min(math.hypot(p['x'] - p['rcx'], p['y'] - p['rcy']) / max(p['rw'], 1e-6)
+                           for p in seg_pts if p['rim']) <= near_w
+            rise = max(p['y'] for p in back) - o['y']
+            if len(fwd) >= 2:
+                if not apex_is_min or rise < rise_min:
+                    continue
+                if near is False:
+                    continue
+                fall = max(p['y'] for p in fwd) - o['y']
+                kind = 'arc' if fall >= fall_min else 'rise_only'
+            else:
+                # 顶点贴到尾：上升后球就没了（飞出画面/被遮挡）
+                if rise < rise_min or near is False:
+                    continue
+                fall, kind = 0.0, 'vanish'
+            start = min(back, key=lambda p: p['t'])
+            sdist = None
+            if start['rim']:
+                sdist = math.hypot(start['x'] - start['rcx'], start['y'] - start['rcy']) / max(start['rw'], 1e-6)
+            raw.append(dict(release_t=round(start['t'], 3), apex_t=round(o['t'], 3), kind=kind,
+                            rise_px=round(rise), fall_px=round(fall), obs_frames=len(seg_pts),
+                            # 窗口内的段数：主列表口径下恒为 1；不受段边界限制时反映真实跨度
+                            blocks_in_window=len({p['block'] for p in seg_pts}),
+                            start_dist_rims=round(sdist, 2) if sdist is not None else None,
+                            klass=('near' if (sdist is not None and sdist < close_w)
+                                   else 'far' if sdist is not None else 'unknown')))
+        return raw
+
+    def _dedupe(raw):
+        raw.sort(key=lambda c: c['release_t'])
+        out = []
+        for c in raw:
+            if out and c['release_t'] - out[-1]['release_t'] < dedupe:
+                if c['rise_px'] > out[-1]['rise_px']:
+                    out[-1] = c
+                continue
+            out.append(c)
+        return out
+
+    # 与已有事件关联：已识别为出手的弧线不是"漏检"（用户实测反馈：fixedcam 9 条里有 7 条
+    # 就是已识别的出手，文案不能说"判定层没有建立出手"）。
+    # 参照用**离手时刻** release_t（判定收尾时刻比离手晚 1~2 秒，直接比 t 会系统偏移）。
+    events = [e for e in (events or []) if isinstance(e, dict)]
+
+    def _associate(cands):
+        for c in cands:
+            best = None
+            for e in events:
+                ref = e.get('release_t')
+                ref = float(ref if ref is not None else e.get('t'))
+                dist = abs(c['release_t'] - ref)
+                if best is None or dist < best[1]:
+                    best = (e, dist, ref)
+            if best is not None and best[1] <= match_tol:
+                e, dist, ref = best
+                c['matched'] = True
+                c['matched_event_t'] = round(float(e['t']), 3)
+                c['matched_event_release_t'] = round(ref, 3)
+                c['matched_event_type'] = e.get('type')
+                c['matched_delta_s'] = round(dist, 2)
+            else:
+                c['matched'] = False
+                c['matched_event_t'] = None
+                c['matched_event_release_t'] = None
+                c['matched_event_type'] = None
+                c['matched_delta_s'] = None
+        return cands
+
+    out = _associate(_dedupe(_scan(respect_block=True)))
+    unmatched = [c for c in out if not c['matched']]
+
+    # 证据被段边界从中间截断的候选：主列表为了保证"不跨镜头拼接"会把这些丢掉，但丢掉不等于
+    # 不存在（用户要求：不能把看不清/没看到证据的时段当成检测完整）。所以按不受段限制的口径
+    # 再算一遍，只取主列表里没有的顶点，**单独一份、单独计数**地列出来。
+    # 注意段边界的两个来源：镜头切换（cut）与跟踪段变化（evidence_segment / 篮筐跟踪段），
+    # 后者在没切镜的片段里也会出现（实测 game01 就是这种），所以叫"跨段"而不是"跨切镜"。
+    primary_apex = {c['apex_t'] for c in out}
+    loose_only = [c for c in _dedupe(_scan(respect_block=False)) if c['apex_t'] not in primary_apex]
+    _associate(loose_only)
+    for c in loose_only:
+        c['cross_segment'] = c['blocks_in_window'] >= 2
+    cross_seg = [c for c in loose_only if c['cross_segment']]
+    truncated = len(out) > cap
+    return dict(count=len(out), unmatched_count=len(unmatched), truncated=truncated,
+                candidates=out[:cap], review_offset_s=1.0, match_tol_s=match_tol,
+                cross_segment_count=len(cross_seg), cross_segment=cross_seg[:cap],
+                cross_segment_truncated=len(cross_seg) > cap,
+                # 不受段限制时多出来、但窗口并没有跨段的候选（=与主列表某条在时间上重叠、
+                # 被去重合并掉的），这里只报个数、不重复列出。
+                loose_only_same_segment=len(loose_only) - len(cross_seg),
+                note=('待核对的轨迹候选：轨迹像投篮。matched=true 表示该候选的**离手时刻与某条已有'
+                      '事件接近**（只说明时间上靠近，**不证明是同一次出手**，需人工确认）；'
+                      'matched=false 的是**离手时刻附近没有任何事件**、更需要回看的候选。'
+                      '两类都不计入出手次数与命中统计。cross_segment 是**另一份、单独计数**的列表：'
+                      '这些轨迹的证据**跨越了镜头切换或跟踪段边界**（上升段在一个镜头里、顶点在'
+                      '另一个镜头里），主列表为不跨段拼接而排除了它们；这不代表它们不真实，'
+                      '必须靠目视核对，同样不计入出手次数与命中统计，也不计入 count/unmatched_count。'))
+
 
 def unpack(det):
     return None if det is None else Det(det['cls'], det['conf'], tuple(det['xyxy']),
@@ -192,6 +399,7 @@ class LegacyShotStream:
     def to_dict(self):
         return dict(version='hoopai_legacy_v1',trace_schema=2,fps=self.fps,config=self.config,
                     rim_tracking=self.tracking_summary(),
+                    shot_candidates=shot_candidates(self.frames,self.config,self.events),
                     frames=self.frames,events=self.events,real_ball_frames=self.real_seen,
                     rim_frames=self.rim_seen, center_rejected=self.center_rejected,
                     center_lock_width=self.center_lock_width, center_hint=self.hint)
@@ -200,6 +408,7 @@ class LegacyShotStream:
         last=self.frames[-1] if self.frames else {}
         return dict(schema=2,center_hint=self.hint,
             availability=rim_availability(self.frames,self.fps),
+            ball_visibility=ball_visibility(self.frames,self.fps),
             lock_enabled=bool(self.hint is not None and self.config['detect']['center_lock_widths']>0),
             lock_requested=self.config['detect']['center_lock_widths']>0,
             lock_widths=self.config['detect']['center_lock_widths'],lock_width=self.center_lock_width,

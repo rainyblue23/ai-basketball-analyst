@@ -478,8 +478,10 @@ def _evidence_meta(rt: RawTrack) -> dict:
         meta["shot_engine"] = d["shot_engine"]
     if d.get("legacy_shots"):
         legacy = d["legacy_shots"]
+        # shot_candidates = **可能漏检的出手**：只给界面提示与回看时间，
+        # 不进 timeline、不进出手次数与命中统计（判定仍只由 events 决定）。
         meta["shot_engine_details"] = {k: legacy.get(k) for k in
-            ("version", "config", "model_path", "model_sha256", "real_ball_frames", "rim_frames", "trace_schema", "rim_tracking")}
+            ("version", "config", "model_path", "model_sha256", "real_ball_frames", "rim_frames", "trace_schema", "rim_tracking", "shot_candidates")}
     if d.get("visual"):
         meta["visual"] = d["visual"]
     if d.get("hoop"):

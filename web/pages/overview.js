@@ -50,6 +50,37 @@ window.PAGES['overview'] = {
     rimAvailability: function () {
       return this.rimTracking && this.rimTracking.availability || null;
     },
+    ballVisibility: function () {
+      return this.rimTracking && this.rimTracking.ball_visibility || null;
+    },
+    /**
+     * 待核对的轨迹候选：由投篮引擎的**独立候选层**给出，只提示与回看，
+     * 不进 timeline、不计入出手次数与命中统计（判定仍只由 events 决定）。
+     */
+    shotCandidates: function () {
+      var sc = (((this.game || {}).meta || {}).shot_engine_details || {}).shot_candidates;
+      return sc && sc.candidates ? sc : null;
+    },
+    // 未对应任何事件的候选排在前面 —— 那才是真正需要回看的
+    reviewCandidates: function () {
+      var sc = this.shotCandidates;
+      if (!sc) return [];
+      return sc.candidates.slice().sort(function (a, b) {
+        return (a.matched === b.matched) ? a.release_t - b.release_t : (a.matched ? 1 : -1);
+      });
+    },
+    /**
+     * 证据跨段的候选：切镜（或跟踪段边界）把"上升段"和"顶点"分在了两段里，
+     * 主列表为保证不跨段拼接而排除了它们 —— 但"被排除"不等于"不存在"，
+     * 所以单独列出来核对，单独计数，同样不进任何统计。
+     */
+    crossSegmentCandidates: function () {
+      var sc = this.shotCandidates;
+      if (!sc || !sc.cross_segment) return [];
+      return sc.cross_segment.slice().sort(function (a, b) {
+        return (a.matched === b.matched) ? a.release_t - b.release_t : (a.matched ? 1 : -1);
+      });
+    },
     duration: function () { return (this.game && this.game.duration) || 0; },
     /**
      * 证据来源：直接读 game.meta，把「这次判定用了哪几路证据、质量如何」
@@ -290,6 +321,16 @@ window.PAGES['overview'] = {
     teamName: function (s) { return window.D.teamName(this.game, s); },
     mmss: function (t) { return window.D.mmss(t); },
     /**
+     * 候选层的中文标签：这两个**必须是 methods**（模板里当函数调用）。
+     * 之前误放进 computed，模板渲染时 `candidateKindLabel(c.kind)` 会报错 —— 候选卡片整块渲染失败。
+     */
+    candidateClassLabel: function (k) {
+      return ({ far: '远投类', near: '近筐类（补篮/二次进攻/反弹）', unknown: '筐位未知' })[k] || k;
+    },
+    candidateKindLabel: function (k) {
+      return ({ arc: '完整弧线', rise_only: '上升后未下落', vanish: '上升后球消失' })[k] || k;
+    },
+    /**
      * 时间轴徽章配色：命中=绿、未中=灰、**待确认=橙**。
      * 为什么单独抽一个方法：结果未知时 `e.made` 是 null（后端已显式输出 null，
      * 不再用 false 占位），直接写 `e.made?'made':'miss'` 会把"待确认"配成"未中"的灰。
@@ -391,13 +432,43 @@ window.PAGES['overview'] = {
     '          <el-empty v-if="!timeline.length" description="无符合条件的事件" :image-size="70" />',
     '        </div>',
     '    </div>',
-    '    <section class="card" v-if="rimAvailability && rimAvailability.unavailable_ranges.length" aria-label="检测覆盖范围">',
+    '    <section class="card" v-if="(rimAvailability && rimAvailability.unavailable_ranges.length) || (ballVisibility && ballVisibility.blind_ranges.length)" aria-label="检测覆盖范围">',
     '      <h3 class="card-title">部分时段无法持续判定投篮</h3>',
-    '      <p>以下时段连续至少 2 秒没有可用的篮筐跟踪，可能漏掉投篮；没有记录不代表没有出手。可回看原视频核对。</p>',
-    '      <p class="hint">可用篮筐覆盖 {{ rimAvailability.usable_frames }} / {{ rimAvailability.sampled_frames }} 个采样帧（{{ Math.round(rimAvailability.usable_fraction * 100) }}%）。这是跟踪可用性，不是识别准确率；有筐也不保证球可见。</p>',
-    '      <ul><li v-for="(gap,i) in rimAvailability.unavailable_ranges" :key="i">',
+    '      <p v-if="rimAvailability && rimAvailability.unavailable_ranges.length">以下时段连续至少 2 秒没有可用的篮筐跟踪，可能漏掉投篮；没有记录不代表没有出手。可回看原视频核对。</p>',
+    '      <p v-if="rimAvailability" class="hint">可用篮筐覆盖 {{ rimAvailability.usable_frames }} / {{ rimAvailability.sampled_frames }} 个采样帧（{{ Math.round(rimAvailability.usable_fraction * 100) }}%）。这是跟踪可用性，不是识别准确率；有筐也不保证球可见。</p>',
+    '      <ul><li v-for="(gap,i) in (rimAvailability ? rimAvailability.unavailable_ranges : [])" :key="i">',
     '        <button class="el-button el-button--small" :disabled="!videoUrl" @click="gotoRimTransition({t:gap.start})">回看 {{ mmss(gap.start) }}–{{ mmss(gap.end) }}</button>',
     '      </li></ul>',
+    '      <p v-if="ballVisibility" class="hint">球检测观测率：{{ ballVisibility.observed_frames }} / {{ ballVisibility.sampled_frames }} 个采样帧（{{ Math.round(ballVisibility.observed_fraction * 100) }}%）有真实球观测，最长连续缺失 {{ ballVisibility.longest_blind_s.toFixed(1) }} 秒。这只是<b>检测观测率</b>（不是录像里有没有球的判定）：没检测到可能是检测器漏检，也可能是球太小/被挡住；这些时段不能断言"没有投篮"。</p>',
+    '      <ul v-if="ballVisibility && ballVisibility.blind_ranges.length"><li v-for="(gap,i) in ballVisibility.blind_ranges" :key="\'b\'+i">',
+    '        <button class="el-button el-button--small" :disabled="!videoUrl" @click="gotoRimTransition({t:gap.start})">回看（该段无球观测）{{ mmss(gap.start) }}–{{ mmss(gap.end) }}</button>',
+    '      </li></ul>',
+    '    </section>',
+    '    <section class="card" v-if="shotCandidates && (shotCandidates.candidates.length || shotCandidates.cross_segment_count)" aria-label="待核对的轨迹候选">',
+    '      <h3 class="card-title">待核对的轨迹候选 <span class="sub">仅提示，不计入出手次数与命中统计</span></h3>',
+    '      <p>这份清单来自<b>独立的轨迹候选层</b>：球的上升→下落弧线接近过篮筐。其中<b>离手时刻与某条已有事件接近</b>的，只说明时间上靠近（<b>不证明是同一次出手</b>，需人工确认）；<b>未对应任何事件</b>的才是更需要回看的候选。请回看原视频确认；确认后请用「复核页」补录或改判，本清单不会自动改变任何统计。</p>',
+    '      <p class="hint">共 {{ shotCandidates.count }} 条，其中未对应任何事件的 <b>{{ shotCandidates.unmatched_count }}</b> 条（已排在前面）{{ shotCandidates.truncated ? "；只列出前 " + shotCandidates.candidates.length + " 条" : "" }}；回看时间按"出手时刻前 1 秒"。</p>',
+    '      <ul style="max-height:300px;overflow:auto">',
+    '        <li v-for="(c,i) in reviewCandidates" :key="i" style="margin:8px 0">',
+    '          <button class="el-button el-button--small" :disabled="!videoUrl" @click="gotoRimTransition({t: Math.max(0, c.release_t - (shotCandidates.review_offset_s || 1))})">回看 {{ mmss(c.release_t) }}</button>',
+    '          <el-tag size="small" :type="c.matched ? \'info\' : \'warning\'" effect="plain">{{ c.matched ? "与已有出手对应" : "未对应任何事件" }}</el-tag>',
+    '          出手≈{{ mmss(c.release_t) }}（顶点 {{ mmss(c.apex_t) }}）· {{ candidateKindLabel(c.kind) }} · {{ candidateClassLabel(c.klass) }} · 上升 {{ c.rise_px }}px / 下落 {{ c.fall_px }}px',
+    '          <span v-if="c.start_dist_rims != null" class="hint"> · 起点距筐 {{ c.start_dist_rims }} 个筐宽</span>',
+    '          <span v-if="c.matched" class="hint"> · 对应事件 {{ mmss(c.matched_event_t) }}（{{ c.matched_event_type }}，离手差 {{ c.matched_delta_s }}s）</span>',
+    '        </li>',
+    '      </ul>',
+    '      <div v-if="crossSegmentCandidates.length" style="margin-top:12px;border-top:1px solid #ebeef5;padding-top:8px">',
+    '        <p class="hint"><b>另 {{ shotCandidates.cross_segment_count }} 条「证据跨段」</b>：切镜或跟踪段边界把"上升段"和"顶点"分在了两个镜头/两段里。主列表为保证不跨段拼接已排除它们，但<b>排除不等于不存在</b> —— 这几条同样必须目视核对。它们单独计数，<b>不计入上面的 {{ shotCandidates.count }} 条</b>，也不计入出手次数与命中统计。</p>',
+    '        <ul style="max-height:200px;overflow:auto">',
+    '          <li v-for="(c,i) in crossSegmentCandidates" :key="\'x\'+i" style="margin:8px 0">',
+    '            <button class="el-button el-button--small" :disabled="!videoUrl" @click="gotoRimTransition({t: Math.max(0, c.release_t - (shotCandidates.review_offset_s || 1))})">回看 {{ mmss(c.release_t) }}</button>',
+    '            <el-tag size="small" :type="c.matched ? \'info\' : \'warning\'" effect="plain">{{ c.matched ? "与已有事件时间接近" : "未对应任何事件" }}</el-tag>',
+    '            出手≈{{ mmss(c.release_t) }}（顶点 {{ mmss(c.apex_t) }} · 证据横跨 {{ c.blocks_in_window }} 段）· {{ candidateKindLabel(c.kind) }} · 上升 {{ c.rise_px }}px / 下落 {{ c.fall_px }}px',
+    '            <span v-if="c.matched" class="hint"> · 相近事件 {{ mmss(c.matched_event_t) }}（{{ c.matched_event_type }}，离手差 {{ c.matched_delta_s }}s）</span>',
+    '          </li>',
+    '        </ul>',
+    '      </div>',
+    '      <p class="hint">{{ shotCandidates.note }} 阈值见任务参数（detect.cand_*），调整需重新分析。</p>',
     '    </section>',
     '    <details class="card" v-if="rimTracking">',
     '      <summary>篮筐跟踪与标注反馈</summary>',

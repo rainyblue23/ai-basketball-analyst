@@ -101,4 +101,52 @@ assert.ok(rp.template.includes('noLocation'),
   '热区卡片要引用 noLocation，否则用户不知道"没有热区"是因为位置未知');
 assert.ok(/占位估计/.test(rp.template), '要有常驻说明：为什么不给热区');
 
-console.log('Frontend wiring: videoUrl/jobVideoUrl + 取帧前置条件 + 位置未知不出热区 (checks passed)');
+// ---- 5) 轨迹候选卡片：标签函数必须在 methods（放 computed 会让整块渲染失败）----
+// 用户实测：`candidateKindLabel` / `candidateClassLabel` 曾被放进 computed，模板里当函数调用 → 渲染报错。
+global.window = { STORE: {} };
+require(path.join(ROOT, 'web/pages/overview.js'));
+const ov = global.window.PAGES.overview;
+assert.equal(typeof (ov.methods || {}).candidateKindLabel, 'function',
+  'candidateKindLabel 必须在 methods（模板里是按函数调用的）');
+assert.equal(typeof (ov.methods || {}).candidateClassLabel, 'function',
+  'candidateClassLabel 必须在 methods');
+assert.ok(!(ov.computed || {}).candidateKindLabel, 'computed 里不该再有 candidateKindLabel');
+assert.ok(!(ov.computed || {}).candidateClassLabel, 'computed 里不该再有 candidateClassLabel');
+assert.equal(ov.methods.candidateKindLabel('arc'), '完整弧线');
+assert.equal(ov.methods.candidateKindLabel('vanish'), '上升后球消失');
+assert.equal(ov.methods.candidateKindLabel('没见过的值'), '没见过的值', '未知取值要原样回退，不能崩');
+assert.ok(/近筐类/.test(ov.methods.candidateClassLabel('near')), 'near 要有中文说明');
+assert.ok(ov.template.includes('candidateKindLabel(c.kind)') && ov.template.includes('candidateClassLabel(c.klass)'),
+  '模板要真的用上这两个标签');
+// 候选卡片的口径：不能统称"可能漏检"，要标明与已有事件的关联
+assert.ok(ov.template.includes('待核对的轨迹候选'), '卡片标题应为「待核对的轨迹候选」');
+assert.ok(ov.template.includes('未对应任何事件') && ov.template.includes('与已有事件时间接近'),
+  '每条候选要标明与已有事件的关联（只说明时间接近）');
+assert.ok(!ov.template.includes('打铁反弹'),
+  '不能把"时间上接近"推断成"打铁反弹/同一球后续"这类没被证实的语义');
+assert.ok(ov.computed.reviewCandidates, '未对应的候选要排前面（reviewCandidates）');
+const rc = ov.computed.reviewCandidates.call({
+  shotCandidates: { candidates: [{ release_t: 9, matched: true }, { release_t: 3, matched: false }] },
+});
+assert.equal(rc[0].release_t, 3, '未对应的候选要排在前面');
+
+// ---- 5b) 证据跨段的候选：单独一份、单独计数，不能被静默丢掉 ----
+// 断段保护会排除"上升段在上一镜头、顶点在下一镜头"的候选；实测 night 14.014s 就是这样一条
+// 未对应任何事件的弧线。用户要求"不能把没看清的时段当成检测完整"，所以它必须被列出来。
+assert.equal(typeof ov.computed.crossSegmentCandidates, 'function', '跨段候选要有独立 computed');
+assert.deepEqual(ov.computed.crossSegmentCandidates.call({ shotCandidates: null }), [],
+  '没有候选数据时要返回空数组而不是崩');
+assert.deepEqual(ov.computed.crossSegmentCandidates.call({ shotCandidates: {} }), [],
+  '旧数据没有 cross_segment 时要返回空数组');
+const xs = ov.computed.crossSegmentCandidates.call({
+  shotCandidates: { cross_segment: [{ release_t: 9, matched: true }, { release_t: 3, matched: false }] },
+});
+assert.equal(xs[0].release_t, 3, '跨段候选里未对应的也要排在前面');
+assert.ok(ov.template.includes('crossSegmentCandidates') && ov.template.includes('cross_segment_count'),
+  '卡片要真的渲染跨段候选');
+assert.ok(ov.template.includes('不计入上面的'), '要写明跨段候选单独计数，不混进候选总数');
+assert.ok(/排除不等于不存在/.test(ov.template), '要说明"被排除不等于不存在"，不能假装检测完整');
+assert.ok(/shotCandidates\.cross_segment_count/.test(ov.template),
+  '只有跨段候选、主列表为空时卡片也要显示（v-if 不能只看 candidates.length）');
+
+console.log('Frontend wiring: videoUrl/jobVideoUrl + 取帧前置条件 + 位置未知不出热区 + 候选标签在 methods + 跨段候选单列 (checks passed)');
