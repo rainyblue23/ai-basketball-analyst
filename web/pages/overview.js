@@ -341,6 +341,7 @@ window.PAGES['overview'] = {
         ball_box_size: '球框尺寸异常（远大于本片正常球框）',
         ball_with_person: '球全程贴着人体框（像持球/走动）',
         few_ball_observations: '球观测过少（轨迹本就不稳）',
+        cut_truncated: '证据被切镜截断（结果要去下一个镜头找）',
       })[f] || f;
     },
     /**

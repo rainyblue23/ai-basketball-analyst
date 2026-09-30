@@ -240,6 +240,28 @@ class ShotCandidates(unittest.TestCase):
         self.assertIsNone(c["outside_person_run"])
         self.assertNotIn("ball_with_person", c["evidence_flags"])
 
+    def test_cut_right_after_evidence_is_flagged(self):
+        """观测刚结束画面就切走 → 标 cut_truncated（结果要去下一个镜头找）。
+
+        用户要求把"切镜截断"和"球被遮挡/飞出画面"分开说：前者是画面换了、看不到结果，
+        不能因为本段看不到就说没进。实测 day 的 4.004s / 18.819s 就是这种（差 0.33 / 0.13 秒）。
+        """
+        rows = arc(2.0, back_px=300.0)
+        last = rows[-1]["t"]
+        cut = frame(last + 0.2, None, rim=RIM)      # 切镜帧：新镜头首帧，本帧没有球
+        cut["cut"] = True
+        sc = shot_candidates(rows + [cut], DEFAULT_CONFIG)
+        self.assertEqual(sc["count"], 1, "切镜不该把候选本身弄没")
+        c = sc["candidates"][0]
+        self.assertTrue(c["cut_truncated"])
+        self.assertIn("cut_truncated", c["evidence_flags"])
+        # 反向对照：切镜离得远（1.5s 后）说明球是别的原因消失的，不该标成截断
+        far = frame(last + 1.5, None, rim=RIM)
+        far["cut"] = True
+        sc2 = shot_candidates(rows + [far], DEFAULT_CONFIG)
+        self.assertFalse(sc2["candidates"][0]["cut_truncated"])
+        self.assertNotIn("cut_truncated", sc2["candidates"][0]["evidence_flags"])
+
     def test_candidate_links_to_existing_event(self):
         frames = arc(2.0, back_px=300.0)
         ev = [{"t": 4.6, "release_t": 2.4, "type": "make"}]       # 离手 2.4s，判定收尾 4.6s

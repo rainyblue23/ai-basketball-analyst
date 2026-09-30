@@ -150,14 +150,28 @@ def shot_candidates(frames, config, events=None):
                             conf=float(ball.get('conf') or 0.0), in_person=in_person,
                             rim=(tr if tr.get('fresh') else None),
                             rcx=tr.get('cx'), rcy=tr.get('cy'), rw=tr.get('w')))
+    # 每一段里"球最后被真实观测到"的时刻：判断切镜是不是把观测截断了要用它，
+    # **不是**用候选窗口的边界（窗口边界是算法截的，跟球有没有继续被看到无关）。
+    block_last_ball = {}
+    for p in obs:
+        block_last_ball[p['block']] = max(block_last_ball.get(p['block'], -1e9), p['t'])
     # 该片段"正常球框"的尺度基准：全片真实球检出的宽度中位数。
     # 夜间的球框误检会给出 2~3 倍于此的大框（实测 night 20.621 窗口里是 97~158px 的竖长框，
     # 而该片段中位宽只有 56px），所以用比值而不是绝对值来标记。
     widths = sorted(p['w'] for p in obs)
     clip_ball_w = widths[len(widths) // 2] if widths else None
+    # 切镜时刻（cut=True 的帧就是新镜头首帧）：用来判断"这条候选的证据是不是被切镜截断的"。
+    # 实测 day 的 4.004s / 18.819s 就是观测刚结束画面就切走（差 0.33s / 0.13s），
+    # 这种"看不到结果"与"球被遮挡/飞出画面"是两回事，必须分开说 —— 用户明确要求过。
+    cut_times = [float(r['t']) for r in frames if r.get('cut')]
 
-    def _evidence(seg_pts):
-        """候选窗口内的"球框身份"描述量：只描述证据，不参与任何判定。"""
+    def _evidence(seg_pts, apex):
+        """候选窗口内的"球框身份"描述量：只描述证据，不参与任何判定。
+
+        cut_truncated 用"顶点所在那一段里球最后被观测到的时刻"，而不是窗口边界：
+        窗口边界是算法截出来的，跟"球还有没有被看到"无关（实测按窗口边界算会把
+        day 26.86 这种完整弧线也误标成截断）。
+        """
         n = len(seg_pts)
         if not n:
             return {}
@@ -172,6 +186,13 @@ def shot_candidates(frames, config, events=None):
         for p in sorted(known, key=lambda q: q['t']):
             run = run + 1 if not p['in_person'] else 0
             best = max(best, run)
+        t_last = max(p['t'] for p in seg_pts)
+        # 只有"这条候选自己的证据**就是**该段里最后的球观测、且切镜紧接其后"才算被截断。
+        # 两个条件缺一不可：
+        #   - 只看窗口边界会误报（窗口是算法截的，球可能还在被观测）→ day 26.86 那种完整弧线被误标；
+        #   - 只看"该段最后的球观测离切镜近"会泛滥（同一段里有多次出手）→ day 一次标出 8 条。
+        cut_truncated = (t_last >= block_last_ball.get(apex['block'], t_last) - 1e-6
+                         and any(-0.05 <= c - t_last <= 0.5 for c in cut_times))
         flags = []
         if tall >= 0.3:
             flags.append('ball_box_shape')          # 竖长框：多半把人也当成球了
@@ -181,11 +202,14 @@ def shot_candidates(frames, config, events=None):
             flags.append('ball_with_person')        # 球全程贴着人：像持球/走动
         if n < 5:
             flags.append('few_ball_observations')   # 球观测太少，轨迹本就不稳
+        if cut_truncated:
+            flags.append('cut_truncated')           # 证据被切镜截断：结果要去下一个镜头里找
         return dict(ball_obs=n, ball_box_w_med=round(w_med, 1),
                     ball_box_w_ratio=(round(w_med / clip_ball_w, 2) if clip_ball_w else None),
                     tall_box_frac=round(tall, 2),
                     in_person_frac=(round(in_person_frac, 2) if in_person_frac is not None else None),
                     outside_person_run=(best if known else None),
+                    cut_truncated=cut_truncated,
                     evidence_flags=flags)
     def _scan(respect_block):
         """在 ±win 秒窗口里找局部顶点。respect_block=True 只用同一段内的点（主列表口径，
@@ -228,7 +252,7 @@ def shot_candidates(frames, config, events=None):
                             start_dist_rims=round(sdist, 2) if sdist is not None else None,
                             klass=('near' if (sdist is not None and sdist < close_w)
                                    else 'far' if sdist is not None else 'unknown'),
-                            **_evidence(seg_pts)))
+                            **_evidence(seg_pts, o)))
         return raw
 
     def _dedupe(raw):
@@ -306,8 +330,10 @@ def shot_candidates(frames, config, events=None):
                       '另一个镜头里），主列表为不跨段拼接而排除了它们；这不代表它们不真实，'
                       '必须靠目视核对，同样不计入出手次数与命中统计，也不计入 count/unmatched_count。'
                       'evidence_flags 是**证据描述**（球框形态/尺寸是否异常、球是否全程贴着人、'
-                      '球观测是否过少），用来判断"这条候选值不值得看、看的时候要注意什么"，'
-                      '**不能**当成投篮与否的判定（实测真实投篮的窗口里也可能有竖长框）。'))
+                      '球观测是否过少、证据是否被切镜截断），用来判断"这条候选值不值得看、'
+                      '看的时候要注意什么"，**不能**当成投篮与否的判定（实测真实投篮的窗口里'
+                      '也可能有竖长框）。cut_truncated=true 表示**观测刚结束画面就切走**：'
+                      '这一条的"进没进"要到下一个镜头里去找，不能因为本段看不到结果就说没进。'))
 
 
 def unpack(det):
