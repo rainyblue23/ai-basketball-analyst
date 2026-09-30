@@ -196,8 +196,12 @@ def main() -> int:
     cap.release()
 
     summary = []
+    # 文件名带上**来源视频的全名**：用户实测反馈"只看到 t03p34 这种文件名不知道是哪条视频"，
+    # 所以每个时刻的产物名里都写清视频，避免离开上下文就无法辨认。
+    src_stem = Path(args.video).stem
     for w in wants:
-        tag = ("t%05.2f" % w["t"]).replace(".", "p")
+        time_tag = ("t%05.2f" % w["t"]).replace(".", "p")
+        tag = "%s_%s" % (src_stem, time_tag)
         # 短片
         if w["clip"]:
             h, wd = w["clip"][0].shape[:2]
@@ -273,6 +277,9 @@ def main() -> int:
 
     (out / "README_怎么看.md").write_text(
         "# %s\n\n" % (args.title or "篮筐跟踪 · 画面核对包") +
+        "**来源视频**：`%s`（任务目录 `%s`）\n\n" % (args.video, job) +
+        "每个时刻的产物文件名都以视频全名为前缀（例如 `%s_%s_sheet.jpg`），"
+        "离开这份 README 也能认出是哪条视频。\n\n" % (src_stem, ("t%05.2f" % wants[0]["t"]).replace(".", "p") if wants else "t00p00") +
         "这些画面来自**同一次运行的逐帧依据**（不是重新推理），时间码与 trace 的 `t` 一致。\n\n"
         "**框的画法**：**绿色实框 = 当帧有效跟踪的筐**（`tracked_rim` 且 `fresh=true`）；\n"
         "**灰色虚线框 = 过期的历史位置**（`fresh=false`，框上标 `STALE` 与最后观测时刻）——\n"
