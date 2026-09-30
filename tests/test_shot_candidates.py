@@ -194,6 +194,52 @@ class ShotCandidates(unittest.TestCase):
         self.assertEqual(c["matched_event_type"], "make")
         self.assertLessEqual(c["matched_delta_s"], 1.5)
 
+    def test_evidence_flags_describe_ball_box_shape_and_do_not_filter(self):
+        """球框被框成"竖长框"（多半框到了人）时，候选要**照旧列出**，只加证据提示。
+
+        用户实测：夜间"球框"会框到球员头部。这里的口径是**描述证据**，不是判投篮 ——
+        真实投篮的窗口里也会出现竖长框，所以绝不能拿它过滤候选。
+        """
+        rows = []
+        for r in arc(2.0, back_px=300.0):
+            box = r["ball"]["xyxy"]
+            cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+            r["ball"]["xyxy"] = [cx - 6, cy - 18, cx + 6, cy + 18]     # 12x36：h/w = 3
+            rows.append(r)
+        sc = shot_candidates(rows, DEFAULT_CONFIG)
+        self.assertEqual(sc["count"], 1, "有证据提示的候选仍然要列出来（不许被过滤掉）")
+        c = sc["candidates"][0]
+        self.assertIn("ball_box_shape", c["evidence_flags"])
+        self.assertEqual(c["tall_box_frac"], 1.0)
+        self.assertEqual(c["ball_box_w_med"], 12.0)
+        self.assertIn("ball_box_shape", sc["evidence_flag_counts"])
+
+    def test_ball_stays_with_person_is_flagged_as_evidence(self):
+        """球心全程落在人体框内（持球/走动）→ 提示 ball_with_person，且"连续在人框外"为 0。
+
+        用户目视实测：场边人员抱球走动会产生候选（night 24.458 / 27.995）。
+        """
+        person = [0.0, 0.0, 2000.0, 1000.0]          # 整个人体框把球路全包住
+        rows = []
+        for r in arc(2.0, back_px=300.0):
+            r["persons"] = [{"cls": "person", "conf": .9, "xyxy": person, "track_id": "P1"}]
+            rows.append(r)
+        sc = shot_candidates(rows, DEFAULT_CONFIG)
+        self.assertEqual(sc["count"], 1, "证据提示不是过滤器：候选照旧列出")
+        c = sc["candidates"][0]
+        self.assertIn("ball_with_person", c["evidence_flags"])
+        self.assertEqual(c["in_person_frac"], 1.0)
+        self.assertEqual(c["outside_person_run"], 0, "全程贴着人 → 连续在人框外 0 帧")
+        self.assertEqual(c["ball_box_w_ratio"], 1.0, "球框宽度正常 → 与全片中位宽比值为 1")
+
+    def test_person_evidence_is_unknown_without_person_detection(self):
+        """没有球员检测时必须是"未知"，不能当成"球不在人身上"。"""
+        sc = shot_candidates(arc(2.0, back_px=300.0), DEFAULT_CONFIG)   # frame() 默认 persons=[]
+        c = sc["candidates"][0]
+        self.assertIsNone(c["in_person_frac"])
+        self.assertIsNone(c["outside_person_run"])
+        self.assertNotIn("ball_with_person", c["evidence_flags"])
+
     def test_candidate_links_to_existing_event(self):
         frames = arc(2.0, back_px=300.0)
         ev = [{"t": 4.6, "release_t": 2.4, "type": "make"}]       # 离手 2.4s，判定收尾 4.6s

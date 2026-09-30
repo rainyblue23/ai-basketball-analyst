@@ -139,10 +139,54 @@ def shot_candidates(frames, config, events=None):
         box = ball.get('xyxy')
         if box and not ball.get('predicted'):
             tr = r.get('tracked_rim') or {}
-            obs.append(dict(t=float(r['t']), x=(box[0] + box[2]) / 2, y=(box[1] + box[3]) / 2,
-                            block=block,
+            cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+            persons = [p.get('xyxy') for p in (r.get('persons') or []) if p.get('xyxy')]
+            # 球心是否落在某个人体框里：用来区分"球在飞行"与"球还被人抱着/贴着人"
+            # （用户目视实测：场边人员抱球走动会产生候选）。没有人框时为 None（未知，不是"否"）。
+            in_person = (any(pb[0] <= cx <= pb[2] and pb[1] <= cy <= pb[3] for pb in persons)
+                         if persons else None)
+            obs.append(dict(t=float(r['t']), x=cx, y=cy, block=block,
+                            w=float(box[2] - box[0]), h=float(box[3] - box[1]),
+                            conf=float(ball.get('conf') or 0.0), in_person=in_person,
                             rim=(tr if tr.get('fresh') else None),
                             rcx=tr.get('cx'), rcy=tr.get('cy'), rw=tr.get('w')))
+    # 该片段"正常球框"的尺度基准：全片真实球检出的宽度中位数。
+    # 夜间的球框误检会给出 2~3 倍于此的大框（实测 night 20.621 窗口里是 97~158px 的竖长框，
+    # 而该片段中位宽只有 56px），所以用比值而不是绝对值来标记。
+    widths = sorted(p['w'] for p in obs)
+    clip_ball_w = widths[len(widths) // 2] if widths else None
+
+    def _evidence(seg_pts):
+        """候选窗口内的"球框身份"描述量：只描述证据，不参与任何判定。"""
+        n = len(seg_pts)
+        if not n:
+            return {}
+        ws = sorted(p['w'] for p in seg_pts)
+        w_med = ws[len(ws) // 2]
+        tall = sum(1 for p in seg_pts if p['h'] > 1.3 * p['w']) / n
+        known = [p for p in seg_pts if p['in_person'] is not None]
+        in_person_frac = (sum(1 for p in known if p['in_person']) / len(known)) if known else None
+        # 最长连续"球在人框外"的帧数：真实出手应当在离手后连续若干帧离开人体框；
+        # 抱球走动时几乎为 0（实测 night 27.995 = 0 帧、24.458 = 2 帧）。
+        run = best = 0
+        for p in sorted(known, key=lambda q: q['t']):
+            run = run + 1 if not p['in_person'] else 0
+            best = max(best, run)
+        flags = []
+        if tall >= 0.3:
+            flags.append('ball_box_shape')          # 竖长框：多半把人也当成球了
+        if clip_ball_w and w_med >= 1.5 * clip_ball_w:
+            flags.append('ball_box_size')           # 比本片段正常球框大太多
+        if in_person_frac is not None and in_person_frac >= 0.8:
+            flags.append('ball_with_person')        # 球全程贴着人：像持球/走动
+        if n < 5:
+            flags.append('few_ball_observations')   # 球观测太少，轨迹本就不稳
+        return dict(ball_obs=n, ball_box_w_med=round(w_med, 1),
+                    ball_box_w_ratio=(round(w_med / clip_ball_w, 2) if clip_ball_w else None),
+                    tall_box_frac=round(tall, 2),
+                    in_person_frac=(round(in_person_frac, 2) if in_person_frac is not None else None),
+                    outside_person_run=(best if known else None),
+                    evidence_flags=flags)
     def _scan(respect_block):
         """在 ±win 秒窗口里找局部顶点。respect_block=True 只用同一段内的点（主列表口径，
         避免把切镜前后两个镜头的球点拼成一条弧线）；False 时不受段边界限制。"""
@@ -183,7 +227,8 @@ def shot_candidates(frames, config, events=None):
                             blocks_in_window=len({p['block'] for p in seg_pts}),
                             start_dist_rims=round(sdist, 2) if sdist is not None else None,
                             klass=('near' if (sdist is not None and sdist < close_w)
-                                   else 'far' if sdist is not None else 'unknown')))
+                                   else 'far' if sdist is not None else 'unknown'),
+                            **_evidence(seg_pts)))
         return raw
 
     def _dedupe(raw):
@@ -241,6 +286,10 @@ def shot_candidates(frames, config, events=None):
         c['cross_segment'] = c['blocks_in_window'] >= 2
     cross_seg = [c for c in loose_only if c['cross_segment']]
     truncated = len(out) > cap
+    flag_counts = {}
+    for c in out:
+        for f in c.get('evidence_flags') or []:
+            flag_counts[f] = flag_counts.get(f, 0) + 1
     return dict(count=len(out), unmatched_count=len(unmatched), truncated=truncated,
                 candidates=out[:cap], review_offset_s=1.0, match_tol_s=match_tol,
                 cross_segment_count=len(cross_seg), cross_segment=cross_seg[:cap],
@@ -248,13 +297,17 @@ def shot_candidates(frames, config, events=None):
                 # 不受段限制时多出来、但窗口并没有跨段的候选（=与主列表某条在时间上重叠、
                 # 被去重合并掉的），这里只报个数、不重复列出。
                 loose_only_same_segment=len(loose_only) - len(cross_seg),
+                evidence_flag_counts=flag_counts,
                 note=('待核对的轨迹候选：轨迹像投篮。matched=true 表示该候选的**离手时刻与某条已有'
                       '事件接近**（只说明时间上靠近，**不证明是同一次出手**，需人工确认）；'
                       'matched=false 的是**离手时刻附近没有任何事件**、更需要回看的候选。'
                       '两类都不计入出手次数与命中统计。cross_segment 是**另一份、单独计数**的列表：'
                       '这些轨迹的证据**跨越了镜头切换或跟踪段边界**（上升段在一个镜头里、顶点在'
                       '另一个镜头里），主列表为不跨段拼接而排除了它们；这不代表它们不真实，'
-                      '必须靠目视核对，同样不计入出手次数与命中统计，也不计入 count/unmatched_count。'))
+                      '必须靠目视核对，同样不计入出手次数与命中统计，也不计入 count/unmatched_count。'
+                      'evidence_flags 是**证据描述**（球框形态/尺寸是否异常、球是否全程贴着人、'
+                      '球观测是否过少），用来判断"这条候选值不值得看、看的时候要注意什么"，'
+                      '**不能**当成投篮与否的判定（实测真实投篮的窗口里也可能有竖长框）。'))
 
 
 def unpack(det):

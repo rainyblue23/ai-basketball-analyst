@@ -331,6 +331,19 @@ window.PAGES['overview'] = {
       return ({ arc: '完整弧线', rise_only: '上升后未下落', vanish: '上升后球消失' })[k] || k;
     },
     /**
+     * 证据提示（后端 evidence_flags）：说的是"看这条候选时要注意什么"，
+     * **不是**"这条是不是投篮"。实测真实投篮的窗口里也会出现竖长球框（人/头误检），
+     * 所以文案里不能写成结论，只能写成证据状态。
+     */
+    evidenceFlagLabel: function (f) {
+      return ({
+        ball_box_shape: '球框形态可疑（竖长框，可能框到人）',
+        ball_box_size: '球框尺寸异常（远大于本片正常球框）',
+        ball_with_person: '球全程贴着人体框（像持球/走动）',
+        few_ball_observations: '球观测过少（轨迹本就不稳）',
+      })[f] || f;
+    },
+    /**
      * 时间轴徽章配色：命中=绿、未中=灰、**待确认=橙**。
      * 为什么单独抽一个方法：结果未知时 `e.made` 是 null（后端已显式输出 null，
      * 不再用 false 占位），直接写 `e.made?'made':'miss'` 会把"待确认"配成"未中"的灰。
@@ -453,6 +466,7 @@ window.PAGES['overview'] = {
     '          <button class="el-button el-button--small" :disabled="!videoUrl" @click="gotoRimTransition({t: Math.max(0, c.release_t - (shotCandidates.review_offset_s || 1))})">回看 {{ mmss(c.release_t) }}</button>',
     '          <el-tag size="small" :type="c.matched ? \'info\' : \'warning\'" effect="plain">{{ c.matched ? "与已有出手对应" : "未对应任何事件" }}</el-tag>',
     '          出手≈{{ mmss(c.release_t) }}（顶点 {{ mmss(c.apex_t) }}）· {{ candidateKindLabel(c.kind) }} · {{ candidateClassLabel(c.klass) }} · 上升 {{ c.rise_px }}px / 下落 {{ c.fall_px }}px',
+    '          <span v-if="c.evidence_flags && c.evidence_flags.length" class="hint"> · 证据提示：{{ c.evidence_flags.map(evidenceFlagLabel).join("、") }}</span>',
     '          <span v-if="c.start_dist_rims != null" class="hint"> · 起点距筐 {{ c.start_dist_rims }} 个筐宽</span>',
     '          <span v-if="c.matched" class="hint"> · 对应事件 {{ mmss(c.matched_event_t) }}（{{ c.matched_event_type }}，离手差 {{ c.matched_delta_s }}s）</span>',
     '        </li>',
@@ -464,11 +478,13 @@ window.PAGES['overview'] = {
     '            <button class="el-button el-button--small" :disabled="!videoUrl" @click="gotoRimTransition({t: Math.max(0, c.release_t - (shotCandidates.review_offset_s || 1))})">回看 {{ mmss(c.release_t) }}</button>',
     '            <el-tag size="small" :type="c.matched ? \'info\' : \'warning\'" effect="plain">{{ c.matched ? "与已有事件时间接近" : "未对应任何事件" }}</el-tag>',
     '            出手≈{{ mmss(c.release_t) }}（顶点 {{ mmss(c.apex_t) }} · 证据横跨 {{ c.blocks_in_window }} 段）· {{ candidateKindLabel(c.kind) }} · 上升 {{ c.rise_px }}px / 下落 {{ c.fall_px }}px',
+    '            <span v-if="c.evidence_flags && c.evidence_flags.length" class="hint"> · 证据提示：{{ c.evidence_flags.map(evidenceFlagLabel).join("、") }}</span>',
     '            <span v-if="c.matched" class="hint"> · 相近事件 {{ mmss(c.matched_event_t) }}（{{ c.matched_event_type }}，离手差 {{ c.matched_delta_s }}s）</span>',
     '          </li>',
     '        </ul>',
     '      </div>',
     '      <p class="hint">{{ shotCandidates.note }} 阈值见任务参数（detect.cand_*），调整需重新分析。</p>',
+    '      <p class="hint">「证据提示」只说明<b>这条候选的证据状况</b>（球框框到人了、球一直贴着人、观测太少），用来决定<b>值不值得看、看的时候注意什么</b>；它<b>不是</b>投篮与否的判定 —— 实测真实投篮的窗口里也会出现这些提示。</p>',
     '    </section>',
     '    <details class="card" v-if="rimTracking">',
     '      <summary>篮筐跟踪与标注反馈</summary>',

@@ -149,4 +149,13 @@ assert.ok(/排除不等于不存在/.test(ov.template), '要说明"被排除不�
 assert.ok(/shotCandidates\.cross_segment_count/.test(ov.template),
   '只有跨段候选、主列表为空时卡片也要显示（v-if 不能只看 candidates.length）');
 
-console.log('Frontend wiring: videoUrl/jobVideoUrl + 取帧前置条件 + 位置未知不出热区 + 候选标签在 methods + 跨段候选单列 (checks passed)');
+// ---- 5c) 证据提示（evidence_flags）：只能当"看的时候注意什么"，不能当投篮判定 ----
+assert.equal(typeof ov.methods.evidenceFlagLabel, 'function', 'evidenceFlagLabel 必须在 methods');
+assert.ok(/框到人/.test(ov.methods.evidenceFlagLabel('ball_box_shape')), '竖长框要解释成人/头误检');
+assert.ok(/贴着人/.test(ov.methods.evidenceFlagLabel('ball_with_person')), '贴着人要解释成持球/走动');
+assert.equal(ov.methods.evidenceFlagLabel('没见过的标记'), '没见过的标记', '未知标记原样回退，不能崩');
+assert.ok(ov.template.includes('evidenceFlagLabel'), '模板要真的渲染证据提示');
+assert.ok(ov.template.includes('不是</b>投篮与否的判定') || ov.template.includes('不是投篮与否的判定'),
+  '要写明证据提示不是投篮判定（实测真实投篮窗口里也会出现这些提示）');
+
+console.log('Frontend wiring: videoUrl/jobVideoUrl + 取帧前置条件 + 位置未知不出热区 + 候选标签在 methods + 跨段候选单列 + 证据提示非判定 (checks passed)');
