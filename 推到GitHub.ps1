@@ -15,7 +15,7 @@ $ErrorActionPreference = 'Stop'
 Set-Location -Path $PSScriptRoot
 
 # ---- 要推到哪里（如果仓库名不一样，改这一行）----
-$Repo = 'https://github.com/yuanshenwang134/AI-.git'
+$Repo = 'https://github.com/rainyblue23/ai-basketball-analyst.git'
 
 Write-Host "=== 1/4 检查仓库状态 ===" -ForegroundColor Cyan
 if (-not (Test-Path .git)) {

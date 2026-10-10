@@ -34,11 +34,11 @@ for (const [code, text] of [['cross_rim_contact','筐沿'],['cross_hoop_uncertai
   }
 }
 assert.ok(page.template.includes('v-if="unknownReason(row)"'));
-assert.ok(page.template.includes('判定依据：'));
+assert.ok(page.template.includes('<copy-note label="未知原因">{{ unknownReason(row) }}</copy-note>'));
 console.log('Unknown evidence reasons and suggestion exclusion passed');
 const reasonBlock = page.template.split('v-if="unknownReason(row)"')[1].split('v-if="hasSuggestion(row)"')[0];
 assert.ok(reasonBlock.includes('v-if="row.crossing_t != null"'));
-assert.ok(reasonBlock.includes('建议核对 {{ mmss(row.crossing_t) }} 附近画面'));
+assert.ok(reasonBlock.includes('回看 {{ mmss(row.crossing_t) }} 附近'));
 
 const gapRow={result:'unknown',made:null,suggested_made:true,evidence:'legacy_occlusion_descent',review_t:16.483,crossing_t:null};
 assert.equal(vm.hasSuggestion(gapRow),true);
@@ -51,3 +51,12 @@ assert.equal(vm.suggestionReviewTime({review_t:NaN}),null);
 assert.equal(vm.suggestionReviewTime({review_t:-1}),null);
 assert.ok(page.template.includes('mmss(suggestionReviewTime(row))'));
 console.log('Gap suggestion review time and copy passed');
+
+for (const [code,text] of [['no_rim_outcome_evidence','没有进入筐口'],['below_rim_tracking_gap','实测球轨迹中断']]) {
+ const row={result:'unknown',made:null,review_reason:code,suggested_made:null};
+ assert.ok(vm.unknownReason(row).includes(text));
+ assert.equal(vm.hasSuggestion(row),false);
+ assert.equal(vm.unknownReason({...row,result:'made',made:true}),'');
+}
+assert.equal(vm.unknownReason({result:'unknown',made:null,review_reason:'future_code'}),'');
+assert.equal(vm.hasSuggestion({result:'unknown',made:null,review_reason:'occlusion_descent_suggestion',suggested_made:true}),true);

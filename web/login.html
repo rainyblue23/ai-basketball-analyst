@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>登录 · 哨响之后</title>
+<style>
+ body{margin:0;font:15px/1.7 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;background:#f5f7fa;color:#243244;
+      display:flex;align-items:center;justify-content:center;min-height:100vh}
+ .card{background:#fff;border-radius:10px;box-shadow:0 6px 24px rgba(20,40,80,.08);padding:28px 30px;width:min(340px,calc(100vw - 76px))}
+ h1{font-size:19px;margin:0 0 4px}
+ p.sub{color:#596778;font-size:13px;margin:0 0 18px}
+ label{display:block;font-size:13px;color:#425269;margin:10px 0 4px}
+ input{width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid #d5dbe5;border-radius:6px;font:inherit}
+ input:focus{outline:2px solid #2f6fed33;border-color:#2f6fed}
+ button{width:100%;margin-top:18px;padding:10px;border:0;border-radius:6px;background:#2f6fed;color:#fff;font:inherit;cursor:pointer}
+ button:disabled{background:#9db6f0;cursor:default}
+ .err{margin-top:12px;color:#a12b2b;font-size:13px;min-height:20px}
+ .hint{margin-top:14px;color:#596778;font-size:12px}
+</style>
+<link rel="stylesheet" href="./auth-login-court.css?v=20261009-1" />
+</head>
+<body class="auth-login">
+<form class="card" id="f">
+  <h1>哨响之后</h1>
+  
+  <label for="u">用户名</label>
+  <input id="u" name="username" autocomplete="username" maxlength="64" autofocus required />
+  <label for="p">密码</label>
+  <input id="p" name="password" type="password" autocomplete="current-password" maxlength="256" required />
+  <button id="b" type="submit">登录</button>
+  <div class="err" id="e" role="alert" aria-live="polite"></div>
+  
+  <div class="hint">还没有账号？<a href="/web/register.html">注册一个</a></div>
+</form>
+<script>
+const f=document.getElementById('f'),b=document.getElementById('b'),e=document.getElementById('e');
+f.addEventListener('submit',async(ev)=>{
+  ev.preventDefault();e.textContent='';b.disabled=true;b.textContent='正在登录…';
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
+  try{
+    const r=await fetch('/api/login',{method:'POST',signal:controller.signal,headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({username:document.getElementById('u').value,password:document.getElementById('p').value})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok){e.textContent=d.detail||'登录失败';b.disabled=false;return;}
+    const q=new URLSearchParams(location.search);
+    const target=new URL(q.get('next')||'/web/index.html',location.origin);
+    location.replace(target.origin===location.origin && !target.pathname.endsWith('login.html') ? target.href : '/web/index.html');
+  }catch(err){e.textContent='暂时无法登录，请检查连接后重试。';}
+  finally{clearTimeout(timer);b.disabled=false;b.textContent='登录';}
+});
+</script>
+</body>
+</html>
+

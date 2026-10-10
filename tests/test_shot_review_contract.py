@@ -31,7 +31,7 @@ class ReviewContractTests(unittest.TestCase):
         from fastapi.testclient import TestClient
         from aihoop import api
         client = TestClient(api.app)  # No lifespan: never run real job recovery in this unit test.
-        with patch.object(api, '_load_json') as load:
+        with patch.object(api, '_load_json') as load, patch('aihoop.auth.read_session', return_value='test-reviewer'):
             for value in [0, 4, 9, -1]:
                 response = client.post('/api/games/fixture/shots/0/correct', json={'made':True, 'value':value})
                 self.assertEqual(response.status_code, 400)

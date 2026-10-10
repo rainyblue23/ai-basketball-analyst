@@ -3,7 +3,22 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>AI 篮球分析软件 · 比赛智能分析平台</title>
+<title>哨响之后 · 比赛智能分析平台</title>
+
+<!-- 主题必须在**首屏之前**定好，否则会先闪一下深色再变浅色。
+     优先级：URL 上的 ?theme=light|dark（方便截图/自测） > localStorage 里的选择 > 默认深色。 -->
+<script>
+(function () {
+  try {
+    var q = new URLSearchParams(location.search).get('theme');
+    var saved = localStorage.getItem('aihoop-theme');
+    var t = (q === 'light' || q === 'dark') ? q : saved;
+    document.documentElement.setAttribute('data-theme', t === 'light' ? 'light' : 'dark');
+  } catch (e) {
+    document.documentElement.setAttribute('data-theme', 'dark');
+  }
+})();
+</script>
 
 <!-- ================= 前端依赖：本地优先，CDN 兜底 =================
      为什么这么写：答辩现场的网络经常不可靠，CDN 一挂就是白屏。
@@ -51,16 +66,28 @@
 })();
 </script>
 
-<link rel="stylesheet" href="./styles.css" />
+<link rel="stylesheet" href="./styles.css?v=70-shaoxiang" />
+<link rel="stylesheet" href="./editorial.css?v=70-shaoxiang" />
 </head>
 <body>
+<script src="./session.js?v=70-shaoxiang"></script>
 <div id="app" v-cloak>
   <!-- ============ 深色顶栏：数据源状态 + 模式标签 + 任务快照 ============ -->
   <header class="topbar">
     <div class="brand">
-      <span class="logo">🏀</span>
+      <span class="logo"><svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">
+        <defs><radialGradient id="ballGrad" cx="34%" cy="28%" r="78%">
+          <stop offset="0%" stop-color="#FFC078" /><stop offset="52%" stop-color="#F97316" /><stop offset="100%" stop-color="#B3400A" />
+        </radialGradient></defs>
+        <circle cx="12" cy="12" r="10.2" fill="url(#ballGrad)" />
+        <g fill="none" stroke="#40210A" stroke-width="1.05" stroke-linecap="round" opacity=".9">
+          <path d="M1.9 12h20.2M12 1.9v20.2" />
+          <path d="M4.4 5.1c3.7 2.2 3.7 11.6 0 13.8M19.6 5.1c-3.7 2.2-3.7 11.6 0 13.8" />
+        </g>
+        <circle cx="12" cy="12" r="10.2" fill="none" stroke="rgba(255,255,255,.22)" stroke-width="1" />
+      </svg></span>
       <div class="brand-text">
-        <b>AI 篮球分析软件</b>
+        <b>哨响之后</b>
         <small>比赛视频 → 比分 / 命中率 / 热区 / 战报</small>
       </div>
     </div>
@@ -69,18 +96,53 @@
          顶栏原来又平铺了一遍同样的菜单，与侧栏重复 —— 用户反馈后已移除。 -->
 
     <div class="topbar-right">
+<div id="dsh-user-bar" class="account-bar">
+  <span id="dsh-user" style="color:#425269">…</span>
+  <a href="/web/my.html" style="color:#2f6fed;text-decoration:none">我的</a>
+  <button id="dsh-logout" type="button" style="border:0;background:transparent;color:#c45656;cursor:pointer;font:inherit">退出登录</button>
+</div>
+      <!-- 这里原来还有一个重复的「退出登录」按钮（队友好心加的），跟上面那个一模一样，
+           顶栏会出现两个一样的按钮（用户看到的就是"两个退出登录"）。已删掉一个。 -->
       <!-- 后端探测结果：green = 已连后端；orange = 演示数据模式 -->
       <el-tag :type="state.backendOk ? 'success' : 'warning'" effect="dark" size="small"
               :title="state.backendOk ? api.base : api.lastError">
         {{ state.backendOk ? '后端已连接' : '演示数据模式' }}
       </el-tag>
-      <el-tag v-if="job && job.job_id" type="info" effect="plain" size="small"
-              :title="job.out_dir">
-        任务 {{ String(job.job_id).slice(0, 8) }} · {{ job.status }}
-      </el-tag>
+      <!-- 当前任务 + 切换入口。原来这里只是一个小标签；刷新后前端会自动挑"最新的 done
+           任务"，如果那次分析是空的（实测：8 秒片段 0 次出手），六个产出页全空，
+           而界面上**没有任何入口**能换到别的任务 —— 用户只会觉得"什么都看不到"。 -->
+      <!-- 深色 / 浅色 开关（选择记在 localStorage，首屏由 <head> 里的内联脚本先应用） -->
+      <el-switch v-model="lightTheme" size="small" inline-prompt active-text="浅" inactive-text="深"
+                 :active-value="true" :inactive-value="false" @change="applyTheme"
+                 style="--el-switch-on-color:#E8EDF4;--el-switch-off-color:#243246;margin-right:2px"
+                 :title="lightTheme ? '当前：浅色（点一下切深色）' : '当前：深色（点一下切浅色）'" />
+      <el-popover v-if="state.jobs && state.jobs.length" trigger="click" placement="bottom-end"
+                  :width="380" popper-class="copy-note-panel">
+        <template #reference>
+          <el-tag type="info" effect="plain" size="small" style="cursor:pointer"
+                  :title="'点一下换任务（当前 ' + (state.jobId || '未选') + '）'">
+            当前任务 {{ state.jobId ? String(state.jobId).slice(0, 8) : '未选' }} ▾
+          </el-tag>
+        </template>
+        <div class="job-picker">
+          <div class="hint" style="margin-bottom:6px">换任务：</div>
+          <button v-for="j in state.jobs" :key="j.job_id" type="button" class="job-pick-row"
+                  :class="{ on: j.job_id === state.jobId }" @click="switchJob(j.job_id)">
+            <b>{{ String(j.job_id).slice(0, 8) }}</b>
+            <span class="job-pick-meta">{{ jobLabel(j) }}</span>
+            <span v-if="j.job_id === state.jobId" class="job-pick-now">当前</span>
+          </button>
+        </div>
+      </el-popover>
       <el-button size="small" text style="color:#cbd5e1" @click="probe">重新探测</el-button>
     </div>
   </header>
+
+  <!-- ============ 这次分析为什么是空的（有任务但没内容时显示，避免"看着像坏了"） ============ -->
+  <div v-if="state.emptyWhy && ['overview', 'players', 'shotchart', 'tactics', 'highlights', 'review', 'report'].indexOf(route) !== -1" class="empty-why" role="status">
+    <b>当前分析</b>
+    <span>{{ state.emptyWhy }}</span>
+  </div>
 
   <!-- ============ 演示数据模式提示条（后端不可用时的优雅降级说明） ============ -->
   <div v-if="!state.backendOk" class="degrade-bar">
@@ -99,21 +161,35 @@
   <!-- ============ 左侧菜单 + 内容区 ============ -->
   <div class="layout">
     <aside class="sidebar">
+      <!-- 侧栏顶部小标识：窄屏（≤1180px）侧栏变成横排时由 CSS 隐藏 -->
+      <div class="side-brand">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="10.2" fill="#F97316" />
+          <g fill="none" stroke="#40210A" stroke-width="1.05" stroke-linecap="round" opacity=".9">
+            <path d="M1.9 12h20.2M12 1.9v20.2" />
+            <path d="M4.4 5.1c3.7 2.2 3.7 11.6 0 13.8M19.6 5.1c-3.7 2.2-3.7 11.6 0 13.8" />
+          </g>
+        </svg>
+        <span>哨响之后<small>比赛视频 → 数据</small></span>
+      </div>
       <a v-for="m in menus.filter(x => x.group === 'home')" :key="m.key" :href="'#/' + m.key"
+         @click.prevent="navigate(m.key)"
          :class="['side-item', { active: route === m.key }]">
-        <span class="ico">{{ m.icon }}</span>
+        <span class="ico" v-html="m.icon"></span>
         <span class="txt">{{ m.title }}</span>
       </a>
       <div class="side-sec">分析流程</div>
       <a v-for="m in menus.filter(x => x.group === 'flow')" :key="m.key" :href="'#/' + m.key"
+         @click.prevent="navigate(m.key)"
          :class="['side-item', { active: route === m.key }]">
-        <span class="ico">{{ m.icon }}</span>
+        <span class="ico" v-html="m.icon"></span>
         <span class="txt">{{ m.title }}</span>
       </a>
       <div class="side-sec">结果与产出</div>
       <a v-for="m in menus.filter(x => x.group === 'output')" :key="m.key" :href="'#/' + m.key"
+         @click.prevent="navigate(m.key)"
          :class="['side-item', { active: route === m.key }]">
-        <span class="ico">{{ m.icon }}</span>
+        <span class="ico" v-html="m.icon"></span>
         <span class="txt">{{ m.title }}</span>
       </a>
 
@@ -138,6 +214,8 @@
     </aside>
 
     <main class="content">
+      <div class="sample-status" role="status" v-if="(state.jobId || '').indexOf('example_')===0">样例只读 · 集锦分析，非完整比赛统计。<a href="#/examples">返回样例</a></div>
+      <page-help :page="route"></page-help>
       <!-- 每个页面都是 window.PAGES[key] 里的一个组件对象，hash 路由切换 -->
       <component :is="currentPage" v-if="currentPage"></component>
       <el-empty v-else description="页面未注册" />
@@ -150,22 +228,47 @@
 <!--
   ?v= 是**缓存击穿**用的。踩过的坑：改了 overview.js 之后浏览器还在用缓存的旧版，
   页面上「证据来源」卡片还是老样子，看着像后端没改 —— 其实是前端根本没换。
-  改前端文件后把下面的 v= 一起 +1，就能保证浏览器一定拿到新代码。
+  改前端文件后把下面 21 个 v= **统一**换成同一个新串（例如 ?v=70-shaoxiang），
+  就能保证浏览器一定拿到新代码。统一成一个串的理由：以前每次只改动的那个文件 +1，
+  于是同一轮里各文件号不一样，看不出"这一轮到底是什么时候"；统一之后一眼可查。
 -->
-<script src="./api.js?v=37"></script>
-<script src="./data.js?v=35-location"></script>
-<script src="./court.js?v=34"></script>
-<script src="./components.js?v=34"></script>
-<script src="./pages/home.js?v=34"></script>
-<script src="./pages/upload.js?v=37"></script>
-<script src="./pages/overview.js?v=36-coverage"></script>
-<script src="./pages/stats.js?v=34"></script>
-<script src="./pages/shotchart.js?v=34"></script>
-<script src="./pages/tactics.js?v=34"></script>
-<script src="./pages/highlights.js?v=37"></script>
-<script src="./pages/report.js?v=35-location"></script>
-<script src="./pages/review.js?v=35-gap-review"></script>
-<script src="./pages/train.js?v=34"></script>
-<script src="./app.js?v=36"></script>
+<script src="./api.js?v=70-shaoxiang"></script>
+<script src="./data.js?v=71-shot-semantics"></script>
+<script src="./court.js?v=70-shaoxiang"></script>
+<script src="./components.js?v=70-shaoxiang"></script>
+<script src="./detection-overlay.js?v=74-jersey-only"></script>
+<script src="./pages/examples.js?v=72-yang-review"></script>
+<script src="./module-art.js?v=70-shaoxiang"></script>
+<script src="./pages/home.js?v=70-shaoxiang"></script>
+<script src="./pages/upload.js?v=70-shaoxiang"></script>
+<script src="./pages/overview.js?v=76-yang-outputs"></script>
+<script src="./pages/stats.js?v=76-yang-outputs"></script>
+<script src="./pages/shotchart.js?v=70-shaoxiang"></script>
+<script src="./pages/tactics.js?v=76-yang-outputs"></script>
+<script src="./pages/highlights.js?v=76-yang-outputs"></script>
+<script src="./pages/report.js?v=72-yang-review"></script>
+<script src="./pages/review.js?v=73-yang-review"></script>
+<!-- 「训练标注」页已下线：不再加载 pages/train.js（文件备份在 _tmp/merge/backup/train.js.removed） -->
+<script src="./app.js?v=72-yang-review"></script>
+
+<!-- 右上角：我的 / 退出登录（登录后可见；未登录会自动跳登录页） -->
+
+<script>
+(function(){
+  var bar=document.getElementById('dsh-user-bar'),u=document.getElementById('dsh-user');
+  function toLogin(){location.replace('/web/login.html?next='+encodeURIComponent(location.pathname+location.search));}
+  fetch('/api/me').then(function(r){return r.json().catch(function(){return {};}).then(function(d){return {s:r.status,d:d};});})
+    .then(function(x){
+      if(x.s!==200||!x.d||!x.d.ok){toLogin();return;}
+      u.textContent=(x.d.username||'—')+(x.d.internal?'（本机）':'');
+    }).catch(function(){});
+  document.getElementById('dsh-logout').addEventListener('click',function(){
+    fetch('/api/logout',{method:'POST'}).then(function(){location.replace('/web/login.html');})
+      .catch(function(){location.replace('/web/login.html');});
+  });
+})();
+</script>
+
 </body>
 </html>
+

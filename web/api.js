@@ -24,7 +24,7 @@
   'use strict';
 
   var qs = new URLSearchParams(location.search);
-  var DEFAULT_BASE = 'http://127.0.0.1:8000';
+  var DEFAULT_BASE = location.protocol === 'file:' ? 'http://127.0.0.1:8000' : (location.origin || 'http://127.0.0.1:8000');
 
   var API = {
     // 后端地址：?api=http://host:port 可覆盖（方便换机演示）
@@ -268,8 +268,12 @@
   API.getJob = function (id) {
     return API.getJSON(API.base + '/api/jobs/' + encodeURIComponent(id));
   };
-  API.listJobs = function () {
-    return API.getJSON(API.base + '/api/jobs', 5000);
+  /* 任务列表。includeSynthetic=true 时把**合成/演示任务**也算进来 ——
+     战术页在"当前任务没有战术产物"时要靠它去找一个真有战术数据的任务
+     （合成数据源自带战术层，用户第一次打开战术页就能看到结果，不用先跑真视频）。 */
+  API.listJobs = function (includeSynthetic) {
+    return API.getJSON(API.base + '/api/jobs' +
+      (includeSynthetic ? '?include_synthetic=true' : ''), 5000);
   };
 
   /**
@@ -415,6 +419,9 @@
     return API.getJSON(API.base + '/api/feedback' +
       (videoPath ? '?video_path=' + encodeURIComponent(videoPath) : ''), 10000);
   };
+  /* 「训练标注」页已于 2026-10-05 按用户要求下线：下面这 4 个 label* 方法暂时没有
+     页面在调用。**后端 /api/label/* 接口仍然保留**（命令行、脚本、以后恢复页面都能用），
+     所以这里也一并留着，不做删除。页面文件备份在 _tmp/merge/backup/train.js.removed。 */
   /** 训练标注：读候选列表（candidates.json） */
   API.labelCandidates = function (path) {
     return API.getJSON(API.base + '/api/label/candidates?path=' +
@@ -474,6 +481,13 @@
            '&span=' + encodeURIComponent(span || 3);
     }
     return API.getJSON(u, 60000);
+  };
+  /** 自动挑两帧"同一镜头"的画面（标定页用）。
+   *  为什么需要后端做：判定镜头有没有切要算 ORB 内点率，浏览器里做不了。
+   *  两帧必须在同一镜头，合并解才成立（实测用户取到两个镜头 -> 必然矛盾）。 */
+  API.framesStable = function (videoPath, n) {
+    return API.getJSON(API.base + '/api/frames_stable?video_path=' +
+      encodeURIComponent(videoPath) + '&n=' + (n || 8), 120000);
   };
   /** 多画面累加解标定（并返回逐个点误差） */
   API.calibrateAuto = function (payload) {

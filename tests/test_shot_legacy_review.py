@@ -69,6 +69,16 @@ class ReviewFixes(unittest.TestCase):
         rows=e.update(120,4.,Det('basketball',.9,(195,180,205,190)),RIM,[])
         self.assertEqual(rows[0]['type'],'miss')
 
+    def test_no_rim_evidence_cannot_become_miss(self):
+        e=self.prepared();e.attempt.entered=False
+        row=e._close(120,4.,'miss',None)
+        self.assertEqual(row['type'],'uncertain')
+        self.assertIsNone(row['made'])
+        self.assertEqual(row['review_reason'],'no_rim_outcome_evidence')
+        self.assertEqual(row['points'],0)
+        self.assertTrue(row['needs_review'])
+        self.assertIsNone(row['suggested_made'])
+
     def test_center_lock_rejects_other_hoop_after_stale_and_cut(self):
         s=LegacyShotStream(30,640,config={'detect':{'center_lock_widths':3}},hint=(100,100))
         for i in range(3):s.update(i,i/30,[RIM])

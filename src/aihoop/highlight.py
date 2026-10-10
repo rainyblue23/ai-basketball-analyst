@@ -41,12 +41,29 @@ class Clip:
         return self.__dict__.copy()
 
 
+def _bundled_bin(name: str) -> Optional[str]:
+    """先找项目自带的 ffmpeg/ffprobe，再找 PATH。
+
+    为什么要"自带优先"：这台机器（以及任何全新机器）上 ffmpeg 往往根本没装，
+    用户看到的就是"高光集锦一个片段都出不来"。把便携版 ffmpeg 解压到
+    项目根的 `tools/ffmpeg/bin/`（见 tools_fetch_ffmpeg.py）即可开箱可用，
+    不必改系统 PATH —— 本工具是本地/内网单机部署，装到系统里反而更难回滚。
+    """
+    exe = name + (".exe" if os.name == "nt" else "")
+    here = Path(__file__).resolve()
+    for cand in (here.parents[2] / "tools" / "ffmpeg" / "bin" / exe,
+                 here.parents[2] / "aihoop_assets" / "ffmpeg" / "bin" / exe):
+        if cand.is_file():
+            return str(cand)
+    return shutil.which(name)
+
+
 def ffmpeg_path() -> Optional[str]:
-    return shutil.which("ffmpeg")
+    return _bundled_bin("ffmpeg")
 
 
 def ffprobe_path() -> Optional[str]:
-    return shutil.which("ffprobe")
+    return _bundled_bin("ffprobe")
 
 
 def rank_shots(shots: list[Shot], limit: int = 15) -> list[Shot]:
@@ -104,7 +121,8 @@ def make_highlights(shots: list[Shot], video_path: Optional[str],
                 "拿到视频后用 scripts/make_highlights.ps1 或本模块重新生成即可。")
     elif not ff:
         note = ("未检测到 ffmpeg，无法自动切片，仅导出时间码。"
-                "安装：winget install Gyan.FFmpeg ，或到 ffmpeg.org 下载后加入 PATH。")
+                "安装：跑一次 `python tools_fetch_ffmpeg.py`（下到项目 tools/ffmpeg/bin/），"
+                "或 winget install Gyan.FFmpeg 后加入 PATH。")
     else:
         for c in clips:
             dst = out / f"clip_{c.index:02d}_t{c.t:07.2f}.mp4"

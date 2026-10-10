@@ -27,6 +27,7 @@ def to_attempts(events, rt, calibration=None, value=2, counts_for_score=True):
             forced_value=value,value_assumed=True,value_source='default',
             counts_for_score=counts_for_score and known_team and made is not None,
             tags=list(dict.fromkeys(tags)),evidence=evidence,
+            review_reason=event.get("review_reason") or "",
             crossing_t=event.get('crossing_t',event.get('rim_crossing_t')),
             suggested_made=suggestion, review_t=event.get('review_t'), decision_t=float(event["t"]),
             release_source=event.get("release_source", ""),
@@ -38,6 +39,12 @@ def to_attempts(events, rt, calibration=None, value=2, counts_for_score=True):
             x,y=calibration.to_court(*xy)
             if math.isfinite(x) and math.isfinite(y) and abs(x)<=9 and abs(y)<=16:
                 a.x,a.y=x,y;a.location_source='player_feet';a.location_estimated=False
-                a.forced_value=None;a.value_assumed=False;a.value_source='court_geometry'
+                from ..rules import is_free_throw_position
+                if is_free_throw_position(x, y):
+                    a.is_free_throw=True;a.forced_value=1
+                    a.value_assumed=False;a.value_source='free_throw_geometry'
+                    a.tags.append('free_throw_detected')
+                else:
+                    a.forced_value=None;a.value_assumed=False;a.value_source='court_geometry'
         result.append(a)
     return sorted(result,key=lambda a:a.t)

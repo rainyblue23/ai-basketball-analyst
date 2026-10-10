@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+import os
 import asyncio
 import json
 import sqlite3
@@ -43,9 +44,9 @@ OUT_ROOT.mkdir(parents=True, exist_ok=True)
 UPLOAD_DIR = DATA / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-app = FastAPI(title="AI 篮球分析软件 · API", version="0.1.0")
+app = FastAPI(title="哨响之后 · API", version="0.1.0")
 app.add_middleware(
-    CORSMiddleware, allow_origins=["*"], allow_credentials=True,
+    CORSMiddleware, allow_origins=[x.strip() for x in os.environ.get("AIHOOP_ALLOWED_ORIGINS", "").split(",") if x.strip()], allow_credentials=True,
     allow_methods=["*"], allow_headers=["*"],
 )
 
@@ -138,7 +139,10 @@ def _update(st: JobState, **kw) -> None:
 # --------------------------------------------------------------------------
 # 请求/响应模型
 # --------------------------------------------------------------------------
+from .legacy_shots.settings import LegacyDetectOptions
+
 class JobCreate(BaseModel):
+    legacy_detect: LegacyDetectOptions = LegacyDetectOptions()
     source: str = "synthetic"          # synthetic | video | jsonl
     video_path: Optional[str] = None
     raw_path: Optional[str] = None
@@ -189,10 +193,12 @@ class JobCreate(BaseModel):
     shot_engine: Literal["legacy", "geometry"] = "legacy"
     legacy_center_lock: bool = False  # 实验：固定机位中心约束，整段回归前不默认开启
     ball_weights: str = ""
-    # 推理设备："0" = 第一块 GPU，"cpu" = CPU。
-    # ⚠️ 之前这里没有这个字段，所有视频任务都默认跑在 CPU 上 ——
-    # 球检测/篮筐检测逐帧推理，CPU 上慢十几倍。
-    device: str = "0"
+    # 推理设备："0" = 第一块 GPU，"cpu" = CPU，**留空 = 自动**。
+    # ⚠️ 以前这里默认写死 "0"：没装 CUDA 版 torch 的机器上，任务会在 0 秒就抛
+    # `ValueError: Invalid CUDA 'device=0' requested ... torch.cuda.device_count(): 0`
+    # —— 用户只看到一大段 CUDA 报错（实测踩到：本机是 torch 2.14.1+cpu）。
+    # 现在默认空串，由 VideoSource 按 torch.cuda 的实际情况决定（有 GPU 用 GPU）。
+    device: str = ""
     # 跟踪器：botsort.yaml 比 bytetrack 抗遮挡
     tracker: str = "botsort.yaml"
 
@@ -268,8 +274,41 @@ def _run_job(job_id: str, req: JobCreate) -> None:
                 cal_path = DATA / "calibration.json"
             from .court import Calibration
             from .sources import VideoSource
+            # 多机位标定：同一份 json 里可能带 `segments`（每个镜头一份 H）。
+            # 有它就必须按帧所属镜头取标定 —— 两个机位没有共同坐标系，
+            # 用其中一份 H 去投另一个镜头的画面会把球员投到球场外（实测过）。
+            multi_cal = None
             if cal_path.exists():
                 cal = Calibration.load(str(cal_path))
+                try:
+                    from .multical import MultiCal
+                    _raw = json.loads(cal_path.read_text(encoding="utf-8")) or {}
+                    multi_cal = MultiCal.from_dict(_raw)
+                    # ⚠️ 防退化：文件里的 `segments` 键**两套格式共用**（我们的
+                    # calib_segments 用 valid_from_s/valid_to_s，队友的 Segment 用
+                    # t_start/t_end），没写 t_end 的段读出来是零长区间 →
+                    # `cal_at(t)` 对任何时刻都命中同一段 = 拿错镜头的 H 投球员。
+                    # 所以只有"≥2 段且至少两段有可用区间"才真按帧取标定。
+                    if multi_cal is not None and not _multical_has_usable_segments(
+                            multi_cal):
+                        multi_cal = None
+                        _update(st, message="多机位标定时段信息不完整（段数或时间区间"
+                                            "不足），按单镜头处理")
+                    if multi_cal is not None:
+                        # MultiCal.from_dict 还会顺手修掉"老标定把篮筐中心当地面点"
+                        # 而解偏的那份 H（见 multical.Segment.from_dict）。代表标定
+                        # `cal` 必须跟着换成修好的那一份，否则后面的整体有效性/退化
+                        # 检查看的还是那份被篮筐拉偏的旧矩阵。
+                        primary = multi_cal.primary
+                        if primary is not None:
+                            cal = primary.calibration(
+                                for_video=multi_cal.for_video,
+                                frame_size=multi_cal.frame_size)
+                        _update(st, message="多机位标定：%d 个镜头各自一份标定"
+                                            % len(multi_cal.segments))
+                except Exception as e:                       # noqa: BLE001
+                    multi_cal = None
+                    _update(st, message="多机位标定读取失败（按单镜头处理）：%s" % e)
             elif (not req.detect_players and req.score_policy == "scoreboard") \
                     or getattr(req, "allow_no_calibration", False):
                 # 没有标定也允许跑：管线本来就支持（位置类结论会被自动关掉，
@@ -342,6 +381,7 @@ def _run_job(job_id: str, req: JobCreate) -> None:
 
             src = VideoSource(req.video_path, cal, stride=max(1, req.stride),
                               shot_engine=req.shot_engine, legacy_center_lock=req.legacy_center_lock,
+                              legacy_detect=req.legacy_detect.model_dump(),
                               player_stride=max(1, req.player_stride),
                               detect_players=req.detect_players,
                               score_policy=getattr(req, "score_policy", "auto"),
@@ -357,11 +397,12 @@ def _run_job(job_id: str, req: JobCreate) -> None:
                               ball_weights=_pick_ball_weights(
                                   getattr(req, "ball_weights", "")),
                               hoop_weights=_pick_hoop_weights(""),
-                              device=getattr(req, "device", "0"),
+                              device=getattr(req, "device", "") or None,
                               manual_hoop=manual_hoop,
                               scoreboard_events=getattr(req, "scoreboard_events",
                                                         None),
-                              basket_labels=basket_labels)
+                              basket_labels=basket_labels,
+                              multi_cal=multi_cal)
             rt = src.run(progress=lambda p, m="视频推理中": _update(
                 st, progress=0.05 + p * 0.55, message=m))
             out_dir.mkdir(parents=True, exist_ok=True)
@@ -464,6 +505,15 @@ async def get_job(job_id: str) -> dict:
 
 @app.websocket("/api/jobs/{job_id}/ws")
 async def job_ws(ws: WebSocket, job_id: str) -> None:
+    from .auth import read_session, internal_ok, COOKIE_NAME
+    from urllib.parse import urlsplit
+    origin = ws.headers.get("origin")
+    if origin and urlsplit(origin).netloc != ws.headers.get("host"):
+        await ws.close(code=1008)
+        return
+    if not (read_session(ws.cookies.get(COOKIE_NAME, "")) or internal_ok(ws.client.host if ws.client else "", ws.headers.get("X-Internal-Token", ""))):
+        await ws.close(code=1008)
+        return
     await ws.accept()
     q: asyncio.Queue = asyncio.Queue()
     _subscribers.setdefault(job_id, []).append(q)
@@ -495,6 +545,9 @@ async def job_ws(ws: WebSocket, job_id: str) -> None:
 # 结果读取
 # --------------------------------------------------------------------------
 def _out_dir(job_id: str) -> Path:
+    if job_id.startswith('example_'):
+        from .sample_gallery import resolve
+        return resolve(ROOT, job_id)[1]
     st = _mem.get(job_id)
     if st and st.out_dir:
         return Path(st.out_dir)
@@ -515,6 +568,19 @@ def _load_json(job_id: str, name: str) -> Any:
     return json.loads(p.read_text(encoding="utf-8"))
 
 
+@app.get("/api/examples")
+async def get_examples() -> Any:
+    from .sample_gallery import catalog
+    return {"examples": catalog(ROOT)}
+
+
+@app.get("/api/examples/{example_id}/poster")
+async def example_poster(example_id: str) -> Any:
+    p = _out_dir('example_' + example_id) / 'poster.jpg'
+    if not p.exists(): raise HTTPException(404, '预览图不存在')
+    return FileResponse(p, media_type='image/jpeg')
+
+
 @app.get("/api/games/{job_id}")
 async def get_game(job_id: str) -> Any:
     return _load_json(job_id, "game.json")
@@ -528,6 +594,19 @@ async def get_players(job_id: str) -> Any:
 @app.get("/api/games/{job_id}/shotchart")
 async def get_shotchart(job_id: str) -> Any:
     return _load_json(job_id, "shotchart.json")
+
+
+@app.get("/api/games/{job_id}/detections")
+async def get_replay_detections(job_id: str) -> Any:
+    """Compact pixel observations for original-video replay overlays."""
+    from .replay_overlay import detection_overlay
+    raw = _out_dir(job_id) / "raw_track.json"
+    if not raw.exists():
+        return JSONResponse({"available": False, "frames": [],
+                             "reason": "这份任务没有保存检测框，请重新分析。"})
+    payload = await asyncio.to_thread(lambda: detection_overlay(
+        json.loads(raw.read_text(encoding="utf-8"))))
+    return JSONResponse(payload, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/games/{job_id}/tactics")
@@ -892,15 +971,22 @@ async def get_frame(video_path: str, at: float = 1.0) -> Any:
         else:
             raise HTTPException(404, f"视频不存在：{video_path}")
     cap = cv2.VideoCapture(str(p))
-    if not cap.isOpened():
-        raise HTTPException(400, "打不开视频")
+    opened = cap.isOpened()
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
-    cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, int(float(at) * fps)))
-    ok, frame = cap.read()
+    frame = None
+    if opened:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, int(float(at) * fps)))
+        ok, frame = cap.read()
+        if not ok:
+            frame = None
     cap.release()
-    if not ok:
-        raise HTTPException(400, f"取不到第 {at}s 的帧")
+    if frame is None:
+        # cv2 打不开/读不到 → 换 ffmpeg 再抓一次（非常规编码的素材很常见）
+        frame = _ffmpeg_grab_jpeg(p, at)
+    if frame is None:
+        raise HTTPException(
+            400, f"取不到第 {at}s 的帧：这个视频用 OpenCV 和 ffmpeg 都打不开（{p.name}）")
     h, w = frame.shape[:2]
     ok, buf = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 88])
     if not ok:
@@ -1375,23 +1461,410 @@ COURT_LANDMARKS = {
     "half_left":         (-7.5, 0.0),
     "half_right":        (7.5, 0.0),
     "center":            (0.0, 0.0),
-    "ft_near":           (0.0, -5.8),
-    "ft_far":            (0.0, 5.8),
+    # ▼ 坐标约定：**以中线为 0**（长度方向 y=±14 是底线，篮筐 ±12.425）。
+    # ⚠️ 这 4 行曾经是错的（ft=±5.8、arc=±7.25），2026-10-09 按 FIBA 尺寸改正：
+    #   * 罚球线距**底线** 5.80m → 距**中线** 14 − 5.8 = **8.2**
+    #   （写成 5.8 就等于把罚球线摆到了三分线里侧 2.4m）
+    #   * 三分弧半径 6.75m 是**从篮筐圆心量**的，而篮筐距底线 1.575m
+    #     → 弧顶距中线 14 − 1.575 − 6.75 = **5.675**
+    #     （漏掉那个 1.575 就会算成 7.25，弧顶被往外推 1.575m）
+    # 前端 `web/pages/upload.js` 的全场地标表用的是**同一套修正值**
+    # （`tests/test_calib_side_picker.js` 钉着 ft_far.dst[1] == 8.2）；
+    # 两边必须一致，否则「叠加球场线自检」画出来的线跟后端实际拟合的点对不上，
+    # 自检本身就骗人了。改动前请先把这两条推导验算一遍，别"修"回去。
+    "ft_near":           (0.0, -8.2),
+    "ft_far":            (0.0, 8.2),
     "hoop_near":         (0.0, -12.425),
     "hoop_far":          (0.0, 12.425),
     # ↓ 这几项**必须**和 COURT_LABELS 一一对应。
     # 实测踩到大坑：先把新点位加进了界面清单却没加进这张表 →
     # 用户标了「罚球区左角」「三分弧顶」，后端查不到坐标就**静默丢弃**，
     # 7 个点只剩 4 个，界面还显示"误差 0.0m 偏大"，用户完全无从判断。
-    # 罚球区（FIBA）：宽 4.9m、从底线起 5.8m 到罚球线
+    # 罚球区（FIBA）：宽 4.9m、从底线起 5.8m 到罚球线 → 距中线 8.2m
     "lane_far_left":     (-2.45, 8.2),
     "lane_far_right":    (2.45, 8.2),
     "lane_near_left":    (-2.45, -8.2),
     "lane_near_right":   (2.45, -8.2),
-    # 三分线弧顶：半径 6.75m，正对篮筐
-    "arc_far":           (0.0, 14.0 - 6.75),
-    "arc_near":          (0.0, -14.0 + 6.75),
+    # 三分弧半径从**篮筐**量（篮筐离底线 1.575m），因此弧顶距中线 5.675m
+    "arc_far":           (0.0, 14.0 - 1.575 - 6.75),
+    "arc_near":          (0.0, -14.0 + 1.575 + 6.75),
 }
+
+
+def _write_calibration(out_p: Path, data: dict) -> None:
+    """写标定文件 —— **覆盖前先备份**，并且是原子写。
+
+    为什么要备份（我踩过，且无法挽回）：
+      标定文件 `data/calibration_<stem>.json` **不被 git 跟踪**（在 .gitignore 里），
+      所以一旦覆盖就没有任何恢复途径。我测试时直接用它写了一份合成的假标定，
+      把用户原有的标定覆盖掉了，**找不回来**（搜遍了 out/ 和 .bak 都没有副本）。
+      用户的标定是手工在画面上一个个点出来的，重做成本很高。
+
+    所以这里定两条规矩：
+      ① 覆盖前把原文件复制到 `*.bak`（并保留上一份 `*.bak1`）—— 至少能退回一步；
+      ② 先写临时文件再 replace —— 中途失败不会留下半截文件（原来直接
+         write_text，掉电/异常会把标定写成残缺 JSON，等于毁掉）。
+    """
+    out_p = Path(out_p)
+    out_p.parent.mkdir(parents=True, exist_ok=True)
+    if out_p.exists():
+        try:
+            bak1 = out_p.with_suffix(out_p.suffix + ".bak1")
+            bak = out_p.with_suffix(out_p.suffix + ".bak")
+            if bak.exists():
+                bak.replace(bak1)          # 上一份备份降级保留
+            import shutil
+            shutil.copy2(out_p, bak)
+        except Exception:                  # noqa: BLE001  备份失败不能挡住保存
+            pass
+    tmp = out_p.with_suffix(out_p.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2),
+                   encoding="utf-8")
+    tmp.replace(out_p)                     # 原子替换
+
+
+def _video_duration(video_path: str) -> float:
+    """视频时长（秒）。拿不到就返回 0，调用方按"不封顶"处理。"""
+    try:
+        import cv2
+        cap = cv2.VideoCapture(str(video_path))
+        if not cap.isOpened():
+            return 0.0
+        fps = float(cap.get(cv2.CAP_PROP_FPS) or 0.0)
+        n = float(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0.0)
+        cap.release()
+        if fps > 0 and n > 0:
+            return round(n / fps, 3)
+    except Exception:                                   # noqa: BLE001
+        pass
+    return 0.0
+
+
+def _frame_bgr(vp: Path, at: float):
+    """取某一时刻的画面（BGR ndarray），失败返回 None。
+
+    抓帧在别处是"cv2 失败就用 ffmpeg 兜底"，这里只做分镜解算用的目标帧，
+    所以只走 cv2（拿不到帧时 `solve_per_shot` 自己会退回不用画面的那条路）。
+    """
+    import cv2
+    try:
+        cap = cv2.VideoCapture(str(vp))
+        if not cap.isOpened():
+            return None
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, int(round(float(at) * fps))))
+        ok, fr = cap.read()
+        cap.release()
+        return fr if ok else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _build_multical_from_frames(per_frame_fit: list, video_path: str,
+                                W: int, H: int, duration: float = 0.0,
+                                cuts=None):
+    """用**每帧各自解出的 H** 拼成一份多镜头标定。
+
+    为什么需要（用户实测）：两幅画面（t=13.5s / t=73.06s）**各自都能标定**
+    （6 点、误差 1.32m / 1.08m），但混在一起解只剩 2 个一致的点 ——
+    因为它们根本不是同一个镜头。这正是"两台机位各拍半场"的用法。
+
+    这条回退**不依赖切镜检测**：只要"混在一起解不了、但每帧各自成立"，
+    就按每帧一份标定（各覆盖自己的时间段）。切镜检测在长视频上不一定可靠
+    （实测在用户的 HD 素材上没找到切镜点，于是整条路都没触发）。
+
+    时间段划分：优先用检测到的切镜时刻；没有就用相邻两个标点时刻的**中点**。
+    返回 MultiCal 或 None。
+    """
+    from .multical import MultiCal, Segment
+
+    good = [f for f in (per_frame_fit or [])
+            if f.get("ok") and f.get("H") and f.get("n", 0) >= 4]
+    if len(good) < 2:
+        return None
+    good = sorted(good, key=lambda f: float(f.get("t") or 0.0))
+    ts = [float(f["t"]) for f in good]
+    cuts = sorted(float(c) for c in (cuts or []))
+    segs = []
+    for i, f in enumerate(good):
+        t = float(f["t"])
+        if i == 0:
+            lo = 0.0
+        else:
+            mid = (ts[i] + ts[i - 1]) / 2.0
+            inside = [c for c in cuts if ts[i - 1] < c <= t]
+            lo = inside[-1] if inside else mid
+        if i == len(good) - 1:
+            hi = float(duration) if duration and duration > t else t + 9999.0
+        else:
+            mid = (ts[i] + ts[i + 1]) / 2.0
+            inside = [c for c in cuts if t < c <= ts[i + 1]]
+            hi = inside[0] if inside else mid
+        segs.append(Segment(
+            t_start=round(lo, 3), t_end=round(hi, 3),
+            src_px=[list(p) for p in (f.get("src_px") or [])],
+            dst_m=[list(d) for d in (f.get("dst_m") or [])],
+            H=list(f["H"]), frame="full",
+            names=list(f.get("names") or []),
+            rmse_m=float(f.get("rmse_m") or 0.0),
+            ratio=float(f.get("ratio") or 0.0),
+            method="web-keypoints-multi", n_points=int(f.get("n") or 0),
+            note="这一幅画面自己解出的标定"))
+    return MultiCal(segs, for_video=video_path, frame_size=[W, H],
+                    note="按画面分别解算（各自覆盖自己的时间段）")
+
+
+def _multical_note(mc, base: str) -> str:
+    """多机位提示后面追加"哪一段不可信 + 去看叠加自检"的告警。
+
+    为什么必须加（用户实测："我觉的你这个战术图也不对"）：
+      用户那份标定两段是 ratio 0.12 / 0.71（门槛 1.25），
+      但界面只报"误差 0.00m、标定可用"—— 因为**吻合度没被说出来**。
+      用户于是存下去、跑完分析、看到乱掉的战术图，才知道不对。
+      这一环必须**在保存前**就大声说出来。
+    """
+    from .multical import weak_segments as _weak_segments
+    weak = _weak_segments(mc)
+    if not weak:
+        return base
+    detail = "；".join(
+        "t=%.0f~%.0fs（%s，吻合度 %s，误差 %s m）"
+        % (w["t_start"], w["t_end"], w["why"],
+           ("%.2f" % w["ratio"]) if w.get("ratio") is not None else "n/a",
+           ("%.2f" % w["rmse_m"]) if w.get("rmse_m") is not None else "n/a")
+        for w in weak)
+    return (base + " ⚠️（%d/%d 段的标定不可信：%s）。"
+            "判据是**投影出的球场线要压在画面里的真实白线上** —— "
+            "请打开「叠加球场线自检」看一眼：红线没压在白线上，"
+            "说明某个地名配错了、或者点标错了位置；"
+            "这种标定存下去只会得到错的战术图和热区。"
+            % (len(weak), len(getattr(mc, "segments", []) or []), detail))
+
+
+def _split_marks_by_shot(video_path: str, times: list) -> tuple:
+    """把标点时刻按镜头分组（薄封装，方便测试时替换掉）。"""
+    from .multical import split_times_by_shot
+    return split_times_by_shot(video_path, times)
+
+
+def _minimal_quad_models():
+    """"只点 4 个点"时，候选的球场地物组合（穷举，交给评分挑）。
+
+    为什么要有这条流程（用户实测 + AI 自测的结论）：
+      让用户给每个点**命名**（near/far、底线角/罚球区角…）是最大的坑：
+        * HALF_COURT_CORNERS = [底线左, 底线右, 中线右, 中线左]，
+          而 `corner_near_*` 的坐标是 y=**-14**（**远端**底线）——
+          命名与直觉相反，判错一次整张图平移 28m；
+        * 球场关于中线对称，某些组合**几何上等价**，靠误差分不出来。
+      所以改成：**用户不命名**，只点他肉眼能确定的 4 个特征点（顺序固定），
+      后端把常见的球场地物组合**全部试一遍**，用"投影线压在真实白线上的
+      吻合度 ratio"挑最好的 —— 判据是算出来的，不依赖任何人目测。
+    """
+    W = 7.5
+    HALF = 14.0
+    LANE_X = 2.45
+    models = []
+    seen = set()
+
+    def _add(desc, dst):
+        # 去重：有些组合与"罚球线距中多少"无关（比如纯底线+中线），
+        # 不去重的话候选排名里会出现完全相同的两条（实测看到过）。
+        key = tuple(sorted(tuple(p) for p in dst))
+        if key in seen:
+            return
+        seen.add(key)
+        models.append((desc, dst))
+
+    for sgn in (-1, 1):                  # 这 4 个点落在哪半场
+        for margin in (8.2,):            # FIBA 罚球线离中圈 8.2m（距底线 5.8m）
+            base = sgn * HALF
+            ft_y = sgn * margin
+            tag = "%s半场" % ("负" if sgn < 0 else "正")
+            # ① 两条底线两端 + 中线两端
+            _add("底线两端 + 中线两端（%s）" % tag,
+                 [(-W, base), (W, base), (W, 0.0), (-W, 0.0)])
+            # ② 罚球区四角（用户最容易点准的一组）
+            _add("罚球区四角（%s，罚球线距中 %.1fm）" % (tag, margin),
+                 [(-LANE_X, ft_y), (LANE_X, ft_y),
+                  (LANE_X, base), (-LANE_X, base)])
+            # ③ 罚球区靠中线两角 + 中线两端
+            _add("罚球区两角 + 中线两端（%s，罚球线距中 %.1fm）" % (tag, margin),
+                 [(-LANE_X, ft_y), (LANE_X, ft_y), (W, 0.0), (-W, 0.0)])
+    return models
+
+
+def solve_minimal_quad(src4, bgr, W, H):
+    """4 个**未命名**的点 -> 自动挑出最合理的球场地物对应。
+
+    把候选模型全部试一遍，每个解一份 H，用 frame_fit_detail 量
+    "投影线是否压在画面里的白线上"，取 ratio 最高者。
+    """
+    from .calibcheck import frame_fit_detail
+    from .court import Calibration, find_homography
+
+    if len(src4) != 4:
+        return {"ok": False, "note": "需要正好 4 个点"}
+    ranked = []
+    for desc, dst in _minimal_quad_models():
+        try:
+            Hm = find_homography([list(p) for p in src4],
+                                 [list(p) for p in dst])
+            cal = Calibration(name="mini", method="mini",
+                              src_px=[list(p) for p in src4],
+                              dst_m=[list(p) for p in dst], H=list(Hm),
+                              frame="full", frame_size=[W, H])
+            d = frame_fit_detail(bgr, cal)
+            r = float(d.get("ratio") or 0.0)
+        except Exception:                                    # noqa: BLE001
+            continue
+        ranked.append({"desc": desc, "dst": [list(p) for p in dst], "ratio": r,
+                       "lines": d.get("lines"), "H": Hm})
+    if not ranked:
+        return {"ok": False, "note": "4 个点解不出任何合理的球场对应（可能共线）"}
+    ranked.sort(key=lambda x: -x["ratio"])
+    best = ranked[0]
+    return {"ok": True, "dst": best["dst"], "ratio": best["ratio"],
+            "which": best["desc"], "H": best["H"], "lines": best["lines"],
+            "ranked": [{"desc": x["desc"], "ratio": x["ratio"]}
+                       for x in ranked[:5]],
+            "note": ("4 点自动定向：选中「%s」，吻合度 %.2f（正常 1.3~2.3，越高越好）；"
+                     "共试了 %d 种地物组合。"
+                     % (best["desc"], best["ratio"], len(ranked)))}
+
+
+def _frames_same_camera(goods: list, tol_m: float = 0.25) -> bool:
+    """这几幅画面解出的 H 是不是**同一个机位**（都投到同一片球场）。
+
+    做法：拿每份 H 把**全部画面点**（各帧自己的像素点，同一段视频同一分辨率，
+    所以同在画面坐标系里）投到球场坐标，两两比较最大差；差 ≤ tol_m 就当同一机位。
+
+    为什么要问这个问题（实测踩到）：`via == "single-frame"` 那条"跨镜头"判据在
+    "没做镜头位移补偿 + 抽了两帧"时会误触发（`frames_differ_shot` 只看"时刻不同"），
+    于是"同一机位抽两帧、标同样的点"——很常见的用法——会被拆成"每帧一份标定"，
+    把本该走单镜头那条路（落盘 `source_frames` / 逐帧补偿状态）的请求岔走。
+    而两份 H 若把同一批点投到相差 ≤0.25m 的地方，用哪一份投都差不多，
+    根本没有"每段各一份"的必要。
+
+    返回 True = 同一个机位（不要走多机位分支）。
+    """
+    from .court import apply_homography
+    hs = [f.get("H") for f in (goods or []) if f.get("H")]
+    pts: list = []
+    for f in (goods or []):
+        pts.extend([list(p) for p in (f.get("src_px") or [])])
+    if len(hs) < 2 or len(pts) < 4:
+        return False
+    base = None
+    for Hm in hs:
+        try:
+            proj = [apply_homography(Hm, float(x), float(y)) for x, y in pts]
+        except Exception:                    # noqa: BLE001  解不出就别拦
+            return False
+        if base is None:
+            base = proj
+            continue
+        for (u1, v1), (u2, v2) in zip(base, proj):
+            if ((float(u1) - float(u2)) ** 2
+                    + (float(v1) - float(v2)) ** 2) ** 0.5 > tol_m:
+                return False
+    return True
+
+
+def _multical_has_usable_segments(mc) -> bool:
+    """多机位标定**真能按帧取 H** 吗 —— 必须 ≥2 段，且至少两段有可用的时间区间。
+
+    为什么必须卡这道（实测踩到）：仓库里有**两套**分时段标定格式，键名都叫
+    `segments`，字段不同 ——
+        我们（calib_segments.make_segment）：capture_time_s / valid_from_s / valid_to_s /
+            point_names / source_frames / verification …
+        队友（multical.Segment）：t_start / t_end / src_px / dst_m / names /
+            rmse_m / ratio / n_points …
+    而 `MultiCal.from_dict` 只认后者。一份真实的 9 段文件读出来每段都是
+    `t_start=0.5 t_end=0.0`（没有 t_end）→ `segment_at(t)` 对**任何**时刻都命中
+    同一段（"取最近一段"的退化行为）→ 等于把另一个镜头的 H 投到整段视频上，
+    正是"战术图乱掉"的症状。
+
+    所以宁可退回单镜头（至少还是自洽的一份标定），也不要按帧换错矩阵。
+    段数不足 2、或够长（`t_end > t_start`）的段少于 2 段 → 返回 False。
+    """
+    segs = list(getattr(mc, "segments", None) or [])
+    if len(segs) < 2:
+        return False
+    usable = 0
+    for s in segs:
+        try:
+            if float(getattr(s, "t_end", 0.0)) > float(getattr(s, "t_start", 0.0)):
+                usable += 1
+        except (TypeError, ValueError):
+            continue
+    return usable >= 2
+
+
+def _segments_with_multical_keys(segs: list, duration: float = 0.0) -> list:
+    """给"我们那套分时段标定"的记录**补上队友那套（multical.Segment）的字段**。
+
+    为什么两套字段都要写（向后兼容 + 实测踩到）：文件里 `segments` 这个键被两边
+    共用但字段名不同（见 `_multical_has_usable_segments` 的说明），而"按帧取 H"
+    那条路走的是 `MultiCal.from_dict` —— 它只认队友那套。缺字段的后果实测过：
+    一份 7~9 段的真实文件里 `t_end` 全是 0，每段都成了零长区间，任何时刻都命中
+    同一段，多机位等于白接。
+
+    区间规则（用户 2026-10-09 的要求）：
+      * `t_start` = `valid_from_s`，没有就用 `capture_time_s`；
+      * `t_end` = `valid_to_s`；为 None/0（或 ≤ 起点）时用**下一条的 t_start**
+        兜底，最后一条用**视频时长**兜底 —— 不留 0/None，否则区间判不出来；
+      * 两个起点都拿不到（`valid_from_s` 与 `capture_time_s` 皆空）时**不编造**：
+        这种段没有可用区间，读端（`_multical_has_usable_segments`）会因此退回
+        单镜头，绝不猜。
+
+    就地补键（调用方传进来的就是落盘用的那些 dict），并返回按 t_start 排好序的列表。
+    """
+    rows = [s for s in (segs or []) if isinstance(s, dict)]
+
+    def _start_of(s: dict):
+        v = s.get("valid_from_s")
+        if v is None:
+            v = s.get("capture_time_s")
+        try:
+            return None if v is None else float(v)
+        except (TypeError, ValueError):
+            return None
+
+    rows.sort(key=lambda s: (_start_of(s) if _start_of(s) is not None else 1e9))
+    for i, s in enumerate(rows):
+        t0 = _start_of(s)
+        v1 = s.get("valid_to_s")
+        try:
+            t1 = None if v1 is None else float(v1)
+        except (TypeError, ValueError):
+            t1 = None
+        if t0 is None:
+            t1 = None                     # 起点都不知道 → 不编区间（读端判退化）
+        elif t1 is None or t1 <= t0:
+            # 下一条的起点兜底（左闭右开：这一段到"下一条开始"为止，正好不重叠）
+            nxt = next((x for x in (_start_of(s2) for s2 in rows[i + 1:])
+                        if x is not None and x > t0), None)
+            if nxt is not None:
+                t1 = nxt
+            elif float(duration or 0.0) > t0:
+                t1 = float(duration)      # 最后一条：用视频时长兜底
+            else:
+                t1 = None                 # 兜不出来就别造（读端会判退化 → 退回单镜头）
+        ver = s.get("verification") or {}
+        fit = ver.get("calibration_fit") or {}
+        names = [str(x) for x in (s.get("point_names") or [])]
+        rmse = ver.get("rmse_m")
+        ratio = fit.get("ratio")
+        upd = {"names": names,
+               "n_points": int(len(names) or (ver.get("n_points") or 0)),
+               "rmse_m": (None if rmse is None else float(rmse)),
+               "ratio": (None if ratio is None else float(ratio))}
+        if t0 is not None:
+            upd["t_start"] = round(t0, 3)
+        if t1 is not None:
+            upd["t_end"] = round(t1, 3)
+        s.update(upd)
+    return rows
 
 
 def _calibration_path_for(video: str) -> Path:
@@ -1507,6 +1980,284 @@ async def get_scoreboard_events(video_path: str) -> Any:
             "start": d.get("start")}
 
 
+def _pick_calibration_homography(Hm, rmse, src, dst, tags, per_frame_fit,
+                                 merged_inliers=None) -> dict:
+    """在多画面标定里挑**用哪一份单应矩阵**。
+
+    规则：**只要有一幅画面自己就能标定，就用那一幅**（点的最多的一幅）。
+    为什么不是"把所有画面的点合并成一份"：界面上是左右两个画面，一个标一侧半场，
+    这两幅常常是**两台机位/两个角度**拍的。把两个角度的点揉进一份单应矩阵，会解出
+    一个"谁都不对、但整体误差看着还行"的折中解（每个点都被互相拉偏），而画面自己
+    那 4~6 个点解出来的是几何上自洽的那一份。跨画面合并只留给"单个半场凑不够 4 个点"
+    的情况（球场关于中线对称，半场画面是能凑齐 4 个点的）。
+
+    返回 ``{H, src, dst, tags, rmse, via, t, note, outliers, n_inliers}``。
+    "矛盾点"也按**真正用的那一份 H** 重算 —— 合并拟合挑出来的离群点可能落在另一幅
+    画面里，拿它去提示用户就是误导（实测最容易踩的就是这种）。
+    """
+    out = {"H": Hm, "src": src, "dst": dst, "tags": tags, "rmse": float(rmse),
+           "via": "merged", "t": None, "note": "", "outliers": None,
+           "n_inliers": None}
+    # ---- 合并解够不够好？不好就改用"自己就能标定的那一幅" ----
+    # 为什么必须有这条：不同镜头/不同角度混在一起时，合并解的离群点必然一堆，
+    # 界面于是会同时冒出"t=4.75s 单帧 5 点 1.413m 可解"和"排除 4 个矛盾点后只剩
+    # 1 个点、解不出标定"两个互相打架的结论（实测踩到，用户只能理解成软件坏了）。
+    # 判据：合并解的 RANSAC 内点 ≥ 5 个、且平均误差 < 0.75m 才算好；否则看单幅画面。
+    # 内点门槛取 5（而不是 4）：只 4 个内点时，那 4 个点本身就精确决定 H，误差必然
+    # 很小 —— 这正是"最典型的坏情况"（大多数点互相矛盾，H 由少数点说了算）。
+    # 实测：用户 10 个点里 4 个被判矛盾、只剩 1 个内点，界面却还在用这份 H。
+    merged_ok = (merged_inliers is None or merged_inliers >= 5) and rmse < 0.75
+    best = None
+    for f in (per_frame_fit or []):
+        if not f.get("ok") or f.get("H") is None or f.get("n", 0) < 4:
+            continue
+        if best is None or f.get("n", 0) > best.get("n", 0):
+            best = f
+    if best is None:
+        return out
+    if merged_ok:
+        # 合并解本来就很好：不折腾（点多的时候合并解更稳）
+        return out
+    keep_t = float(best["t"])
+    sel = [i for i, tg in enumerate(tags) if abs(float(tg["t"]) - keep_t) < 1e-6]
+    if len(sel) < 4:
+        return out
+    out.update({
+        "H": best["H"],
+        "src": [src[i] for i in sel],
+        "dst": [dst[i] for i in sel],
+        "tags": [tags[i] for i in sel],
+        "rmse": float(best["rmse_m"]),
+        "via": "single-frame",
+        "t": keep_t,
+        "note": ("t=%.2fs 这一幅画面自己就能标定（%d 个点，误差 %.2f m）"
+                 % (keep_t, best["n"], float(best["rmse_m"]))),
+    })
+    # 离群点按选中的这份 H 重算（阈值 0.75m：单幅画面自己拟合时，正常点都在厘米级）
+    from .court import apply_homography as _apply
+    bad, good = [], 0
+    for (x, y), (u, v), tg in zip(out["src"], out["dst"], out["tags"]):
+        px, py = _apply(out["H"], x, y)
+        e = float(((px - u) ** 2 + (py - v) ** 2) ** 0.5)
+        if e > 0.75:
+            bad.append({"label": tg.get("label", tg.get("name", "?")), "t": tg["t"]})
+        else:
+            good += 1
+    out["outliers"], out["n_inliers"] = bad, good
+    return out
+
+
+@app.get("/api/frames_stable")
+async def get_frames_stable(video_path: str, n: int = 8,
+                            gap: float = 1.5) -> Any:
+    """**自动挑两帧"同一镜头"的画面**给标定页用 —— 不用用户自己拖。
+
+    为什么必须自动挑（实测踩到两次）：
+      ① 标定页原来是"用户拖播放器 → 每边各加一帧"，很容易把两帧取在**不同镜头**
+         上（实测 t=4.75s / t=58.5s，中间镜头切过）—— 两帧不同机位，合并解必然矛盾；
+      ② 第一版自动挑帧取的是"整段镜头的首尾"（实测 t=1.24s 与 t=24.89s，相隔 23.6 秒），
+         结果那 23.6 秒里镜头又切了好几次，**照样不是同一机位**。
+
+    所以现在取**相邻**两帧，间隔由 `gap` 给（默认 1.5 秒）。这个默认值是量出来的：
+    沿时间轴实测相邻两帧的 ORB 内点率（判据 35%）——
+
+        | 间隔 | 1s | 2s | 4s | 6s | 8s |
+        |---|---|---|---|---|---|
+        | 最差内点率 | 52% | 51% | 19% | 8% | 14% |
+
+    1~2 秒稳过，4 秒以上就不可靠（镜头摇摄时重叠太少）。
+
+    返回 {ok, t1, t2, segment, segments, ratios, times, note}
+    """
+    import cv2
+    from .frame_motion import estimate_motion
+
+    p = Path(video_path)
+    if not p.exists():
+        cand = UPLOAD_DIR / p.name
+        if cand.exists():
+            p = cand
+        else:
+            raise HTTPException(404, f"视频不存在：{video_path}")
+    cap = cv2.VideoCapture(str(p))
+    if not cap.isOpened():
+        raise HTTPException(400, "打不开视频")
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    cap.release()
+    dur = total / fps if fps else 0.0
+    if dur <= 2.0:
+        raise HTTPException(400, "视频太短，无法抽帧")
+
+    n = max(3, min(12, int(n)))
+    want_gap = max(0.5, min(6.0, float(gap)))
+    lo, hi = dur * 0.05, dur * 0.95          # 避开片头片尾的黑帧
+    span = hi - lo
+    # 采样点按 gap 铺开：n 个点、相邻间隔 = gap
+    times = []
+    t = lo
+    while t <= hi + 1e-6 and len(times) < n:
+        times.append(round(t, 2))
+        t += want_gap
+    if len(times) < 2:                       # 太短的素材，退化成均匀取点
+        times = [round(lo + span * i / max(1, n - 1), 2) for i in range(n)]
+
+    same, ratios = [], []
+    for a, b in zip(times, times[1:]):
+        try:
+            r = estimate_motion(str(p), a, b)
+            same.append(bool(r.get("ok")))
+            ratios.append(r.get("ratio"))
+        except Exception:  # noqa: BLE001  单次判定失败就当"不同镜头"，别中断
+            same.append(False)
+            ratios.append(None)
+
+    segs, cur = [], [times[0]]
+    for i, okab in enumerate(same):
+        if okab:
+            cur.append(times[i + 1])
+        else:
+            segs.append(cur)
+            cur = [times[i + 1]]
+    segs.append(cur)
+    segs = [s for s in segs if len(s) >= 2]
+    ok_ratio = [r for r in ratios if r is not None]
+    if not segs:
+        return {"ok": False, "t1": None, "t2": None, "segment": [],
+                "segments": [], "ratios": ratios, "times": times,
+                "note": ("沿时间轴抽的 %d 个时刻里，相邻两帧都没通过同一镜头的判定"
+                         "（最高内点率 %s）。这段视频镜头切得太碎，请手动拖播放器，"
+                         "在**连续跟拍的那几秒**里取两帧（相隔 1~2 秒）。"
+                         % (n, ("%.0f%%" % (max(ok_ratio) * 100)) if ok_ratio else "—"))}
+    # 取**最长那一段的第 1、2 个时刻**（相邻，最稳）
+    best = max(segs, key=len)
+    t1, t2 = float(best[0]), float(best[1])
+    return {"ok": True, "t1": round(t1, 2), "t2": round(t2, 2),
+            "segment": best, "segments": segs, "ratios": ratios, "times": times,
+            "gap_used": round(t2 - t1, 2),
+            "note": ("自动挑到相邻两帧 t=%ss / t=%ss（相隔 %.1f 秒，同一镜头）——"
+                     "它们几乎同一个机位，标定才能合并。"
+                     % (round(t1, 2), round(t2, 2), t2 - t1))}
+
+
+def _ffmpeg_grab_jpeg(vp: Path, at: float):
+    """用 ffmpeg 抓一帧 -> BGR ndarray（cv2 打不开视频时的兜底）。
+
+    为什么要这条兜底：有些素材（非常规编码 / 手机 MOV / 部分 AVI）cv2 会
+    "打开失败"，而 ffmpeg 一样能解 —— 实测就是它让标定页一直卡在"正在抽画面…"。
+    ffmpeg 优先用项目自带的（见 highlight._bundled_bin），没有就找 PATH；
+    两条路都没有就返回 None，由调用方给出原来的报错。
+    """
+    try:
+        import subprocess
+        import tempfile
+        import numpy as np
+        import cv2
+        from .highlight import ffmpeg_path
+        ff = ffmpeg_path()
+        if not ff:
+            return None
+        fd, tmp = tempfile.mkstemp(suffix=".jpg")
+        os.close(fd)
+        try:
+            cmd = [ff, "-hide_banner", "-loglevel", "error", "-ss", "%.3f" % max(0.0, float(at)),
+                   "-i", str(vp), "-frames:v", "1", "-q:v", "3", "-y", tmp]
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                           timeout=60, check=False)
+            img = cv2.imread(tmp)
+            return img if (img is not None and getattr(img, "size", 0)) else None
+        finally:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+    except Exception:  # noqa: BLE001  兜底路径失败就用原来的报错，不要盖掉原因
+        return None
+
+
+def _diagnose_keypoints(src, dst, tags, label_of=None) -> dict:
+    """逐点"责任"诊断：到底哪个点跟其余点对不上？
+
+    为什么需要（用户实测反馈）：界面只会说"有 N 个点互相矛盾 / 标定不能用"，
+    但不说是**哪个**点。用户于是只能反复重标、怀疑软件坏了（原话：
+    "我标点就说表的不对，你这个标定的代码真的准确吗"）。
+
+    做法（leave-one-out 交叉验证）：
+      每次去掉一个点，用剩下的点解一份 H，再看被去掉的点落在这份 H 下差多少米；
+      同时给出"剩下那些点彼此的平均误差"。
+      前者远大于后者 -> 这个点就是责任点。
+      注意：剩下那些点**自己也不自洽**（平均误差也是几米级）时，
+      说明不是单点问题，而是"点名与物理位置成片对不上"，要如实说明。
+
+    只在 ≥5 个点时才有判别力（4 个点时任何一组都能精确解出 H，误差恒为 0）。
+
+    `label_of`：点名 -> **界面上显示的名字**。必须给：后端 COURT_LABELS 里的措辞
+    和界面某一侧的显示名可能不一致（实测：界面这侧「篮筐中心」在后端叫
+    「另一端的篮筐中心」），照抄后端名字会让用户对不上自己看到的按钮。
+    """
+    from .court import apply_homography, find_homography
+    label_of = label_of or {}
+
+    def _lbl(tag):
+        """这个点在**界面上**叫什么。
+
+        优先用点自带的 label（前端传上来的就是界面上的名字），
+        其次用调用方给的映射，最后才退回后端自己的措辞 —— 后端把某一侧的
+        篮筐叫「另一端的篮筐中心」，直接照抄用户会对不上自己按的按钮。
+        """
+        return (tag.get("label") or label_of.get(tag.get("name"))
+                or tag.get("name") or "?")
+
+    n = len(src)
+    if n < 5:
+        return {"enough": False,
+                "note": "点太少（%d 个）：4 个点时任何一组都能精确解出单应矩阵，"
+                        "误差恒为 0，看不出哪个点不对。至少 5 个点才能互相验证。" % n}
+    rows = []
+    for i in range(n):
+        sub = [j for j in range(n) if j != i]
+        try:
+            Hs = find_homography([src[j] for j in sub], [dst[j] for j in sub])
+        except Exception as e:  # noqa: BLE001
+            rows.append({"name": tags[i].get("name"), "label": _lbl(tags[i]),
+                         "t": tags[i].get("t"), "excused_err_m": None,
+                         "others_mean_err_m": None,
+                         "note": "去掉它以后剩下的点解不出来：%s: %s"
+                                 % (type(e).__name__, e)})
+            continue
+        u, v = apply_homography(Hs, src[i][0], src[i][1])
+        e_out = ((u - dst[i][0]) ** 2 + (v - dst[i][1]) ** 2) ** 0.5
+        e_in = []
+        for j in sub:
+            uu, vv = apply_homography(Hs, src[j][0], src[j][1])
+            e_in.append(((uu - dst[j][0]) ** 2 + (vv - dst[j][1]) ** 2) ** 0.5)
+        rows.append({"name": tags[i].get("name"), "label": _lbl(tags[i]),
+                     "t": tags[i].get("t"),
+                     "excused_err_m": round(float(e_out), 2),
+                     "others_mean_err_m": round(float(sum(e_in) / len(e_in)), 2)})
+    ok_rows = [r for r in rows if r["excused_err_m"] is not None]
+    if not ok_rows:
+        return {"enough": True, "rows": rows, "worst": None,
+                "note": "每个点去掉后剩下的都解不出来 —— 点位可能几乎共线。"}
+    # 责任点 = "自己被排除在外时偏得最多"的那个
+    worst = max(ok_rows, key=lambda r: r["excused_err_m"])
+    # 剩下那些点自己也不自洽吗？（判据：去掉最差点后，其余点的平均误差仍 >1.5m）
+    others_ok = [r["others_mean_err_m"] for r in rows
+                 if r["name"] == worst["name"] and r["others_mean_err_m"] is not None]
+    others_self = others_ok[0] if others_ok else None
+    if others_self is not None and others_self > 1.5:
+        note = ("不是单点问题：把最可疑的「%s」排除后，其余点**彼此**平均还差 %.1fm ——"
+                "说明有不止一个点名与实际位置对不上（常见：把某个角当成另一个角、"
+                "或把这一侧的点标到了另一侧）。请对着画面逐点核对名称，"
+                "或打开「叠加球场线自检」看红线整体偏在哪。"
+                % (worst["label"], others_self))
+    else:
+        note = ("最可疑的是「%s」（把它排除后由其余点解出的标定，让它偏 %.1fm）——"
+                "请重点核对这一个点：名字选对了没有、位置对不对。"
+                % (worst["label"], worst["excused_err_m"]))
+    return {"enough": True, "rows": rows, "worst": worst, "note": note}
+
+
 def _calibration_quality(vp: Path, cal) -> dict:
     """标定的两项客观体检（保存前 + 分析时都用同一套判据）。
 
@@ -1544,8 +2295,49 @@ def _calibration_quality(vp: Path, cal) -> dict:
                   "当成底线角、把这一头的点标到那一头）；② 篮筐标点标错了。"
                   "请先核对画面里那个篮筐，再重新标特征点：同一帧里点 6 个以上、"
                   "不要都在同一条线上。" % hoop.get("reason", ""))
+
+    # ---- 第三项：**分析端用的那道硬门槛**（投影线与画面白线的吻合度 ratio）----
+    # 为什么预览必须给出这个数字：分析端要求 ratio ≥ 1.25（见 sources 里的
+    # calibration_fit 校验），达不到就**不生成战术图/热图**。以前预览只说
+    # "标定可用"，用户存下去才发现战术图是空的，完全对不上账
+    # （实测：AI 自测标的点 hoop 校验 0.14m 通过，但 ratio 只有 0.32，战术图为空）。
+    fit = {}
+    try:
+        from .calibcheck import court_fit_score
+        fit = court_fit_score(str(vp), cal) or {}
+    except Exception as e:  # noqa: BLE001  量不出来不该让标定存不下去
+        fit = {"ok": None, "ratio": None,
+               "note": f"吻合度没量成（{type(e).__name__}: {e}）"}
+    if not reason and fit.get("ratio") is not None and fit.get("ok") is False:
+        reason = ("这份标定与画面的**吻合度过低**（ratio=%.2f，门槛 %.2f）："
+                  "把球场线投回画面，和白线基本不相关。分析端会拒收 —— "
+                  "热图、战术图、2/3 分区分都不会生成（只判进球）。"
+                  "请开「叠加球场线自检」看红线偏到哪去了，重新点几个更准的点。"
+                  % (float(fit["ratio"]), 1.25))
     return {"degenerate": bool(deg.get("degenerate")), "reason": reason,
-            "hoop_check": hoop, "metrics": deg}
+            "hoop_check": hoop, "metrics": deg,
+            # 前端据此显示"这份标定分析端收不收"的读数（门槛 1.25）
+            "calibration_fit": fit}
+
+
+@app.get("/api/hoopai/court")
+async def hoopai_court_model():
+    from .legacy_court import CourtModel
+    model = CourtModel()
+    return {"landmarks": [{"name": n, "label": model.landmark_help[n]} for n in model.landmarks],
+            "default_names": model.recommended_sets()["key4"]}
+
+
+def _camera_profiles():
+    path = DATA / "camera_profiles.json"
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+@app.get("/api/camera_profiles")
+async def camera_profiles():
+    return {"profiles": list(_camera_profiles().values())}
 
 
 class CourtMarkRequest(BaseModel):
@@ -1559,6 +2351,17 @@ class CourtMarkRequest(BaseModel):
     """
     video_path: str
     at: float = 1.0
+    court_model: str = "full"
+    fixed_camera: bool = False
+    # ---- 时间归属（用户 2026-10-05 的字段表）----
+    # 适用时段：**左闭右开** [valid_from_s, valid_to_s)。不填就不记时段，
+    # 按时刻取标定时直接不可用（**不默认整段有效**）。
+    valid_from_s: Optional[float] = None
+    valid_to_s: Optional[float] = None
+    segment_label: str = ""
+    profile_id: Optional[str] = None
+    save_profile_name: Optional[str] = None
+    overlay_confirmed: bool = False
     landmarks: dict = {}
     confirm: bool = False
     revision: Optional[int] = None
@@ -1623,9 +2426,33 @@ async def post_calibrate(req: CourtMarkRequest) -> Any:
     H = int(cap.get(__import__("cv2").CAP_PROP_FRAME_HEIGHT))
     cap.release()
 
+    if req.court_model not in {"full", "hoopai"}:
+        raise HTTPException(400, "未知球场模型")
+    landmark_table = COURT_LANDMARKS
+    if req.court_model == "hoopai":
+        from .legacy_court import full_landmarks
+        landmark_table = full_landmarks()
+        if req.confirm and not req.fixed_camera:
+            raise HTTPException(400, "旧版标定仅用于全程固定机位，请先确认或跳过标定")
+    profile = None
+    if req.profile_id:
+        profile = _camera_profiles().get(req.profile_id)
+        if not profile:
+            raise HTTPException(404, "机位档案不存在")
+        if profile.get("frame_size") != [W, H] or profile.get("court_model") != req.court_model:
+            raise HTTPException(400, "机位分辨率或球场模型不匹配，请重新标定")
+        if req.confirm and not req.overlay_confirmed:
+            raise HTTPException(400, "请先在新视频画面核对叠线")
+        req.landmarks = dict(zip(profile["point_names"], profile["normalized_points"]))
+    if req.save_profile_name and (not req.fixed_camera or len(req.save_profile_name.strip()) > 60):
+        raise HTTPException(400, "机位档案仅支持固定机位，名称最多 60 字")
     kp_px, used = {}, []
     for name, xy in (req.landmarks or {}).items():
-        if name not in COURT_LANDMARKS or not xy:
+        if req.court_model == "hoopai" and (name not in landmark_table
+                or not isinstance(xy, (list, tuple)) or len(xy) != 2
+                or any(not isinstance(v, (int, float)) or not math.isfinite(v) or not 0 <= v <= 1 for v in xy)):
+            raise HTTPException(400, "请使用有效的地面标志点及画面内坐标")
+        if name not in landmark_table or not xy:
             continue
         kp_px[name] = (float(xy[0]) * W, float(xy[1]) * H)
         used.append(name)
@@ -1634,7 +2461,7 @@ async def post_calibrate(req: CourtMarkRequest) -> Any:
             400, f"至少要点 4 个场地特征点（现在 {len(kp_px)} 个）—— "
                  "四角、中线两端、中圈、罚球线、篮筐里挑看得清的")
     try:
-        cal = calibrate_from_keypoints(kp_px, COURT_LANDMARKS)
+        cal = calibrate_from_keypoints(kp_px, landmark_table)
     except Exception as e:  # noqa: BLE001
         # 预览模式下**不要抛 400**：用户还没保存，界面需要的是"为什么点不成"，
         # 而不是一个错误弹窗（旧版标定页就是先给原因、让人能就地改点）。
@@ -1691,11 +2518,14 @@ async def post_calibrate(req: CourtMarkRequest) -> Any:
               "reproj_err_px": (round(max(per_point_px.values()), 1)
                                 if per_point_px else None),
               "tol_px": round(tol_px, 1), "per_point_px": per_point_px,
-              "usable": (not blocked), "position_unverified": bool(tolerate),
+              "usable": (not blocked), "hoop_checked": bool(hoop.get("checked")), "position_unverified": bool(tolerate or not hoop.get("checked") or hoop_err is None),
               "hoop_error_m": (round(hoop_err, 2) if hoop_err is not None else None),
               "degeneracy": qual["metrics"], "hoop_check": hoop,
               "revision": req.revision,
               "note": ("；".join(notes) if notes else "")}
+    if req.court_model == "hoopai":
+        from .legacy_court import preview_lines
+        result["lines"] = preview_lines(cal, W, H)
     if blocked:
         result["note"] = blocked + "（提示：重投影误差小不等于标定对 —— "
         result["note"] += "4~6 个点几乎共线时误差必然≈0，但坐标会整片错位。）"
@@ -1723,6 +2553,7 @@ async def post_calibrate(req: CourtMarkRequest) -> Any:
             data.update({
                 "revision": cur_rev + 1,
                 "capture_time_s": float(req.at) if req.at is not None else None,
+                "court_model": req.court_model, "fixed_camera": req.fixed_camera,
                 "point_names": used,
                 "normalized_points": [[float(v) for v in (req.landmarks or {})[n]]
                                       for n in used
@@ -1731,8 +2562,25 @@ async def post_calibrate(req: CourtMarkRequest) -> Any:
                 "per_point_px": per_point_px,
                 "hoop_error_m": result["hoop_error_m"],
                 "hoop_check": hoop,
-                "position_unverified": bool(tolerate),
+                "hoop_checked": bool(hoop.get("checked")), "position_unverified": bool(tolerate or not hoop.get("checked") or hoop_err is None),
             })
+            if profile:
+                from datetime import datetime, timezone
+                data.update(profile_id=req.profile_id, applied_from=profile["source_video"],
+                            overlay_confirmed=True, confirmed_at=datetime.now(timezone.utc).isoformat())
+            if req.save_profile_name and req.save_profile_name.strip():
+                import uuid
+                profiles = _camera_profiles()
+                pid = uuid.uuid4().hex
+                profiles[pid] = {k: data[k] for k in
+                    ("frame_size", "court_model", "point_names", "normalized_points", "src_px", "dst_m", "H")}
+                profiles[pid].update(id=pid, name=req.save_profile_name.strip(), source_video=str(vp))
+                pp = DATA / "camera_profiles.json"
+                pp.parent.mkdir(parents=True, exist_ok=True)
+                tmp = pp.with_suffix(".tmp")
+                tmp.write_text(json.dumps(profiles, ensure_ascii=False, indent=2), encoding="utf-8")
+                tmp.replace(pp)
+                data["profile_id"] = pid
             out.write_text(json.dumps(data, ensure_ascii=False, indent=2),
                            encoding="utf-8")
         except Exception as e:  # noqa: BLE001
@@ -1890,6 +2738,13 @@ async def get_frames(video_path: str, n: int = 6, center: float = -1.0,
     return {"video": str(p_), "count": len(out), "frames": out}
 
 
+# 跨帧同名点合并的**一致性门槛**（像素，相对于该段参考帧）：
+# 只有同一物理点在两帧上的两次测量，映射到同一参考帧后彼此差 ≤ 这个值，才认为跨帧补偿
+# 对这一点是可信的、可以合并成一份；超过它就不合并（保留离参考帧最近的一份，按单帧解算）。
+# 用户 2026-10-05 的要求：不能拿"平均之后误差下降"当更准的证据。
+CROSS_FRAME_AGREE_PX = 8.0
+
+
 class MultiCalibRequest(BaseModel):
     video_path: str
     # True = 先做镜头位移补偿（只合并同一镜头内的点）再解标定。
@@ -1901,6 +2756,35 @@ class MultiCalibRequest(BaseModel):
     # revision = 乐观锁：与已存标定的 revision 不一致就 409。
     confirm: bool = False
     revision: Optional[int] = None
+    # 是否顺手做"点吸附到球场线"的精修（默认开）。
+    # 为什么要有：手工标点很难精确到几个像素，而分析端的准入是"吻合度 ≥1.25"。
+    # 实测用户那 6 个点几何上是对的，但底线/边线差一点，总分只有 1.02 → 热区/战术图全被拒。
+    # ⚠️ 但它**带护栏**：精修结果必须几何上仍像球场才采纳，否则原样保留用户的点
+    # （实测这机位太正对、单应病态，精修会把吻合度刷到 74 的退化解 —— 那种一律拒绝）。
+    snap: bool = True
+    # 「只点 4 个点、不给名字」模式：后端穷举常见球场地物组合，用吻合度挑。
+    # 为什么要它：让用户给点**命名**（near/far）是最大的坑 ——
+    # corner_near_* 的坐标其实是 y=-14（远端底线），命名与直觉相反，
+    # 判错一次整张图平移 28m。改成不命名 + 自动定向，判据是算出来的。
+    mini: bool = False
+    # 「只点 4 点」时点的**有序**列表（每帧一组）：
+    #   [{t: 12.3, points: [[x,y],[x,y],[x,y],[x,y]]}, ...]  x/y 为归一化
+    # 为什么不用 landmarks 的字典：那要靠 JS 对象键的插入顺序来保证顺序，
+    # 太脆；点选顺序本身就是数据的一部分（它决定哪个点对应哪套地物）。
+    mini_frames: list = []
+    # ---- 合并补充（我方 HoopAI 旧版球场）----
+    # 多帧这条路径原来把点表写死成全场地 COURT_LANDMARKS，于是界面上的「HoopAI 球场标定」
+    # 在多帧模式下等于没有：点提交进来会被名字过滤掉，报"现在 0 个点"。
+    # 这里与单帧端点 /api/calibrate 保持同一口径：court_model="hoopai" 用旧版点表，
+    # 且**只允许全程固定机位**（同一守卫），未知模型直接 400。
+    court_model: str = "full"
+    fixed_camera: bool = False
+    # ---- 时间归属（用户 2026-10-05 的字段表）----
+    # 适用时段：**左闭右开** [valid_from_s, valid_to_s)。不填就不记时段，
+    # 按时刻取标定时直接不可用（**不默认整段有效**）。
+    valid_from_s: Optional[float] = None
+    valid_to_s: Optional[float] = None
+    segment_label: str = ""
 
 
 class AutoCalibRequest(BaseModel):
@@ -1990,20 +2874,203 @@ async def post_calibrate_multi(req: MultiCalibRequest) -> Any:
     H = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     cap.release()
 
+    # 四个未命名点总能精确解出单应矩阵，但无法校验它们对应的是哪四条球场线。
+    # 白线吻合度在真实转播画面上会误判，因此此模式只供预览，不保存为位置标定。
+    if getattr(req, "mini", False) and getattr(req, "confirm", False):
+        raise HTTPException(
+            400,
+            "4 点自动猜测模式只能预览，不能保存为热区/战术图标定。"
+            "请关闭 4 点模式，标 6 个以上有名字的球场特征点，并核对投影线。")
+
     label_of = {d["name"]: d["label"] for d in COURT_LABELS}
+    # 点表按 court_model 选（与单帧端点 /api/calibrate 同一口径），否则 HoopAI 的点会被过滤成 0 个
+    landmark_table = COURT_LANDMARKS
+    model = getattr(req, "court_model", "full") or "full"
+    if model == "hoopai":
+        from .legacy_court import full_landmarks
+        landmark_table = full_landmarks()
+        if req.confirm and not getattr(req, "fixed_camera", False):
+            raise HTTPException(400, "旧版球场标定仅用于全程固定机位，请先确认或跳过标定")
+    elif model != "full":
+        raise HTTPException(400, "未知球场模型")
     src, dst, tags = [], [], []
-    for fr in (req.frames or []):
+    _seen_t: set = set()
+    # 逐帧收集点 —— 「多机位」路径要用它按镜头分组（见下面的 per-shot 分支）。
+    per_frame: dict = {}
+    hoop_excluded = 0
+    for _fid_i, fr in enumerate(req.frames or []):
         t = float(fr.get("t", 0.0))
+        # 帧身份：同一时刻只能出现一帧（(t, 点名) 会碰撞，必须挡住）
+        if t in _seen_t:
+            raise HTTPException(400, "同一时刻只能出现一帧（收到了重复的 t=%.2fs）—— "
+                                     "左右画面请各用不同时刻的帧" % t)
+        _seen_t.add(t)
+        _fid = "f%d" % _fid_i
         for name, xy in (fr.get("landmarks") or {}).items():
-            if name not in COURT_LANDMARKS or not xy:
+            if name not in landmark_table or not xy:
+                continue
+            # 兼容两种写法：[x, y]（老）与 {"value":[x,y], "label":"界面上的名字"}（新）。
+            # 后者是为了让"逐点诊断"能用**用户看到的那个名字**回话。
+            lab = None
+            if isinstance(xy, dict):
+                lab = xy.get("label")
+                xy = xy.get("value") or xy.get("xy")
+            if not xy or len(xy) < 2:
+                continue
+            # ★ 篮筐**不参与地面标定**。
+            # 为什么：`hoop_*` 是篮圈中心的**地面投影**（y=±12.425），而界面提示
+            # 让用户「点篮圈的正中心」—— 篮圈离地 3.05m，**不在球场地面上**。
+            # 单应矩阵只能映射地面，把一个 3 米高的点按地面坐标塞进拟合，
+            # 必然是错的：实测用户那份标定里，去掉篮筐后两段的平均重投影误差
+            # 从 1.00m → **0.03m**、2.61m → **0.18m**（篮筐就是那个多余的点）。
+            # 篮筐有它自己的标法（「在画面上标篮筐」直接存画面坐标，不经过单应矩阵）。
+            # 注意：`COURT_LANDMARKS` 里这两个键**要保留** —— 老标定文件里就存着
+            # 篮筐点（`point_names`/`names`），读旧文件时还要靠这两个键认出来。
+            if str(name).startswith("hoop"):
+                hoop_excluded += 1
                 continue
             src.append([float(xy[0]) * W, float(xy[1]) * H])
-            dst.append(list(COURT_LANDMARKS[name]))
-            tags.append({"name": name, "label": label_of.get(name, name),
-                         "t": round(t, 2)})
+            dst.append(list(landmark_table[name]))
+            tags.append({"name": name,
+                         "label": lab or label_of.get(name, name),
+                         "t": round(t, 2), "frame_id": _fid})
+            slot = per_frame.setdefault(round(t, 3), {"t": round(t, 3),
+                                                      "W": int(W), "H": int(H),
+                                                      "px": [], "dst": [],
+                                                      "names": []})
+            slot["px"].append([float(xy[0]) * W, float(xy[1]) * H])
+            slot["dst"].append(list(landmark_table[name]))
+            slot["names"].append(name)
+
+    # 篮筐点被跳过的**人话说明**（per-shot / per-frame / 单镜头三条返回都要带上）：
+    # 不给说明的话，界面只会看到"我提交了 5 个点，怎么只算了 4 个"。
+    hoop_note = (("你标的 %d 个篮筐点不参与地面标定（篮圈离地 3.05m，不是地面点），"
+                  "已跳过" % hoop_excluded) if hoop_excluded else "")
+
+    # ---- 多机位：按镜头分别解算（绝不跨镜头合并）---------------------------
+    #
+    # 用户的原话："一个镜头怎么可能看到全场啊，就是两个镜头标点，按照标出来的点
+    # 算战术图和投篮热区啊"。这是对的：一台机位拍不到全场，真实工作流是两个机位
+    # 各拍半场。而两个机位**没有共同坐标系** —— 把两边的点混在一起解**一个**单应
+    # 矩阵在数学上不成立（用户反复看到的"解算失败/点互相矛盾"就是这么来的）。
+    #
+    # 所以：先把用户标点的时刻按镜头分组；**只有当确实落在 2 个以上镜头时**才走
+    # 这条路径（每镜头各解一份 H，各自覆盖自己的时间段），否则照走原来的单镜头逻辑。
+    if len(per_frame) >= 2 and len(src) >= 4:
+        try:
+            from .multical import solve_per_shot, weak_segments, worst_readings
+            groups, cuts = _split_marks_by_shot(str(vp),
+                                                [f["t"] for f in per_frame.values()])
+        except Exception as e:                                   # noqa: BLE001
+            groups, cuts = [], []
+            comp_err = "%s: %s" % (type(e).__name__, e)
+        if len(groups) > 1:
+            got = solve_per_shot(str(vp), list(per_frame.values()),
+                                 duration=_video_duration(str(vp)),
+                                 frame_grab=lambda tt: _frame_bgr(vp, tt))
+            mc = got.get("multical")
+            if mc is not None and len(mc.segments) >= 2:
+                rev_out = None
+                if bool(getattr(req, "confirm", False)):
+                    out_p = _calibration_path_for(str(vp))
+                    old_rev = 0
+                    if out_p.exists():
+                        try:
+                            old_rev = int((json.loads(
+                                out_p.read_text(encoding="utf-8")) or {}
+                            ).get("revision") or 0)
+                        except Exception:                        # noqa: BLE001
+                            old_rev = 0
+                    req_rev = getattr(req, "revision", None)
+                    if req_rev is not None and int(req_rev) != old_rev:
+                        raise HTTPException(
+                            409, "标定已被其它页面修改（当前 revision=%d），请刷新后重试"
+                                 % old_rev)
+                    out_p.parent.mkdir(parents=True, exist_ok=True)
+                    data = mc.to_dict()
+                    data["revision"] = old_rev + 1
+                    data["video_path"] = str(vp)
+                    _write_calibration(out_p, data)
+                    rev_out = old_rev + 1
+                return {
+                    "ok": True, "multi_shot": True, "via": "per-shot",
+                    # 这两个键**每条出口都要有**（前端按它读"精修采纳了没有 /
+                    # 4 点自动定向选了哪套地物"）。这条 per-shot 出口在 mini/snap
+                    # 两段之前就返回了（与队友的顺序一致），所以这里如实写 null。
+                    "snap": None, "mini": None,
+                    "n_points": len(src),
+                    "rmse_m": round(max(s.rmse_m for s in mc.segments), 3),
+                    "n_segments": len(mc.segments),
+                    "segments": mc.summary()["segments"],
+                    "cuts": [round(float(c), 2) for c in (cuts or [])],
+                    "note": "；".join(got.get("notes") or [])
+                            + (("；" + hoop_note) if hoop_note else ""),
+                    # 有几个篮筐点被跳过（篮圈离地 3.05m，不进地面单应拟合）——
+                    # 界面据此解释"我明明点了它，怎么没算"。
+                    "hoop_excluded": hoop_excluded,
+                    "saved": rev_out is not None, "revision": rev_out,
+                    "calibration_fit": dict(
+                        # ⚠️ 取**最差**那一段的读数，**不能取 max**：
+                        # 用户实测两段是 ratio 0.34 / 3.12，取 max 报 3.12
+                        # 就把"半个视频坐标全错"这件事盖住了（我第一版就是这么写的）。
+                        worst_readings(mc),
+                        weak_segments=weak_segments(mc)),
+                    # 任一段弱就算未校验 —— 半份标定不可信时，位置结论整体不可信
+                    "position_unverified": bool(weak_segments(mc)),
+                }
+    # ---- 「只点 4 个点、不给名字」：穷举地物组合，用吻合度自动定向 ----
+    # ⚠️ 这一段**必须放在** len(src) < 4 检查之前：mini 模式下用户根本不发
+    # landmarks（只发有序的 4 个点），所以那时 src 是空的，先检查就会误报
+    # "至少要点 4 个场地特征点"（实测踩到）。
+    #
+    # ⚠️ 我方补充（为什么插在**这里**，而不是像队友那样插在"镜头位移补偿"之后）：
+    # 我们比队友多一层"**去重前**的每帧原始点"记录（下面的 `src_raw`/`tags_raw`，
+    # 以及给 `per_frame_fit` 用的 `src_pre`/`tags_pre`），它们紧接着就被 deepcopy
+    # 固定下来了。若照队友的位置插在补偿之后，mini 改出来的 src/tags 就进不了
+    # `per_frame_fit` → 那里会算出"每一幅画面都不够 4 个点"（per_frame_fit 为空）
+    # → mini 模式整条走岔成失败（实测复现）。插在这里与他的顺序**等价**：
+    # mini 模式下 tags 只有一个时刻，下面的 `compensate` 分支（要求时刻数 > 1）
+    # 本来就不会触发，同名点去重也不会触发。
+    mini_info = None
+    if getattr(req, "mini", False):
+        _use = []
+        for fr in (req.mini_frames or []):
+            pts = fr.get("points") or []
+            if len(pts) == 4:
+                _use.append({"t": float(fr.get("t") or 0.0), "points": pts})
+        if not _use and len(src) == 4 and req.frames:
+            _use = [{"t": float((req.frames[0] or {}).get("t") or 0.0),
+                     "points": [[p[0] / float(W), p[1] / float(H)] for p in src]}]
+        if not _use:
+            mini_info = {"ok": False,
+                         "note": "「4 点自动定向」需要正好 4 个点（每帧一组）"}
+        else:
+            _bgr = _frame_bgr(vp, _use[0]["t"])
+            if _bgr is None:
+                mini_info = {"ok": False, "note": "取不到画面，无法自动定向"}
+            else:
+                _src4 = [[float(p[0]) * W, float(p[1]) * H]
+                         for p in _use[0]["points"]]
+                mini_info = solve_minimal_quad(_src4, _bgr, W, H)
+                if mini_info.get("ok"):
+                    src = [list(p) for p in _src4]
+                    dst = [list(p) for p in mini_info["dst"]]
+                    tags = [{"name": "mini_%d" % (i + 1),
+                             "label": "第%d点" % (i + 1),
+                             "t": round(_use[0]["t"], 2)} for i in range(4)]
+
     seg_info: list = []
+    # 原始点（**补偿之前**就存下来）：source_frames 里的 t 只对应这一批坐标。
+    # 补偿后的点另存 points_warped_px —— 两者绝不能混在一个字段里（用户 2026-10-05）。
+    import copy as _copy
+    src_raw = _copy.deepcopy(src)
+    tags_raw = _copy.deepcopy(tags)      # 原请求的逐点记录：任何补偿/合并都不许写回它
     dropped: list = []
     comp_note = ""
+    comp_ref_t = None          # 跨帧补偿最终映射到哪一帧（矩阵就属于这一帧）
+    comp_failed = False        # 补偿**尝试过但失败**：与"根本没启用"必须分开记录
+    comp_fail_reason = ""
+    warped_by_key: dict = {}   # (frame_id, 点名) → 补偿到参考帧后的像素点
     if getattr(req, "compensate", True) and len({t["t"] for t in tags}) > 1:
         # ---- 镜头位移补偿：只合并同一镜头内的点 ----
         try:
@@ -2038,6 +3105,10 @@ async def post_calibrate_multi(req: MultiCalibRequest) -> Any:
                 src, dst, tags = src2, dst2, tags2
                 for info in seg_info:
                     info["used"] = (info["idx"] == gi)
+                comp_ref_t = float(g["ref_t"])
+                for _i2, _tg2 in enumerate(tags2):
+                    if _tg2.get("warped_to") is not None:
+                        warped_by_key[(_tg2.get("frame_id"), _tg2["name"])] = list(src2[_i2])
                 comp_note = ("已按镜头位移补偿：用第 %d 段（参考帧 t=%.2fs，%d 个点）"
                              % (gi, g["ref_t"], len(src)))
                 if dropped:
@@ -2046,13 +3117,151 @@ async def post_calibrate_multi(req: MultiCalibRequest) -> Any:
             else:
                 comp_note = "各画面都没有凑够 4 个点，无法做镜头位移补偿"
         except Exception as e:  # noqa: BLE001
-            comp_note = f"镜头位移补偿失败（{type(e).__name__}: {e}），按原样解算"
+            # 记下"尝试过、失败了"，并把原因原样写进说明 —— 这条路径与"用户没启用补偿"
+            # 是两件事，落盘必须能分开（用户 2026-10-05 的验收第 3 条）。
+            comp_failed = True
+            comp_fail_reason = f"{type(e).__name__}: {e}"
+            comp_note = f"镜头位移补偿失败（{comp_fail_reason}），按原样解算"
+
+    # 合并规则（用户 2026-10-05 收紧）：
+    #   **只有**两帧都做过镜头位移补偿（warped_to 存在）、**且这两次测量映射到同一参考帧后
+    #   彼此一致**（差 ≤ CROSS_FRAME_AGREE_PX 像素）时，才合成一份（取平均，噪声均化）；
+    #   否则**不合并**：保留离参考帧最近的那一份，并在说明里写清"未合并 → 按单帧解算"。
+    #   绝不用"平均之后误差下降"当更准的证据 —— 误差下降本身只说明点更自洽。
+    src_pre, dst_pre, tags_pre = list(src), list(dst), list(tags)
+    merged_dup = 0
+    if tags and len(tags) == len(src) == len(dst):
+        groups: dict = {}
+        for i, tg in enumerate(tags):
+            groups.setdefault(tg.get("name"), []).append(i)
+        if any(len(v) > 1 for v in groups.values()):
+            src_new, dst_new, tags_new = [], [], []
+            n_merged, n_split, worst = 0, 0, 0.0
+            for nm, idxs in groups.items():
+                if len(idxs) == 1:
+                    i = idxs[0]
+                    src_new.append(src[i])
+                    dst_new.append(dst[i])
+                    tags_new.append(tags[i])
+                    continue
+                merged_dup += len(idxs) - 1
+                ref = min(idxs, key=lambda i: abs(float(tags[i].get("t", 0.0)) -
+                                                  float(tags[i].get("warped_to")
+                                                        if tags[i].get("warped_to") is not None
+                                                        else tags[i].get("t", 0.0))))
+                warped = all(tags[i].get("warped_to") is not None for i in idxs)
+                agree = None
+                if warped:
+                    px = [float(src[i][0]) for i in idxs]
+                    py = [float(src[i][1]) for i in idxs]
+                    agree = max(max(px) - min(px), max(py) - min(py))
+                    worst = max(worst, agree)
+                if warped and agree is not None and agree <= CROSS_FRAME_AGREE_PX:
+                    ax = sum(float(src[i][0]) for i in idxs) / len(idxs)
+                    ay = sum(float(src[i][1]) for i in idxs) / len(idxs)
+                    src_new.append([ax, ay])
+                    tags_new.append({**tags[ref], "merged_frames": len(idxs),
+                                     "merge_agree_px": round(agree, 2)})
+                    n_merged += 1
+                else:
+                    # 补偿不可信 / 两次测量对不上 → 不合并，保留参考帧最近的一份
+                    src_new.append(src[ref])
+                    tags_new.append({**tags[ref], "merge_skipped": True,
+                                     "merge_agree_px": (round(agree, 2) if agree is not None else None)})
+                    n_split += 1
+                dst_new.append(dst[ref])
+            src, dst, tags = src_new, dst_new, tags_new
+            note = "同名点在多个画面上重复 %d 个" % merged_dup
+            if n_merged:
+                note += "：%d 个已合并（两帧映射到同一参考帧后差 ≤%.0fpx）" % (n_merged, CROSS_FRAME_AGREE_PX)
+            if n_split:
+                note += "；%d 个**未合并**（补偿不可信或两次测量对不上，最大差 %s px）" \
+                        "—— 这些点按单帧解算，不取平均" % (n_split,
+                                                          ("%.1f" % worst) if worst else "未知")
+            comp_note = ((comp_note + "；") if comp_note else "") + note
 
     if len(src) < 4:
         raise HTTPException(
             400, f"至少要点 4 个场地特征点（现在 {len(src)} 个）—— "
                  "几个画面上的点会累加在一起算。"
-                 + (comp_note and ("当前：" + comp_note) or ""))
+                 + (("；" + hoop_note) if hoop_note else "")
+                 + (comp_note and ("；当前：" + comp_note) or ""))
+
+    # ---- 「点吸附到球场线」精修（可选，默认开）----
+    # 位置：必须在拿到各帧的 bgr 之后、解 H 之前 —— 精修要拿画面当目标函数。
+    # 失败/被护栏拒绝都不影响正常解算，所以整段包在 try 里。
+    snap_info = None
+    if getattr(req, "snap", True) and req.frames:
+        try:
+            from .calibcheck import refine_keypoints
+            snaps = []
+            for fr in req.frames:
+                lm = fr.get("landmarks") or {}
+                t = float(fr.get("t") or 0.0)
+                norm = {}
+                for k, v in lm.items():
+                    # ★ 篮筐点不进地面标定（与上面收集点的循环同口径）。
+                    # 为什么这一句非补不可：我们这张点表里**保留了 hoop_* 键**
+                    # （老标定文件存着它们，读旧文件要靠这两个键认出来，见上方注释），
+                    # 而队友那张表已经把 hoop_* 删掉了 —— 所以他写的
+                    # `k in COURT_LANDMARKS` 天然就把篮筐挡住了，照抄过来却会**放行**，
+                    # 于是上面刚被 `hoop_excluded` 排除掉的篮筐点又被拉回来参与
+                    # 精修拟合，我方"篮筐不进地面标定"这条扩展就被冲掉了。
+                    if str(k).startswith("hoop"):
+                        continue
+                    if isinstance(v, dict):
+                        v = v.get("value") or v.get("xy")
+                    if v and len(v) >= 2 and k in landmark_table:
+                        norm[k] = [float(v[0]), float(v[1])]
+                if len(norm) < 4:
+                    continue
+                bgr = _frame_bgr(vp, t)
+                if bgr is None:
+                    continue
+                snaps.append({"bgr": bgr, "landmarks": norm, "t": t})
+            if snaps:
+                snap_info = refine_keypoints(snaps, landmark_map=landmark_table)
+                # 只在**被采纳**时替换点集：护栏拒绝时 snap_info["accepted"] 为 False，
+                # landmarks 原样退回，不会动用户标的点。
+                if snap_info.get("accepted"):
+                    new_by_t = {round(float(f["t"]), 2): snap_info["landmarks"]
+                                for f in snaps}
+                    # 按帧替换：src/dst 是按帧顺序收集的，这里重建一遍
+                    src, dst, tags = [], [], []
+                    for _fi, fr in enumerate(req.frames):
+                        lm = fr.get("landmarks") or {}
+                        t = round(float(fr.get("t") or 0.0), 2)
+                        use = new_by_t.get(t) or {}
+                        for name, xy in lm.items():
+                            # ★ 同上：篮筐点不进地面标定。
+                            # 这里**不再累加 hoop_excluded** —— 上面收集点时已经数过了，
+                            # 重复计数会让"你标的 N 个篮筐点已跳过"这句话报多。
+                            if str(name).startswith("hoop"):
+                                continue
+                            if name not in landmark_table or not xy:
+                                continue
+                            lab = None
+                            if isinstance(xy, dict):
+                                lab = xy.get("label")
+                                xy = xy.get("value") or xy.get("xy")
+                            if not xy or len(xy) < 2:
+                                continue
+                            if name in use:
+                                xy = use[name]
+                            src.append([float(xy[0]) * W, float(xy[1]) * H])
+                            dst.append(list(landmark_table[name]))
+                            # ⚠️ 我方补的 frame_id：本文件的落盘记录（`source_frames` /
+                            # `warped_by_key`）一律按 (frame_id, 点名) 关联，队友那版
+                            # 没有这个字段。缺了它不会报错，但同名点来自哪一幅画面就
+                            # 分不出来了（两帧标同名点时 points_warped_px 会串）。
+                            tags.append({"name": name,
+                                         "label": lab or label_of.get(name, name),
+                                         "t": t,
+                                         "frame_id": "f%d" % _fi})
+        except Exception as e:  # noqa: BLE001  精修失败绝不能影响正常解算
+            snap_info = {"accepted": False,
+                         "note": f"精修没跑成（{type(e).__name__}: {e}），用你标的点"}
+
     via = "dlt"
     try:
         Hm = find_homography(src, dst)
@@ -2115,8 +3324,11 @@ async def post_calibrate_multi(req: MultiCalibRequest) -> Any:
     # 不同镜头 = 不同单应矩阵，混在一起必然误差巨大（实测 61 m）。
     # 这里逐帧拟合，报出"哪一帧自己就能标定"—— 那才是能用的标定。
     by_t = {}
-    for p_, d_ in zip(per_point, dst):
-        by_t.setdefault(p_["t"], []).append((p_, d_))
+    # 用**去重前**的每帧原始点：界面那一栏写的是"每边各自标了几个点、够不够 4 个"，
+    # 必须反映用户实际点的数量（同名点合并之后右画面会被显示成只剩 1 个点，那是假象）。
+    for i in range(len(tags_pre)):
+        by_t.setdefault(tags_pre[i]["t"], []).append(
+            (list(src_pre[i]), list(dst_pre[i]), tags_pre[i]["name"]))
     per_frame_fit = []
     for tt in sorted(by_t):
         items = by_t[tt]
@@ -2125,8 +3337,10 @@ async def post_calibrate_multi(req: MultiCalibRequest) -> Any:
                                   "rmse_m": None,
                                   "note": "点不够 4 个，无法单独拟合"})
             continue
-        s_f = [list(i[0]["px"]) for i in items]
+        s_f = [list(i[0]) for i in items]
         d_f = [list(i[1]) for i in items]
+        # 点集与点名也带上 —— 后面「按画面各自解算」（多机位）要用它们建每段标定
+        n_f = [str(i[2]) for i in items]
         try:
             Hf = find_homography(s_f, d_f)
             e_f = []
@@ -2137,6 +3351,7 @@ async def post_calibrate_multi(req: MultiCalibRequest) -> Any:
             per_frame_fit.append({"t": tt, "n": len(items),
                                   "ok": r_f < 1.5, "rmse_m": round(r_f, 3),
                                   "H": Hf if r_f < 1.5 else None,
+                                  "src_px": s_f, "dst_m": d_f, "names": n_f,
                                   "note": ("这一帧自己就能标定（误差 %.2f m）"
                                            % r_f) if r_f < 1.5 else
                                           ("这一帧的点也不自洽（误差 %.2f m）"
@@ -2144,12 +3359,27 @@ async def post_calibrate_multi(req: MultiCalibRequest) -> Any:
         except Exception as e:  # noqa: BLE001
             per_frame_fit.append({"t": tt, "n": len(items), "ok": False,
                                   "rmse_m": None,
+                                  "src_px": s_f, "dst_m": d_f, "names": n_f,
                                   "note": f"这一帧解不出：{e}"})
-    best_frame = None
-    for f_ in per_frame_fit:
-        if f_.get("ok") and f_.get("H") is not None:
-            best_frame = f_
-            break
+    # 有几幅画面自己就能标定（界面用它说明"你标的这两幅各自都成立"）
+    # 具体用哪一幅解算由 _pick_calibration_homography 决定（取点的最多那一幅）。
+    n_solvable_frames = sum(1 for f_ in per_frame_fit
+                            if f_.get("ok") and f_.get("n", 0) >= 4)
+
+    # 几幅画面**是不是同一个镜头**（不是同一镜头时，跨画面拟合必然互相矛盾，
+    # 那是拍摄方式决定的，不是用户点错了 —— 别再报成"你的点互相矛盾"）。
+    used_segs = [s for s in seg_info if s.get("used")]
+    frames_differ_shot = (len(used_segs) <= 1 and len(seg_info) > 1)
+    if not seg_info and len({t["t"] for t in tags}) > 1:
+        # 没做补偿（点数不够 4 时不会做）也至少按"时刻不同"提示一次
+        frames_differ_shot = True
+    diff_shot_note = ""
+    if frames_differ_shot:
+        diff_shot_note = ("这两幅画面看起来**不是同一个镜头**（镜头切过/摇过）。"
+                          "跨镜头的点没有统一坐标系，合并解必然互相矛盾 —— "
+                          "这是拍摄方式决定的，不是你点错了位置。"
+                          "建议：只留**同一侧半场、同一镜头**的一幅画面，"
+                          "在它上面把能看见的点一次点够 5~6 个（另一幅画面的点会被忽略）。")
 
     # 场景数（不同画面时刻的数量）—— 用来判断"是否跨镜头"
     n_frames = len({f.get("t") for f in (req.frames or [])})
@@ -2160,26 +3390,84 @@ async def post_calibrate_multi(req: MultiCalibRequest) -> Any:
     _best_n = max([f.get("n", 0) for f in per_frame_fit] or [0])
     if _best_n < 4 and len(src) >= 4:
         detail = "、".join(f"t={f['t']}s 有 {f['n']} 个点" for f in per_frame_fit)
-        note = ("**没有任何一个画面凑够 4 个点**（%s）。单应矩阵要求同一帧里至少 4 个点"
-                "（跨帧的点只有在相机完全不动时才能拼）。请回到场地看得最全的那一帧，"
-                "**在同一帧里一次点够 5~6 个点**，再切到下一帧。" % detail)
+        note = ("**每一幅画面都不够 4 个点**（%s）。单应矩阵要求**同一幅画面里至少 "
+                "4 个点**（跨画面只有在相机完全没动时才能拼）。界面上是左右两个画面："
+                "请把一侧半场看得清的那幅放左边、另一侧半场看得清的那幅放右边，"
+                "然后**每一幅各自点够 4~6 个点**（底线两角、罚球区两角、篮筐中心、"
+                "中圈中心），再解算。" % detail)
         ok = False
         if comp_note:
             note += "；" + comp_note
+        if hoop_note:
+            # 这条失败分支最需要它：用户发 4 个点其中 1 个是篮筐 → 只剩 3 个 →
+            # 原文只会说"点数不够"，看不出是自己那个篮筐点被跳过了。
+            note += "；" + hoop_note
         return {"ok": ok, "rmse_m": round(rmse, 3), "note": note,
                 "per_point": sorted(per_point, key=lambda d: -d["err_m"])[:5],
                 "worst": sorted(per_point, key=lambda d: -d["err_m"])[:5],
                 "n_points": len(src), "n_frames": n_frames,
+                "hoop_excluded": hoop_excluded,
                 "per_frame_fit": per_frame_fit, "H": None,
                 "compensate_note": comp_note, "segments": seg_info,
-                "outliers": outliers, "n_inliers": n_inliers}
+                # 失败分支也要能区分"没启用"与"启用但失败"（与正常返回同一口径）
+                "compensate_status": ("failed" if comp_failed else
+                                      ("not_enabled" if not getattr(req, "compensate", True) else
+                                       ("done" if comp_ref_t is not None else "not_needed"))),
+                "n_solvable_frames": n_solvable_frames,
+                "outliers": outliers, "n_inliers": n_inliers,
+                # 两条新能力的结果照原样回（这条是"每幅画面都不够 4 个点"的软失败）：
+                # mini 模式在这里是 ok=True 的（4 点解出来了），失败的是"逐帧拟合"。
+                "snap": snap_info, "mini": mini_info}
     ok = rmse < 1.5 and n_inliers >= 4
+
+    # ---- 选哪一份 H：**只要有一幅画面自己就能标定，就用那一幅** ----
+    # 为什么不合并着用：左右两个画面往往是**两台机位/两个角度**拍的。把两个角度的点
+    # 揉进一份单应矩阵，会解出一个"谁都不对但误差看着还行"的折中解（每个点都被拉偏），
+    # 而画面自己那 4~6 个点解出来的是几何上自洽的那一份。
+    # 跨画面合并只留给"单个半场凑不够 4 个点"的情况（球场关于中线对称，半场画面能凑齐）。
+    pick = _pick_calibration_homography(Hm, rmse, src, dst, tags, per_frame_fit,
+                                        merged_inliers=n_inliers)
+    Hm = pick["H"]
+    pick_src, pick_dst, pick_tags = pick["src"], pick["dst"], pick["tags"]
+    rmse = pick["rmse"]
+    via = pick["via"]
+    frame_note = pick["note"]
+    if pick["outliers"] is not None:      # 选了单幅画面：离群点按这份 H 重算
+        outliers, n_inliers = pick["outliers"], pick["n_inliers"]
+    per_point = []
+    errs = []
+    for (x, y), (u, v), tag in zip(pick_src, pick_dst, pick_tags):
+        px, py = apply_homography(Hm, x, y)
+        e = float(((px - u) ** 2 + (py - v) ** 2) ** 0.5)
+        errs.append(e)
+        per_point.append({**tag, "err_m": round(e, 2),
+                          "px": [round(x, 1), round(y, 1)]})
+    worst = sorted(per_point, key=lambda d: -d["err_m"])[:5]
+
+    # 逐点责任诊断（leave-one-out）：把"哪个点跟其余对不上"点名出来，
+    # 而不是只报一个"有 N 个点互相矛盾"（用户实测反馈：不说哪个等于没说）
+    label_of_all = {}
+    for _fr in (req.frames or []):
+        _lm = _fr.get("landmarks") or {}
+        if isinstance(_lm, dict):
+            for _k, _v in _lm.items():
+                if isinstance(_v, dict) and _v.get("label"):
+                    label_of_all[_k] = _v["label"]
+    point_diag = _diagnose_keypoints(pick_src, pick_dst, pick_tags,
+                                     label_of=label_of_all)
 
     # ---- 保存前的客观体检：退化（近共线/重合）+ 独立校验（画面里的真篮筐）----
     # 这两项是**必须**的：点几乎共线时 H 在这些点上是精确解（误差 0.00m），
     # 离开这条线就飞掉；而"整份标定位错"只有拿真值点（篮筐）才看得出来。
-    cand = Calibration(name=vp.stem, method="web-keypoints-multi", src_px=src,
-                       dst_m=dst, H=Hm, reproj_error_m=round(rmse, 3),
+    #
+    # `_merged_rmse/_merged_inliers` 记的是**合并解**的读数：
+    # 下面 `_pick_calibration_homography` 会把 rmse 换成"选中那一幅"的读数，
+    # 而判断"两幅是不是同一镜头"必须看**合并**的读数（实测踩到：用换过之后的
+    # rmse 判断，永远很小，于是多机位那条路走不到）。
+    _merged_rmse, _merged_inliers = float(rmse), int(n_inliers)
+    cand = Calibration(name=vp.stem, method="web-keypoints-multi",
+                       src_px=pick_src, dst_m=pick_dst, H=Hm,
+                       reproj_error_m=round(rmse, 3),
                        frame="full", for_video=str(vp), frame_size=[W, H])
     qual = _calibration_quality(vp, cand)
     deg, hoop_check = qual["metrics"], qual["hoop_check"]
@@ -2199,6 +3487,18 @@ async def post_calibrate_multi(req: MultiCalibRequest) -> Any:
     #   * 没有任何一帧凑够 4 个点 → 仍然拒绝（这是点法问题，不是宽容度问题）
     blocked = ""
     tolerant = False
+    # 真正参与解算的点数（单幅画面模式下是那一幅画面的点数，不是收到的总数）——
+    # 下面"只有 4 个点 → 无冗余、误差恒为 0"这条宽容规则必须按它判。
+    # ⚠️ 必须在 if/elif 链**之前**赋值：以前它被写在链后面，
+    # 于是 `elif n_used <= 4` 直接抛 UnboundLocalError → 接口 500 → 前端只看到
+    # "解算失败：Failed to fetch"（实测踩到，用户点了 10 个点却存不下标定）。
+    n_used = len(pick_src)
+    # 跨镜头的点混在一起时，"有一部分点互相矛盾"是**必然**的，而且不影响我们用
+    # "自己就能标定的那一幅画面"。这种情况不能让合并解的离群点去否决整个标定 ——
+    # 实测踩过：界面上一会儿说"t=4.75s 单帧 5 点 1.413m 可解"，一会儿又说
+    # "排除 4 个矛盾点后只剩 1 个点，解不出标定"，两个结论自相矛盾，
+    # 用户只能理解成"软件坏了/我标错了"。
+    cross_shot = bool(frames_differ_shot and pick["via"] == "single-frame")
     if qual["degenerate"]:
         blocked = ("标定点位**退化**（几乎在一条线上 / 有重合点），这份标定不能用："
                    + qual["reason"]
@@ -2207,14 +3507,24 @@ async def post_calibrate_multi(req: MultiCalibRequest) -> Any:
         blocked = (f"这份标定把画面里的真篮筐投偏了 {hoop_err2:.1f}m（>"
                    f"{HOOP_HARD_M:.0f}m）—— 基本可以确定特征点与名称对不上，"
                    "请核对画面里的篮筐后重新点选")
-    elif len(src) <= 4:
+    elif n_used <= 4:
         ok = False
         tolerant = True
-        note = ("只点了 %d 个点：4 个点时单应矩阵是精确解，重投影误差必然 "
+        note = ("只有 %d 个点参与解算：4 个点时单应矩阵是精确解，重投影误差必然 "
                 "0.00m，**这个数字不能作为质量依据**。已按宽容规则保存，"
                 "但位置类结论（热区/战术图）会被判为**未校验**；"
-                "想拿到可用的位置结论，请补到 6 个点（多点几个才有冗余去发现错的那个）。"
-                % len(src))
+                "想拿到可用的位置结论，请在**同一幅画面**里补到 6 个点"
+                "（多点几个才有冗余去发现错的那个）。"
+                % n_used)
+    elif cross_shot:
+        # 跨镜头 + 单幅画面可解 —— 直接采信那一幅，把"为什么"讲清楚（见上面注释）
+        ok = True
+        note = ("已用 " + pick["note"] + "。共收到 %d 个点 / %d 幅画面，"
+                "但其余画面的点与它**不在同一镜头**，混进来只会互相拉偏，"
+                "所以没有参与解算（不是你点错了）。"
+                % (len(src), n_frames))
+        if comp_note:
+            note += "；" + comp_note
     elif outliers and n_inliers >= 4:
         ok = False
         tolerant = True
@@ -2226,11 +3536,32 @@ async def post_calibrate_multi(req: MultiCalibRequest) -> Any:
                    n_inliers))
     elif outliers and n_inliers < 4:
         ok = False
-        note = ("排除掉 %d 个矛盾的点后只剩 %d 个点，**解不出标定**"
-                "（单应矩阵至少要 3 个不共线的对应，且实际用 4 个以上才稳）。"
-                "请重点这几个：%s；再补 1~2 个别的特征点。"
-                % (len(outliers), n_inliers,
-                   "、".join(d["label"] for d in outliers)))
+        one_ok = [f for f in (per_frame_fit or [])
+                  if f.get("ok") and f.get("n", 0) >= 4]
+        if one_ok:
+            # 关键：不要把"合并解不行"说成"解不出标定"。
+            # 单独某一幅画面明明能解（下面那行读数就写着），却说解不出来 ——
+            # 两个结论打架，用户只能理解成软件坏了（实测踩到）。
+            f0 = one_ok[0]
+            note = ("**跨画面的点混在一起解不了**（有 %d 个点互相矛盾，只剩 %d 个一致的点）"
+                    "；但 t=%.2fs 那一幅画面**自己就能标定**（%d 个点，误差 %.2f m）。"
+                    "%s做法：只保留那一幅画面上的点（另一幅按「清空这个画面」清掉），"
+                    "或者在同一镜头里重新抽两帧、每幅各点 5~6 个。"
+                    % (len(outliers), n_inliers, f0["t"], f0["n"], f0["rmse_m"],
+                       ("原因：" + diff_shot_note + "。") if diff_shot_note else ""))
+        elif frames_differ_shot:
+            # 跨镜头时"互相矛盾"是必然的：不是用户点错，别再往用户身上推。
+            note = ("**这两幅画面不是同一个镜头**（%s）。跨镜头的点没有统一坐标系，"
+                    "把它们混在一起解，必然有一部分点'互相矛盾' —— 这是拍摄方式"
+                    "决定的，不是你点错了。做法：只留其中一幅（同一侧半场、同一镜头），"
+                    "在它上面把看得见的点一次点够 5~6 个。"
+                    % (comp_note or "镜头切过/摇过"))
+        else:
+            note = ("排除掉 %d 个矛盾的点后只剩 %d 个点，**解不出标定**"
+                    "（单应矩阵至少要 3 个不共线的对应，且实际用 4 个以上才稳）。"
+                    "请重点这几个：%s；再补 1~2 个别的特征点。"
+                    % (len(outliers), n_inliers,
+                       "、".join(d["label"] for d in outliers)))
     elif hoop_err2 is not None and hoop_err2 > 3.0:
         # 3~6m：能存，但位置结论不可信 —— 让用户自己决定要不要重标
         tolerant = True
@@ -2238,16 +3569,26 @@ async def post_calibrate_multi(req: MultiCalibRequest) -> Any:
                 "位置类结论会被判为**未校验**（计分不受影响）。"
                 "想用位置结论，请核对特征点名称与实际位置后重标一次。")
     elif ok:
-        note = (("标定可用（%d 个点，来自 %d 个画面；平均重投影误差 %.2f m）"
-             % (len(src), n_frames, rmse))
-            + (("；" + comp_note) if comp_note else ""))
-    elif best_frame is not None:
-        ok = True      # 整体拟合不了，但**某一帧自己就能标定** → 用它
-        Hm = best_frame["H"]
-        rmse = float(best_frame["rmse_m"])
-        note = ("整体拟合不了（跨画面平均误差偏大，说明这些画面不是同一镜头），"
-                "但 t=%.2fs 这一帧自己就能标定（%d 个点，误差 %.2f m）—— "
-                "已用这一帧的标定。" % (best_frame["t"], best_frame["n"], rmse))
+        # 用哪一份 H 说清楚：单幅画面自己解出来的，还是跨画面合并的。
+        # 不写清楚用户会以为"我在另一个画面点的点白点了"（实测最容易产生的误解）。
+        if via == "single-frame":
+            note = ("标定可用：用 t=%.2fs 那一幅画面**自己**解出来的（%d 个点，"
+                    "平均重投影误差 %.2f m）。共收到 %d 个点 / %d 幅画面，"
+                    "其余画面的点只用于核对（不同角度混在一起拟合会互相拉偏）。"
+                    % (pick["t"], len(pick_src), rmse, len(src), n_frames))
+        else:
+            note = ("标定可用（%d 个点，来自 %d 幅画面合并解算；平均重投影误差 %.2f m）"
+                    % (len(src), n_frames, rmse))
+        if comp_note:
+            note += "；" + comp_note
+        if diff_shot_note:
+            note += "；" + diff_shot_note
+    elif pick["via"] == "single-frame":
+        ok = True                    # 合并拟合不可用，但某一幅画面自己成立 → 已选它
+        note = ("整体拟合不了，但 " + frame_note + " —— 已用这一幅的标定，误差 %.2f m。"
+                % rmse)
+        if diff_shot_note:
+            note += "；" + diff_shot_note
     else:
         note = ("平均重投影误差 %.2f m 偏大，且没有任何一帧自己够 4 个点。"
                 "说明这些画面**不在同一镜头**（镜头平移/切换），"
@@ -2255,22 +3596,126 @@ async def post_calibrate_multi(req: MultiCalibRequest) -> Any:
                 "在**同一段镜头内**的几秒里抽帧，再把 4 个以上点标在那几帧上。"
                 % rmse)
 
+    # ★ 多机位：**两幅以上画面各自成立**，但混在一起不可用 → 按"每幅一份标定"。
+    #
+    # 这是用户的实际用法："一个镜头怎么可能看到全场啊，就是两个镜头标点"
+    # —— 一台机位拍不到全场，两个机位各拍半场。两个机位**没有共同坐标系**，
+    # 把两边的点揉成一份单应矩阵数学上不成立（实测 t=13.5s / t=73.06s 各自
+    # 6 点、误差 1.32m / 1.08m，合并后只剩 2 个一致的点）。
+    #
+    # ⚠️ 判据**不依赖切镜检测**：实测在用户的 HD 长视频上 `find_cut_between`
+    # 返回 None（`_sample` 取帧拿不到画面时会静默当"同一镜头"），
+    # 于是依赖它的那条 per-shot 路**整条没触发**，用户只看到"解不了"。
+    #
+    # ⚠️ 三个"合并不可用"的判据都要有（我第一版只写了后两个，于是漏掉退化那种：
+    # 退化时 rmse≈0 且内点不少，只有 `blocked` 才说明问题）：
+    #   ① `blocked` —— 退化 / 独立校验不过；
+    #   ② `rmse >= 1.5` —— 合并误差大；
+    #   ③ `n_inliers < 4` —— 只剩不到 4 个一致的点（用户实测就是这种）。
+    # ⚠️ 判据里 **`via == "single-frame"` 是最关键的一条**：
+    # `_pick_calibration_homography` 只有在"几幅画面不是同一镜头"时才会只选一幅
+    # （同一镜头它会合并成功）。而"不是同一镜头 + 每幅各自成立"正是**多机位**。
+    # 少了这一条，用户那两幅（各自 6 点都对）会被判成 single-frame，
+    # 于是只有镜头 A 的画面有标定、镜头 B 的画面完全没有 —— 半个场子没数据。
+    _good2 = [f for f in per_frame_fit
+              if f.get("ok") and f.get("H") and f.get("n", 0) >= 4]
+    # ⚠️ 加一道前提：**必须是不同机位**（几帧解出的 H 各自不同）。
+    # 为什么要有：`via == "single-frame"` 这个判据在"没做镜头位移补偿 + 抽了两帧"
+    # 时会被**误触发**（`frames_differ_shot` 那条启发式只看"时刻不同"），
+    # 而"同一个机位抽两帧、两帧标同样的点"是极常见的用法 ——
+    # 这时两帧的 H 几乎一样，拆成两段毫无意义，却会把本该走单镜头那条路的请求
+    # 整个岔走（那条路才有 `source_frames` / 逐帧补偿状态那套落盘记录，
+    # 实测：我们的落盘验收就是这么被岔掉的）。判据用"两份 H 把同一批画面点
+    # 投到球场后差多少"：差得远才算换了机位。
+    if len(_good2) >= 2 and not _frames_same_camera(_good2) and (
+            blocked or _merged_rmse >= 1.5
+            or _merged_inliers < 4 or via == "single-frame"):
+        # 这里再导一次：上面的 per-shot 分支没走到（或它导入失败）时，
+        # 那两个判据函数还没绑定 —— 不带这一行就会 NameError → 接口 500。
+        from .multical import weak_segments, worst_readings
+        try:
+            _mc2 = _build_multical_from_frames(
+                per_frame_fit, str(vp), W, H,
+                duration=_video_duration(str(vp)),
+                cuts=locals().get("cuts") or [])
+        except Exception as _e:                                # noqa: BLE001
+            _mc2 = None
+            comp_note = (comp_note + "；" if comp_note else "") + \
+                "多镜头标定构造失败：%s" % _e
+        if _mc2 is not None and len(_mc2.segments) >= 2:
+            rev2 = None
+            if bool(getattr(req, "confirm", False)):
+                out_p2 = _calibration_path_for(str(vp))
+                old_rev2 = 0
+                if out_p2.exists():
+                    try:
+                        old_rev2 = int((json.loads(
+                            out_p2.read_text(encoding="utf-8")) or {}
+                        ).get("revision") or 0)
+                    except Exception:                          # noqa: BLE001
+                        old_rev2 = 0
+                data2 = _mc2.to_dict()
+                data2["revision"] = old_rev2 + 1
+                data2["video_path"] = str(vp)
+                _write_calibration(out_p2, data2)
+                rev2 = old_rev2 + 1
+            return {
+                "ok": True, "multi_shot": True, "via": "per-frame",
+                # 精修 / 4 点自动定向的结果（这条出口在两者之后，所以带真值）
+                "snap": snap_info, "mini": mini_info,
+                "n_points": len(src), "n_segments": len(_mc2.segments),
+                # 取**最差**那段的误差，与 per-shot 路径保持一致
+                "rmse_m": worst_readings(_mc2).get("rmse_m"),
+                "segments": _mc2.summary()["segments"],
+                "saved": rev2 is not None, "revision": rev2,
+                # ⚠️ 必须带上这两个字段（per-shot 路径也有）：
+                # 界面靠它们如实说明"哪个镜头那段不可信"。漏了它们，
+                # 一份标定里就算有一半是错的，界面也只能显示"可用"
+                # —— 用户"战术图不对"就是这么来的。
+                "calibration_fit": dict(worst_readings(_mc2),
+                                        weak_segments=weak_segments(_mc2)),
+                "position_unverified": bool(weak_segments(_mc2)),
+                # 被跳过的篮筐点数（与 per-shot 路径一致）
+                "hoop_excluded": hoop_excluded,
+                "per_frame_fit": [{"t": f_.get("t"), "n": f_.get("n"),
+                                   "ok": f_.get("ok"),
+                                   "rmse_m": f_.get("rmse_m")}
+                                  for f_ in per_frame_fit],
+                "note": _multical_note(_mc2, "这 %d 幅画面**混在一起解不了**"
+                                            "（跨镜头没有统一坐标系，"
+                                            "合并解必然互相矛盾 —— 这是拍摄方式决定的，"
+                                            "不是你点错了），"
+                                            "但它们**各自都能标定** —— "
+                                            "已按「每幅画面一份标定」处理："
+                                            "每份覆盖自己的时间段，分析时按帧所属镜头取"
+                                            "对应的那份，最后在球场坐标里合并。%s"
+                                      % (len(_good2),
+                            "、".join("t=%.1fs %d点 误差%.2fm"
+                                      % (f["t"], f["n"], f["rmse_m"])
+                                      for f in _good2))
+                                      + (("；" + hoop_note) if hoop_note else "")),
+            }
+
     if blocked:
         if comp_note:
             blocked += "；" + comp_note
         if getattr(req, "confirm", False):
             raise HTTPException(400, blocked)
         return {"ok": False, "saved": False, "path": None, "rmse_m": round(rmse, 3),
-                "via": via, "note": blocked, "per_point": per_point, "worst": worst,
+                "via": via, "note": blocked + (("；" + hoop_note) if hoop_note else ""),
+                "per_point": per_point, "worst": worst,
                 "n_points": len(src), "n_frames": n_frames,
+                "hoop_excluded": hoop_excluded,
                 "degeneracy": deg, "hoop_check": hoop_check,
                 "hoop_error_m": (round(hoop_err2, 2) if hoop_err2 is not None else None),
                 "position_unverified": False,
                 "per_frame_fit": [{k: v for k, v in f_.items() if k != "H"}
-                                  for f_ in per_frame_fit]}
+                                  for f_ in per_frame_fit],
+                # 软失败（退化 / 篮筐校验不过）这条出口也要带上这两把键
+                "snap": snap_info, "mini": mini_info}
 
     cal = Calibration(name=vp.stem, method="web-keypoints-multi",
-                      src_px=src, dst_m=dst, H=Hm,
+                      src_px=pick_src, dst_m=pick_dst, H=Hm,
                       reproj_error_m=round(rmse, 3), frame="full",
                       for_video=str(vp), frame_size=[W, H],
                       note=note)
@@ -2280,10 +3725,12 @@ async def post_calibrate_multi(req: MultiCalibRequest) -> Any:
     out_p = _calibration_path_for(str(vp))
     if want_save:
         old_rev = 0
+        prev_segs = []
         if out_p.exists():
             try:
-                old_rev = int((json.loads(out_p.read_text(encoding="utf-8"))
-                               or {}).get("revision") or 0)
+                _prev = json.loads(out_p.read_text(encoding="utf-8")) or {}
+                old_rev = int(_prev.get("revision") or 0)
+                prev_segs = [s for s in (_prev.get("segments") or []) if isinstance(s, dict)]
             except Exception:  # noqa: BLE001
                 old_rev = 0
         req_rev = getattr(req, "revision", None)
@@ -2296,34 +3743,359 @@ async def post_calibrate_multi(req: MultiCalibRequest) -> Any:
             data = asdict(cal)
             data.update({
                 "revision": old_rev + 1,
-                "point_names": [t["name"] for t in tags],
+                "point_names": [t["name"] for t in pick_tags],
                 "reproj_err_px": max((p.get("err_px") or 0) for p in per_point) if per_point else None,
                 "hoop_error_m": (round(hoop_err2, 2) if hoop_err2 is not None else None),
                 "hoop_check": hoop_check,
-                "position_unverified": bool(tolerant),
+                "hoop_checked": bool(hoop_check.get("checked")), "position_unverified": bool(tolerant or not hoop_check.get("checked") or hoop_err2 is None),
                 "outliers": outliers,
             })
-            out_p.write_text(json.dumps(data, ensure_ascii=False, indent=2),
-                             encoding="utf-8")
+            # ---- 时间归属：这份矩阵属于哪一帧、哪一段，全部落盘 ----
+            # 锚帧规则（用户 2026-10-05）：**矩阵属于哪个参考帧就记哪个时刻**，
+            # 不把两幅画面的时间取平均；没有可信跨帧补偿时不写参考帧（各帧分别解算）。
+            frames_used = sorted({float(t["t"]) for t in tags_pre}) if tags_pre else []
+            # 逐帧记录用**收到的全部帧**（tags_raw）：原始点是"原始记录"，
+            # 补偿去掉了哪一帧、哪一帧补成功，都要逐帧看得见 ——
+            # 不能因为"这一帧没参与解算"就把它的原始点从记录里抹掉，
+            # 也不能把整批混成一个成功/失败（用户 2026-10-05 的验收第 3 条）。
+            frames_all = sorted({float(t["t"]) for t in tags_raw}) if tags_raw else frames_used
+
+            def _warp_status(tt: float) -> tuple:
+                """这一帧的补偿状态：(status, 说明)。四种情况必须能分开。"""
+                pts = [x for x in tags_raw if float(x["t"]) == float(tt)]
+                if any((x.get("frame_id"), x["name"]) in warped_by_key for x in pts):
+                    return ("done", "")
+                if not getattr(req, "compensate", True):
+                    return ("not_enabled", "未启用镜头位移补偿（本次请求 compensate=false），本画面用原始点")
+                if comp_failed:
+                    return ("failed", f"镜头位移补偿失败：{comp_fail_reason}；本画面未补偿，用原始点")
+                if comp_ref_t is None:
+                    return ("not_enabled", "未做镜头位移补偿，故无补偿点（这份标定按单帧解算）")
+                return ("other_segment", "本画面与参考帧不在同一镜头，未做跨帧补偿（未参与解算）")
+
+            if pick.get("t") is not None:
+                anchor_t = float(pick["t"])              # 单帧解：就是那一帧
+            elif comp_ref_t is not None:
+                anchor_t = float(comp_ref_t)             # 合并解：补偿后的参考帧
+            elif len(frames_used) == 1:
+                anchor_t = float(frames_used[0])         # 只有一帧输入
+            else:
+                anchor_t = None                          # 多帧且没补偿 → 参考帧不明确
+            data.update({
+                "capture_time_s": anchor_t,
+                # 两个参考帧要分开读：补偿参考帧（把各帧点搬到哪里）与最终矩阵所属帧。
+                # 单帧矩阵时两者可能不同（例如补了但最后选了单帧解）。
+                "compensation_reference_frame": comp_ref_t,
+                "matrix_frame": anchor_t,
+                "reference_frame": anchor_t,
+                "merge_info": {"points_received": len(src_raw),
+                               "points_used_for_solve": len(pick.get("src") or src),
+                               "excluded": [d.get("label") or d.get("name")
+                                            for d in (outliers or [])],
+                               "merge_note": comp_note,
+                               "note": "只记录解算用了哪些点；原始记录与逐帧补偿记录不被回写"},
+                "valid_from_s": getattr(req, "valid_from_s", None),
+                "valid_to_s": getattr(req, "valid_to_s", None),
+                # 整批补偿状态：与逐帧 warp_status 一起构成"准确说明补偿状态"。
+                # 未启用 / 启用但失败 / 真的做了 / 只有一个画面不需要做 —— 四种分开。
+                "compensate_status": ("failed" if comp_failed else
+                                      ("not_enabled" if not getattr(req, "compensate", True) else
+                                       ("done" if comp_ref_t is not None else "not_needed"))),
+                "compensate_reason": (comp_fail_reason if comp_failed else
+                                      (comp_note or "")),
+                # compensate_note 是 dataclass 里就有的字段（默认 None）—— 这里显式写上，
+                # 免得落盘记录里出现一个"有键没值"的字段，看的人以为是漏了。
+                "compensate_note": comp_note or "",
+                # 一类坐标一个字段（用户 2026-10-05 定的口径）：
+                #   points_px / points_normalized = **原始帧**上的点（t 与它们对应）
+                #   points_warped_px             = 补偿到 reference_frame 之后的点
+                # 补偿没做/失败 → points_warped_px 为空并给 warp_reason + warp_status，
+                # 绝不用别的帧的坐标冒充；**收到的每一帧都进记录**（含没参与解算的那一帧）。
+                "source_frames": [
+                    {"t": float(tt),
+                     "n": int(sum(1 for x in tags_raw if float(x["t"]) == float(tt))),
+                     "points_px": {x["name"]: [round(float(sx[0]), 2), round(float(sx[1]), 2)]
+                                   for x, sx in zip(tags_raw, src_raw)
+                                   if float(x["t"]) == float(tt)},
+                     "points_normalized": {x["name"]: [round(float(sx[0] / W), 6), round(float(sx[1] / H), 6)]
+                                           for x, sx in zip(tags_raw, src_raw)
+                                           if float(x["t"]) == float(tt)},
+                     # 该帧**自己**的点映射到参考帧后的坐标（按 frame_id 关联，不按名字取第一份）
+                     "frame_id": next((x.get("frame_id") for x in tags_raw
+                                       if float(x["t"]) == float(tt)), None),
+                     "points_warped_px": {x["name"]: [round(float(warped_by_key[(x.get("frame_id"), x["name"])][0]), 2),
+                                                      round(float(warped_by_key[(x.get("frame_id"), x["name"])][1]), 2)]
+                                          for x in tags_raw if float(x["t"]) == float(tt)
+                                          and (x.get("frame_id"), x["name"]) in warped_by_key},
+                     "warped_to": (comp_ref_t if any((x.get("frame_id"), x["name"]) in warped_by_key
+                                                     for x in tags_raw if float(x["t"]) == float(tt))
+                                   else None),
+                     # 逐帧状态：done / not_enabled / failed / other_segment
+                     # （"已补偿""没启用""试过但失败""不在同一镜头"四种情况必须能分开）
+                     "warp_status": _warp_status(float(tt))[0],
+                     "warp_reason": _warp_status(float(tt))[1],
+                     "used_for_solve": bool(float(tt) in set(frames_used)),
+                     "landmarks": {x["name"]: [round(float(sx[0] / W), 6), round(float(sx[1] / H), 6)]
+                                   for x, sx in zip(tags_raw, src_raw)
+                                   if float(x["t"]) == float(tt)}}
+                    for tt in frames_all],
+                "verification": {
+                    "position_unverified": bool(tolerant or not hoop_check.get("checked") or hoop_err2 is None),
+                    "hoop_checked": bool(hoop_check.get("checked")),
+                    "hoop_error_m": (round(hoop_err2, 2) if hoop_err2 is not None else None),
+                    "rmse_m": round(rmse, 3), "n_points": n_used, "n_frames": n_frames,
+                    "via": via, "calibration_fit": qual.get("calibration_fit") or {},
+                    "note": ("参考帧不明确（多帧且未做跨帧补偿）—— 请按帧分别解算"
+                             if anchor_t is None else ""),
+                },
+                "court_model": model,
+                # 保住已有的分时段标定：这个文件同时是"当前标定"和"分时段清单"，
+                # 直接整文件覆盖会把别的时段**抹掉**（实测踩到：存第二段时第一段没了）
+                "segments": prev_segs,
+            })
+            # ⚠️ 先把时段校验做完，**再**写盘：否则时段冲突返回 409 时，
+            # 旧标定与 revision 已经被覆盖（用户 2026-10-05 查出的问题）。
+            from .calib_segments import make_segment, record_segment, validate_segment
+            seg = make_segment(data, capture_time_s=anchor_t, reference_frame=anchor_t,
+                               source_frames=data["source_frames"],
+                               valid_from_s=getattr(req, "valid_from_s", None),
+                               valid_to_s=getattr(req, "valid_to_s", None),
+                               verification=data["verification"],
+                               label=getattr(req, "segment_label", "") or "")
+            # ★ 写盘时**两套字段都写**（我们的 + 队友的 t_start/t_end/names/
+            # n_points/rmse_m/ratio），见 `_segments_with_multical_keys` 的说明：
+            # `MultiCal.from_dict` 只认队友那套，缺 t_end 会让多机位按帧取 H 退化
+            # （任何时刻都命中同一段 = 拿错镜头的 H）。这里就地补键，`prev_segs`
+            # （= 上面 data["segments"] 那个同一个列表）与新的 `seg` 一起带上；
+            # 区间用"下一条的 t_start / 视频时长"兜底，不留 0/None。
+            _segments_with_multical_keys(list(prev_segs) + [seg],
+                                        duration=_video_duration(str(vp)))
+            try:
+                validate_segment(prev_segs, seg.get("valid_from_s"), seg.get("valid_to_s"))
+            except ValueError as e:
+                raise HTTPException(409, str(e))
+            _write_calibration(out_p, data)
+            seg_info_saved = None
+            try:
+                seg_info_saved = record_segment(str(vp), seg, revision=None,
+                                                bump_revision=False)
+            except ValueError as e:
+                raise HTTPException(409, str(e))
+            except Exception as e:  # noqa: BLE001
+                seg_info_saved = {"saved": False, "error": str(e)[:120]}
+        except HTTPException:
+            # 时段重叠等**明确的拒绝**（409）原样抛出，别被下面的"写盘失败"包成 500
+            raise
         except Exception as e:  # noqa: BLE001
             raise HTTPException(500, f"标定写盘失败：{e}")
         rev_out = old_rev + 1
     return {"ok": bool(ok or tolerant), "rmse_m": round(rmse, 3), "via": via,
+            # 把**实际用的那份 H** 和它属于哪一幅画面一起返回：
+            # 前端用它在画面上叠加"球场线投影"，让人肉眼验证标定对不对。
+            # 为什么必须给：5 个点里任取 4 个都能精确解出 H（误差恒为 0），
+            # 只报一个误差数字，用户无法判断自己点得对不对（实测争议）。
+            "H": Hm,
+            "best_frame_t": (float(pick.get("t")) if pick.get("t") is not None
+                             else None),
             "per_frame_fit": [{k: v for k, v in f_.items() if k != "H"}
                               for f_ in per_frame_fit],
             "compensate_note": comp_note, "segments": seg_info,
+            # 整批的补偿状态（逐帧状态见 source_frames[i].warp_status）：
+            #   not_enabled = 本次请求没启用补偿
+            #   failed      = 启用了但执行失败（原因在 compensate_note 里）
+            #   done        = 真的做了跨帧补偿
+            #   not_needed  = 只有一个画面，本来就不需要跨帧补偿
+            "compensate_status": ("failed" if comp_failed else
+                                  ("not_enabled" if not getattr(req, "compensate", True) else
+                                   ("done" if comp_ref_t is not None else "not_needed"))),
             "outliers": outliers, "n_inliers": n_inliers,
+            "n_solvable_frames": n_solvable_frames,
             "dropped_frames": dropped,
             # 质量诊断：退化读数 + 独立校验（真篮筐）结论。
             # 前端据此显示"为什么不能用"，而不是只红一个"标定失败"。
             "degeneracy": deg, "hoop_check": hoop_check,
+            # 分析端那道硬门槛（吻合度 ratio，需 ≥1.25）也一起返回：
+            # 界面据此当场告诉用户"这份标定分析端收不收"，而不是存下去才发现战术图是空的
+            "calibration_fit": qual.get("calibration_fit") or {},
+            # 逐点"责任"诊断：到底是哪个点跟其余点对不上。
+            # 用户实测反馈：界面只说"有 N 个点互相矛盾"，不说哪个 —— 于是只能反复重标、
+            # 怀疑软件坏了。这里用 leave-one-out 交叉验证把责任点点名。
+            "point_diagnosis": (point_diag if (point_diag or {}).get("enough")
+                                else None),
+            # 「点吸附到球场线」精修的结果：采纳了没有、吻合度前后对比、各点移了几像素。
+            # 拒绝时（accepted=False）点集根本没动，界面要如实说"保留了你的点"，
+            # 而不是假装精修过了。
+            "snap": snap_info,
+            # 「只点 4 点、不给名字」的自动定向结果：选中哪套地物、吻合度、
+            # 以及其它候选的分数 —— 界面要如实展示，方便用户判断标定可不可信。
+            "mini": mini_info,
             "hoop_error_m": (round(hoop_err2, 2) if hoop_err2 is not None else None),
-            "position_unverified": bool(tolerant),
-            "n_points": len(src),
+            "hoop_checked": bool(hoop_check.get("checked")), "position_unverified": bool(tolerant or not hoop_check.get("checked") or hoop_err2 is None),
+            "n_points": n_used,
+            "n_points_received": len(src),
             "n_frames": n_frames, "per_point": per_point, "worst": worst,
             "saved": want_save, "revision": rev_out,
             "path": str(out_p) if want_save else None,
-            "note": note}
+            "segment": (locals().get("seg_info_saved") if want_save else None),
+            "capture_time_s": (locals().get("anchor_t") if want_save else None),
+            # 被跳过的篮筐点数（篮圈离地 3.05m，不进地面单应拟合）+ 人话说明：
+            # 用户提交了带篮筐的点时，n_points 会比收到的少，必须说清楚为什么。
+            "hoop_excluded": hoop_excluded,
+            "note": note + (("；" + hoop_note) if hoop_note else "")}
+
+
+@app.get("/api/calibration_at")
+async def calibration_at(video_path: str, t: float, check_cut: bool = False) -> Any:
+    """**按时刻取标定**（第一版统一入口）。
+
+    返回 {ok, H, segment, reason, detail}。ok=False 时调用方**不许**退回"用最近的一份"：
+    无覆盖 / 时段没写 / 时段重叠 / 时段内跨切镜，一律明确不可用。
+    """
+    from .calib_segments import all_segments_summary, calibration_for_time
+    vp = Path(video_path)
+    if not vp.exists():
+        cand = UPLOAD_DIR / vp.name
+        if cand.exists():
+            vp = cand
+    d = calibration_for_time(str(vp), float(t), check_cut=bool(check_cut))
+    d["available_segments"] = all_segments_summary(str(vp))
+    return d
+
+
+@app.get("/api/calibration_segments")
+async def calibration_segments(video_path: str) -> Any:
+    """列出这段视频已保存的分时段标定（界面用来显示"哪一段有标定"）。"""
+    from .calib_segments import all_segments_summary
+    vp = Path(video_path)
+    if not vp.exists():
+        cand = UPLOAD_DIR / vp.name
+        if cand.exists():
+            vp = cand
+    return all_segments_summary(str(vp))
+
+
+# ---------------- 登录（用户 2026-10-05）----------------
+# 公众号：页面与全部 /api/* 都要登录；**本机回环 + 内部令牌**豁免，
+# 这样门禁的 API 集成测试与真机核对脚本不受影响（浏览器一律走登录）。
+@app.post("/api/register")
+async def api_register(req: dict) -> Any:
+    """自助注册（用户 2026-10-05 要求）。配了 AIHOOP_REGISTER_CODE 就必须带注册码。"""
+    import os as _os
+    import re as _re
+    from .auth import load_accounts, save_account
+    body = req or {}
+    name = str(body.get("username") or "").strip()
+    pwd = str(body.get("password") or "")
+    code = str(body.get("code") or "")
+    want = _os.environ.get("AIHOOP_REGISTER_CODE", "").strip()
+    if want and not hmac.compare_digest(code, want):
+        raise HTTPException(403, "注册码不对")
+    if not _re.fullmatch(r"[A-Za-z0-9_.\-]{3,32}", name):
+        raise HTTPException(400, "用户名 3~32 位，只能用字母、数字、下划线、点、连字符")
+    if len(pwd) < 4:
+        raise HTTPException(400, "密码至少 4 位")
+    accounts = load_accounts()
+    if name in accounts:
+        raise HTTPException(409, "这个用户名已被占用")
+    save_account(name, pwd)
+    return {"ok": True, "username": name}
+
+
+_LOGIN_FREE = {"/login.html", "/web/login.html", "/api/login", "/api/register",
+                   "/web/register.html", "/web/auth-login-court.css",
+                   "/web/img/login-court-soft-v1.webp", "/favicon.ico"}
+
+# 静态资源后缀（不是页面）。未登录时这些**不能**302 到登录页：
+# 浏览器对 <script src> / <link href> 会跟随 302 拿到登录页的 text/html，
+# 再按 MIME 严格检查直接拒绝执行 —— 现象是"页面半截打不开 + 控制台一句报错"，
+# 排查时特别容易被当成"前端坏了"（实测反馈）。给 401 让失败点明确、
+# 也能让前端自己决定跳登录。
+_ASSET_EXT = {".js", ".mjs", ".css", ".map", ".json", ".png", ".jpg", ".jpeg", ".gif",
+              ".svg", ".webp", ".ico", ".bmp", ".woff", ".woff2", ".ttf", ".otf",
+              ".eot", ".wasm", ".mp4", ".webm", ".mp3", ".wav"}
+
+@app.post("/api/login")
+async def api_login(req: dict, request: Request) -> Any:
+    from fastapi.responses import JSONResponse
+    from .auth import issue_session, load_accounts, verify_password, COOKIE_NAME, SESSION_TTL_S
+    name = str((req or {}).get("username") or "").strip()
+    pwd = str((req or {}).get("password") or "")
+    from .auth import login_allowed
+    if not login_allowed(request.client.host if request.client else "unknown"):
+        raise HTTPException(429, "尝试过于频繁，请一分钟后再试", headers={"Retry-After": "60"})
+    if len(name) > 64 or len(pwd) > 256:
+        raise HTTPException(400, "账号或密码长度超出限制")
+    acc = load_accounts()
+    if not acc:
+        raise HTTPException(503, "暂未配置账号，请联系管理员开通")
+    # 统一提示，不泄露"账号是否存在"
+    if name not in acc or not verify_password(pwd, acc.get(name) or {}):
+        raise HTTPException(401, "账号或密码不对")
+    r = JSONResponse({"ok": True, "username": name})
+    r.set_cookie(COOKIE_NAME, issue_session(name), httponly=True, samesite="lax",
+                 max_age=SESSION_TTL_S, path="/", secure=request.url.scheme == "https" or os.environ.get("AIHOOP_COOKIE_SECURE") == "1")
+    r.headers["Cache-Control"] = "no-store"
+    return r
+
+
+@app.post("/api/logout")
+async def api_logout(request: Request) -> Any:
+    from fastapi.responses import JSONResponse
+    from .auth import COOKIE_NAME
+    r = JSONResponse({"ok": True})
+    from .auth import revoke_session
+    revoke_session(request.cookies.get(COOKIE_NAME, ""))
+    r.delete_cookie(COOKIE_NAME, path="/")
+    return r
+
+
+@app.get("/api/me")
+async def api_me(request: Request) -> Any:
+    from .auth import COOKIE_NAME, internal_ok, read_session
+    host = request.client.host if request.client else ""
+    if internal_ok(host, request.headers.get("X-Internal-Token", "")):
+        return {"ok": True, "username": "本机（豁免）", "internal": True}
+    u = read_session(request.cookies.get(COOKIE_NAME, ""))
+    if not u:
+        raise HTTPException(401, "未登录或会话已过期")
+    return {"ok": True, "username": u, "internal": False}
+
+
+@app.middleware("http")
+async def _auth_gate(request: Request, call_next):
+    """未登录：/api/* → 401 JSON；页面 → 302 到登录页。登录页所需资源放行。"""
+    from fastapi.responses import JSONResponse, RedirectResponse
+    from .auth import COOKIE_NAME, internal_ok, read_session
+    p = request.url.path
+    if request.method not in ('GET','HEAD','OPTIONS') and p.startswith('/api/games/example_'):
+        return JSONResponse({'detail': '样例只供查看，请上传自己的视频进行复核'}, status_code=403)
+    # Cookie-authenticated writes must originate from this app or an explicit trusted origin.
+    origin = request.headers.get("origin")
+    allowed = {str(request.base_url).rstrip("/")} | {x.strip() for x in os.environ.get("AIHOOP_ALLOWED_ORIGINS", "").split(",") if x.strip()}
+    if request.method not in ("GET", "HEAD", "OPTIONS") and (origin and origin not in allowed or request.headers.get("sec-fetch-site") == "cross-site"):
+        return JSONResponse({"detail": "请求来源不受信任"}, status_code=403)
+    if p in _LOGIN_FREE:
+        return await call_next(request)
+    host = request.client.host if request.client else ""
+    if p.startswith("/api/") and internal_ok(host, request.headers.get("X-Internal-Token", "")):
+        return await call_next(request)
+    if p in ("/", "/index.html"):
+        # 根路径直接进前端：否则登录后按 next=%2F 回跳会落在 API 的横幅页上
+        # （用户实测："登录完是黑屏 + API 已启动那几行字"）。
+        return RedirectResponse("/web/index.html", status_code=302)
+    if read_session(request.cookies.get(COOKIE_NAME, "")):
+        response = await call_next(request)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    if p.startswith("/api/"):
+        return JSONResponse({"detail": "未登录或会话已过期"}, status_code=401)
+    # 静态资源（.js/.css/图片/字体等）也不 302：理由见 _ASSET_EXT 上面的注释。
+    # 页面（.html）仍然 302 到登录页 —— 那是人直接打开的，跳登录才是对的。
+    if os.path.splitext(p)[1].lower() in _ASSET_EXT:
+        return JSONResponse({"detail": "未登录或会话已过期"}, status_code=401)
+    from urllib.parse import quote
+    return RedirectResponse("/web/login.html?next=" + quote(str(request.url.path) + ("?" + request.url.query if request.url.query else ""), safe=""), status_code=302)
+
 
 
 COURT_LABELS = [
@@ -2331,8 +4103,15 @@ COURT_LABELS = [
     # 实测教训：端线机位下用户根本判断不了"近端/远端"，而且球场关于中线对称，
     # 单张画面里镜像解与真解几何等价（误差都是 0.457m）→ 按近/远命名必然失败。
     # 改成"篮筐侧 / 中圈侧"后，用户只需看"这个点在篮筐那一头还是中圈那一头"。
-    {"name": "hoop_far", "label": "篮筐中心（画面里那个篮筐）",
-     "hint": "篮圈的正中心（不是篮板、不是支架）"},
+    # ⚠️ 「篮筐中心」**不在**球场标定清单里（曾经有，已移除）。
+    # 为什么必须移除：`hoop_*` 的真实坐标是篮圈中心的**地面投影**（y=±12.425），
+    # 而这里的提示让用户「点篮圈的正中心」—— 篮圈离地 3.05m，**不在球场地面上**。
+    # 单应矩阵只能映射地面，把一个 3 米高的点按地面坐标塞进拟合必然出错：
+    # 实测用户那份标定，去掉篮筐后两段的平均重投影误差从 1.00m → **0.03m**、
+    # 2.61m → **0.18m**（篮筐就是那个把整份标定拉偏的多余点）。
+    # `COURT_LANDMARKS` 里这两个键**保留**（老标定文件里存着篮筐点，读旧文件要认
+    # 得出来），但解算时会被跳过、这里也不再列给用户。
+    # 篮筐有自己的标法：「在画面上标篮筐」，直接存画面坐标，不走单应矩阵。
     {"name": "corner_far_left", "label": "底线左角（篮筐后面那条线）",
      "hint": "篮筐所在的那条底线，与左边线的交点"},
     {"name": "corner_far_right", "label": "底线右角（篮筐后面那条线）",
@@ -2361,8 +4140,6 @@ COURT_LABELS = [
      "hint": "中圈那一侧的底线，与左边线的交点（多半在画面外）"},
     {"name": "corner_near_right", "label": "底线右角（中圈那一头）",
      "hint": "中圈那一侧的底线，与右边线的交点（多半在画面外）"},
-    {"name": "hoop_near", "label": "另一端的篮筐中心",
-     "hint": "画面里看不到的那个篮筐（若只有一个篮筐可见就别选它）"},
     {"name": "arc_near", "label": "三分弧顶（中圈那一头）",
      "hint": "中圈那侧三分弧的最高点"},
 ]
@@ -2370,8 +4147,21 @@ COURT_LABELS = [
 
 @app.get("/api/court_landmarks")
 async def court_landmarks() -> Any:
-    """可选的点位清单（前端据此显示提示与进度）。"""
-    return {"landmarks": COURT_LABELS, "min_points": 4,
+    """可选的点位清单（前端据此显示提示与进度）。
+
+    `dst` 是该特征点在球场上的真实坐标（米）。为什么要给前端：
+    标定解出来之后，前端要能算出"每个点名会落在画面哪里" —— 落在画面外的
+    点名就是"这台机位根本看不见、点了也是猜"，必须当场告诉用户
+    （实测：用户把看不见的"底线右角"点成了罚球区右角，偏 9m）。
+    """
+    items = []
+    for d in COURT_LABELS:
+        it = dict(d)
+        pt = COURT_LANDMARKS.get(d["name"])
+        if pt is not None:
+            it["dst"] = [float(pt[0]), float(pt[1])]
+        items.append(it)
+    return {"landmarks": items, "min_points": 4,
             "court": {"length_m": 28.0, "width_m": 15.0}}
 
 
@@ -2396,10 +4186,8 @@ async def _court_landmarks_legacy() -> Any:
          "hint": "靠近画面那侧的罚球线正中"},
         {"name": "ft_far", "label": "远端罚球线中点",
          "hint": "远处那侧的罚球线正中"},
-        {"name": "hoop_near", "label": "近端篮筐中心",
-         "hint": "靠近画面那个篮筐的篮圈正中心"},
-        {"name": "hoop_far", "label": "远端篮筐中心",
-         "hint": "远处那个篮筐的篮圈正中心"},
+        # 篮筐**不在这里**（见上面 COURT_LABELS 的说明）：篮圈离地 3.05m，
+        # 不在地面单应矩阵能映射的平面上，塞进拟合会把整份标定拉偏。
     ], "min_points": 4,
         "court": {"length_m": 28.0, "width_m": 15.0}}
 
@@ -2429,9 +4217,12 @@ async def get_calibration(video_path: str) -> Any:
             "method": d.get("method"),
             "point_names": d.get("point_names") or [],
             "capture_time_s": d.get("capture_time_s"),
+            "court_model": d.get("court_model", "full"),
+            "normalized_points": d.get("normalized_points"),
             "hoop_error_m": d.get("hoop_error_m"),
             "hoop_check": d.get("hoop_check"),
-            "position_unverified": bool(d.get("position_unverified")),
+            "hoop_checked": bool((d.get("hoop_check") or {}).get("checked")),
+            "position_unverified": bool(d.get("position_unverified") or not (d.get("hoop_check") or {}).get("checked")),
             "revision": int(d.get("revision") or 0)}
 
 
@@ -2481,6 +4272,12 @@ async def get_marks_api(video_path: str) -> Any:
 
 @app.get("/api/games/{job_id}/video")
 async def get_video(job_id: str) -> Any:
+    if job_id.startswith('example_'):
+        from .sample_gallery import resolve
+        item, _ = resolve(ROOT, job_id)
+        vp = Path(item['video_path'])
+        if not vp.is_file(): raise HTTPException(404, '样例原视频不存在')
+        return FileResponse(vp, media_type='video/mp4')
     with _conn() as c:
         row = c.execute("SELECT payload FROM jobs WHERE job_id=?",
                         (job_id,)).fetchone()
@@ -2548,7 +4345,7 @@ async def media(job_id: str, path: str) -> Any:
     """托管任务产物目录下的文件（高光片段、缩略图等）。"""
     base = _out_dir(job_id).resolve()
     target = (base / path).resolve()
-    if not str(target).startswith(str(base)):
+    if not target.is_relative_to(base):
         raise HTTPException(403, "越权路径")
     if not target.exists() or not target.is_file():
         raise HTTPException(404, "文件不存在")
@@ -2614,9 +4411,23 @@ def _has_ball_rim_path() -> bool:
     return hasattr(sources.VideoSource, "_visual_attempts")
 
 
-@app.get("/", response_class=PlainTextResponse)
-async def index() -> str:
-    return ("AI 篮球分析软件 API 已启动。\n"
+@app.get("/api", response_class=PlainTextResponse)
+async def api_index() -> str:
+    return ("哨响之后 API 已启动。\n"
             "接口文档：/docs\n"
             "前端：用浏览器打开 web/index.html\n"
             "健康检查：/api/health\n")
+
+
+# Same-origin application entry: cookies, video and API share one host/port.
+from fastapi.staticfiles import StaticFiles
+app.mount("/web", StaticFiles(directory=str(ROOT / "web"), html=True), name="web")
+
+@app.get("/login.html", include_in_schema=False)
+async def login_page():
+    return FileResponse(ROOT / "web" / "login.html")
+
+@app.get("/", include_in_schema=False)
+async def app_entry():
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse("/web/index.html")

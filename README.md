@@ -1,4 +1,4 @@
-# AI 篮球分析软件
+# 哨响之后
 
 > 上传篮球比赛视频 → 自动生成比分 / 命中率 / 球员统计 / 投篮热区 /
 > 高光集锦 / 文字战报，并叠加**战术层** —— 控球归属 / 传球网络 /
@@ -6,8 +6,7 @@
 > 面向「算法创新赛道 · AI+软件」方向，基于开源底座二次开发 +
 > 自研增量（计分规则引擎、事件融合、热区口径、**战术层算法**）。
 >
-> 两份实施手册：`docs/实施步骤_比赛分析.md`、
-> `docs/实施步骤_战术层.md`。
+服务器部署请直接看 [DEPLOYMENT.md](DEPLOYMENT.md)。仓库不包含视频、运行产物、账号数据与第三方模型权重。
 
 ---
 
@@ -70,7 +69,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\打开演示.ps1 -NoBrowse
 
 ```powershell
 # 1) 建虚拟环境并装最小依赖
-cd aihoopanalyst
+cd ai-basketball-analyst
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt

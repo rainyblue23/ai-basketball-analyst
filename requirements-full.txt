@@ -8,7 +8,8 @@
 torch>=2.1
 torchvision>=0.16
 ultralytics>=8.1
-opencv-python>=4.9
+opencv-python-headless>=4.9
+numpy>=1.26
 # 可选：高光用 moviepy（不装则用 ffmpeg 命令行，功能一样）
 # moviepy>=1.0.3
 # 可选：单应/数值计算加速（本骨架的 court.py 已用纯 python 实现，可不装）

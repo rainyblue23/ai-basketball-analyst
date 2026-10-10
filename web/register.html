@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>注册 · 哨响之后</title>
+<style>
+ body{margin:0;font:15px/1.7 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;background:#f5f7fa;color:#243244;
+      display:flex;align-items:center;justify-content:center;min-height:100vh}
+ .card{background:#fff;border-radius:10px;box-shadow:0 6px 24px rgba(20,40,80,.08);padding:28px 30px;width:360px}
+ h1{font-size:19px;margin:0 0 4px} p.sub{color:#6b7a90;font-size:13px;margin:0 0 16px}
+ label{display:block;font-size:13px;color:#425269;margin:10px 0 4px}
+ input{width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid #d5dbe5;border-radius:6px;font:inherit}
+ button{width:100%;margin-top:16px;padding:10px;border:0;border-radius:6px;background:#2f6fed;color:#fff;font:inherit;cursor:pointer}
+ button:disabled{background:#9db6f0}
+ .err{margin-top:12px;color:#c45656;font-size:13px;min-height:20px}
+ .hint{margin-top:12px;color:#8a97a8;font-size:12px} a{color:#2f6fed;text-decoration:none}
+</style><link rel="stylesheet" href="./auth-visual.css?v=1" />
+</head><body>
+<form class="card" id="f">
+  <h1>注册账号</h1>
+  
+  <label for="u">用户名</label><input id="u" required minlength="3" maxlength="32" />
+  <label for="p">密码（至少 4 位）</label><input id="p" type="password" required minlength="4" />
+  <label for="c">注册码（若管理员配置了）</label><input id="c" placeholder="没配置就留空" />
+  <button id="b" type="submit">注册</button>
+  <div class="err" id="e"></div>
+  <div class="hint">已有账号？<a href="/web/login.html">去登录</a></div>
+</form>
+<script>
+document.getElementById('f').addEventListener('submit',async(ev)=>{
+  ev.preventDefault();const e=document.getElementById('e'),b=document.getElementById('b');
+  e.textContent='';b.disabled=true;
+  try{
+    const r=await fetch('/api/register',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({username:document.getElementById('u').value.trim(),
+                           password:document.getElementById('p').value,
+                           code:document.getElementById('c').value.trim()})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok){e.textContent=typeof d.detail==='string'?d.detail:('注册失败（'+r.status+'）');b.disabled=false;return;}
+    location.replace('/web/login.html?registered=1');
+  }catch(err){e.textContent='连不上后端：'+(err&&err.message?err.message:err);b.disabled=false;}
+});
+</script></body></html>

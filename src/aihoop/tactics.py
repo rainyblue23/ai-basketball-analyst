@@ -99,6 +99,7 @@ class TacticsConfig:
     press_depth: float = PRESS_DEPTH
     segment_min: float = 3.0       # 阵型片段的最短时长（秒），比这短的不单独成段
     max_frames: int = 4000         # 战术帧上限（超长视频抽稀，防止产物爆炸）
+    max_players_per_team: int = 5  # 标准五人制；异常时暂停，不截取前五人
     min_players: int = 4           # 每队至少要有这么多人，阵型识别才有意义
 
 
@@ -208,6 +209,16 @@ def _mean(vals: Sequence[float]) -> float:
 # --------------------------------------------------------------------------
 # 球员位置索引：任意时刻取"谁在哪"（线性插值）
 # --------------------------------------------------------------------------
+def population_status(pos: dict, teams: dict, limit: int = 5) -> dict:
+    counts = {}
+    for pid in pos:
+        team = teams.get(pid, "unknown")
+        counts[team] = counts.get(team, 0) + 1
+    valid = len(pos) <= 2 * limit and all(n <= limit for n in counts.values())
+    return {"valid": valid, "observed_count": len(pos), "team_counts": counts,
+            "reason": "" if valid else "player_population_exceeded"}
+
+
 class PlayerIndex:
     """把稀疏的 PlayerSample 变成"任意时刻的位置查询"。
 
@@ -218,6 +229,7 @@ class PlayerIndex:
 
     def __init__(self, samples: Sequence[PlayerSample], cfg: TacticsConfig):
         self.cfg = cfg
+        self.population_rejections = {}
         self.times: list[float] = []
         self.by_pid: dict[str, list[PlayerSample]] = {}
         for s in sorted(samples, key=lambda s: s.t):
@@ -228,7 +240,7 @@ class PlayerIndex:
         self._times: dict[str, list[float]] = {
             pid: [s.t for s in lst] for pid, lst in self.by_pid.items()}
 
-    def at(self, t: float) -> dict[str, tuple[float, float]]:
+    def at(self, t: float, *, allow_overcrowded: bool = False) -> dict[str, tuple[float, float]]:
         """返回 {player_id: (x, y)}；不在场/超出插值窗的球员不出现。"""
         out: dict[str, tuple[float, float]] = {}
         for pid, lst in self.by_pid.items():
@@ -256,6 +268,10 @@ class PlayerIndex:
             f = (t - t0) / (t1 - t0) if t1 > t0 else 0.0
             a, b = lst[i - 1], lst[i]
             out[pid] = (a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f)
+        quality = population_status(out, self.teams, self.cfg.max_players_per_team)
+        if not quality["valid"] and not allow_overcrowded:
+            self.population_rejections[round(t, 3)] = quality
+            return {}
         return out
 
 
@@ -297,6 +313,9 @@ def detect_possessions(ball_track, idx: PlayerIndex, cfg: TacticsConfig
         half = span // 2
         smoothed = list(raw)
         for i in range(len(raw)):
+            # 无有效阵容的时刻不由邻帧投票补造控球人。
+            if raw[i][1] is None:
+                continue
             window = [r[1] for r in raw[max(0, i - half):i + half + 1]]
             window = [w for w in window if w]
             if not window:
@@ -311,15 +330,18 @@ def detect_possessions(ball_track, idx: PlayerIndex, cfg: TacticsConfig
 
     # 合并成片段
     spells: list[dict] = []
+    continuous = False
     for (t, pid, team) in raw:
         if pid is None:
+            continuous = False
             continue
-        if spells and spells[-1]["player_id"] == pid:
+        if continuous and spells and spells[-1]["player_id"] == pid:
             spells[-1]["t1"] = t
             spells[-1]["n"] += 1
             continue
         spells.append({"t0": t, "t1": t, "player_id": pid, "team": team or "",
                        "n": 1})
+        continuous = True
     out = [s for s in spells if s["t1"] - s["t0"] >= cfg.min_possession
            or s["n"] >= 3]
     return out
@@ -1088,6 +1110,9 @@ def build_tactics(player_track: Sequence[PlayerSample], ball_track,
                    "possess_radius": cfg.possess_radius,
                    "min_possession": cfg.min_possession,
                    "man_dist": cfg.man_dist},
+        "population_quality": {"max_players_per_team": cfg.max_players_per_team,
+            "rejected_query_times": sorted(idx.population_rejections),
+            "note": "超员时暂停该时刻的战术推断；不代表已识别出正确阵容。"},
         "coverage": {
             "player_samples": len(samples),
             "players": len({s.player_id for s in samples}),
@@ -1189,7 +1214,18 @@ def build_tactics_frames(player_track: Sequence[PlayerSample],
     step_t = max(0.2, cfg.anim_step)
     prev_ids: set = set()
     while t <= t_end:
-        pos = dedupe_positions(idx.at(t), prefer=prev_ids)
+        raw_pos = idx.at(t, allow_overcrowded=True)
+        quality = population_status(raw_pos, idx.teams, cfg.max_players_per_team)
+        if not quality["valid"]:
+            # 空帧保留时间位置，前端不能继续沿用上一帧的人。
+            out.append({"t": round(t, 2), "side": 1, "ball": None,
+                        "players": [], "population_quality": quality})
+            prev_ids = set()
+            if len(out) >= cfg.max_frames:
+                break
+            t += step_t
+            continue
+        pos = dedupe_positions(raw_pos, prefer=prev_ids)
         if pos:
             prev_ids = set(pos)
             ball = None

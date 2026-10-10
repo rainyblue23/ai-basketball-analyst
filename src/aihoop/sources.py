@@ -67,6 +67,7 @@ class Attempt:
     # 标记（如 low_confidence）：报告与复核页据此提示"需人工确认"
     tags: list = field(default_factory=list)
     evidence: str = ""
+    review_reason: str = ""
     crossing_t: Optional[float] = None
     review_t: Optional[float] = None  # suggested review instant; not a measured crossing
     suggested_made: Optional[bool] = None
@@ -201,6 +202,27 @@ class RawTrack:
         rt.player_track = [PlayerSample(**p) for p in d.get("player_track", [])]
         rt.player_obs = list(d.get("player_obs", []) or [])
         return rt
+
+
+def assign_player_short_labels(players: dict[str, Player]) -> None:
+    """号码看不清时，按队分配稳定、短小且不暴露轨迹 ID 的显示名。"""
+    for team, prefix in (("home", "A"), ("away", "B")):
+        rows = sorted((p for p in players.values() if p.team == team),
+                      key=lambda p: p.player_id)
+        for index, player in enumerate(rows, 1):
+            player.short_label = f"{prefix}{index}"
+
+
+def calibrated_person_on_court(cal, box, tol: float = 0.12):
+    """Return whether a person's foot point is on court, or None without calibration."""
+    if cal is None or not getattr(cal, "H", None):
+        return None
+    x1, _y1, x2, y2 = (float(v) for v in box)
+    try:
+        px, py = cal.to_court((x1 + x2) / 2.0, y2)
+        return bool(cal.in_court(px, py, tol=tol))
+    except Exception:  # noqa: BLE001 - an invalid projection must not become a player
+        return False
 
 
 # --------------------------------------------------------------------------
@@ -872,11 +894,14 @@ class VideoSource:
         scoreboard_events=None,
                  basket_labels=None,
                  basket_model=None,
-                 shot_engine: str = "legacy", legacy_center_lock: bool = False):
+                 multi_cal=None,
+                 shot_engine: str = "legacy", legacy_center_lock: bool = False, legacy_detect=None):
         if shot_engine not in ("legacy", "geometry"):
             raise ValueError("shot_engine 必须为 legacy 或 geometry")
         self.shot_engine = shot_engine
         self.legacy_center_lock = legacy_center_lock
+        from .legacy_shots.settings import resolve_detect
+        self.legacy_detect = resolve_detect(legacy_detect)
         self.video_path = video_path
         self.cal = calibration
         self.weights = weights
@@ -910,6 +935,11 @@ class VideoSource:
                              else "court")
         # 手动篮筐提示 (cx, cy, r?)；移动机位/复杂场景下用它锁定篮筐。
         self.hoop_hint = hoop_hint
+        # 多机位标定（multical.MultiCal）：**每个镜头一份 H**。
+        # 为什么需要：一台机位拍不到全场，实际素材常是"两个机位各拍半场"。
+        # 两个机位没有共同坐标系，用其中一份 H 去投另一个镜头的画面，
+        # 球员会被投到球场外（实测）。所以按帧所属镜头取标定：`_cal_at(t)`。
+        self.multi_cal = multi_cal
         # 逐帧滑动标定（calibcheck.sliding_calibration 的结果）。
         # 给了它就用**每一帧各自的 H** 投球员，而不是一份静态 H ——
         # 实测真实素材（含所谓固定机位）几十秒就会漂到边线跑掉，
@@ -1024,6 +1054,50 @@ class VideoSource:
         if progress: progress(1., "比分事件读取完成")
         return rt
 
+    def _resolve_device(self):
+        """把 `self.device` 校验并**落实**成这台机器上真能用的设备，返回说明。
+
+        为什么必须有这一层：任务默认 `device="0"`（第一块 GPU），而**没装 CUDA 版
+        torch 的机器**上 ultralytics 会直接抛
+        `ValueError: Invalid CUDA 'device=0' requested ... torch.cuda.device_count(): 0`
+        —— 任务 0 秒就失败，用户只看到一大段 CUDA 报错，根本不知道"这台机器没有 GPU"
+        （实测踩到：本机装的是 torch 2.14.1+cpu）。
+
+        规则：留空 = 自动（有 CUDA 用 GPU，否则 CPU）；显式要 GPU 但不可用 = 退回 CPU
+        并给出原因（不静默改变行为）。返回值是给 meta 说明用的 note。
+        """
+        want = str(self.device or "").strip()
+
+        def _cuda_n():
+            try:
+                import torch
+                return int(torch.cuda.device_count()) if torch.cuda.is_available() else 0
+            except Exception:  # noqa: BLE001  torch 没装/导入失败
+                return 0
+
+        if not want:
+            self.device = "0" if _cuda_n() > 0 else "cpu"
+            return ""
+        if want.lower() == "cpu":
+            # 用户**显式**选了 CPU 就尊重它 —— 以前这里和"留空=自动"合并成同一个分支，
+            # 于是"C:\...选 CPU"在有 GPU 的机器上会被偷偷换成 device="0"（实测被用户抓到：
+            # 界面上选 CPU，任务却仍去吃显存）。自动与显式必须分开。
+            self.device = "cpu"
+            return "按你的选择用 CPU 跑（这台机器有 GPU，但显式选择优先）。"
+        low = want.lower()
+        wants_gpu = low.startswith("cuda") or all(
+            p.strip().isdigit() for p in want.split(",") if p.strip())
+        if not wants_gpu:
+            return ""                   # 其它设备串（如 mps）交给 ultralytics 自己解释
+        n = _cuda_n()
+        if n > 0:
+            return ""
+        self.device = "cpu"
+        return ("请求的设备是 %r（GPU），但这台机器上 torch 看不到 CUDA"
+                "（torch.cuda.device_count()=0，装的应该是 CPU 版 torch）——"
+                "已自动改用 CPU 跑。想用 GPU：按 https://pytorch.org 的指引装"
+                "对应 CUDA 版本的 torch。" % want)
+
     def run(self, progress=None) -> RawTrack:
         self._require()
         import cv2
@@ -1048,6 +1122,13 @@ class VideoSource:
             cap.release()
             return self._scoreboard_only(fps, total, W, H, progress)
         model = None
+        # 设备兜底：默认的 "0"（第一块 GPU）在**没装 CUDA 版 torch 的机器上**会让
+        # ultralytics 直接抛 `ValueError: Invalid CUDA 'device=0' requested`
+        # —— 任务 0 秒就失败（实测踩到：本机装的是 torch 2.14.1+cpu）。
+        # 必须在**加载模型之前**把 self.device 落实成可用值。
+        device_note = self._resolve_device()
+        if device_note:
+            print("[设备] " + device_note, flush=True)
         if self.detect_players:
             from ultralytics import YOLO
             model = YOLO(self.weights)
@@ -1060,7 +1141,10 @@ class VideoSource:
                       video_path=self.video_path, width=W, height=H)
         rt.detections_meta.update({"source": "video", "weights": self.weights,
                                    "reproj_error_m": self.cal.reproj_error_m,
-                                   "score_policy": self.score_policy})
+                                   "score_policy": self.score_policy,
+                                   "device": self.device or "cpu"})
+        if device_note:
+            rt.detections_meta["device_note"] = device_note
         # 标定是否适用于这段视频 —— 标定文件是按机位存的，分辨率对不上就不能用
         rt.detections_meta["calibration_valid"] = self._calibration_matches(W, H)
         # 记下方法/误差：pipeline 据此判断这是不是**用户手动标的**标定。
@@ -1075,6 +1159,30 @@ class VideoSource:
             _rmse = getattr(self.cal, "reproj_error_m", None)
             rt.detections_meta["calibration_rmse_m"] = (
                 float(_rmse) if _rmse is not None else 99.0)
+            # ---- 多机位：读数必须取**最差的那一段** ----
+            # 为什么（实测踩到）：`self.cal` 只是"主标定"那一段。用户那次两段是
+            #     段1（0~54s）  6点  rmse=0.97  **ratio=0.34**  ← 投影线与白线基本不相关
+            #     段2（54~240s）7点  rmse=5.80  ratio=3.12
+            # 而界面/报告只读主标定那一段 → "段1 半个视频的坐标全是错的"这件事
+            # **完全没被报出来**，战术图看着"可用"其实一半的点是错的。
+            # 多机位下"最差的一段"才是这份标定的真实质量。
+            mc_segs = list(getattr(getattr(self, "multi_cal", None),
+                                  "segments", []) or [])
+            if len(mc_segs) >= 2:
+                from .multical import weak_segments, worst_readings
+                _wr = worst_readings(self.multi_cal)
+                rt.detections_meta["calibration_rmse_m"] = _wr.get("rmse_m")
+                rt.detections_meta["multi_shot"] = True
+                rt.detections_meta["n_segments"] = len(mc_segs)
+                rt.detections_meta["segments"] = [
+                    {"t_start": s.t_start, "t_end": s.t_end,
+                     "n_points": s.n_points, "rmse_m": s.rmse_m,
+                     "ratio": s.ratio} for s in mc_segs]
+                # 任一段弱 → 位置结论判为未校验（宁可保守，也不要拿错坐标出图）
+                _weak = weak_segments(self.multi_cal)
+                if _weak:
+                    rt.detections_meta["calibration_position_unverified"] = True
+                    rt.detections_meta["calibration_weak_segments"] = _weak
             # 退化（近共线/重合）标定必须在这里就挡掉：它的**重投影误差照样是
             # 0.00m**，只靠误差看不出问题（实测：4 个点几乎共线 → 篮筐被投到
             # 33m 外，界面却显示"标定可用 1.45m"）。判据与读数写进 meta，
@@ -1163,10 +1271,28 @@ class VideoSource:
             if hint is None and self.manual_hoop is not None:
                 hint = (self.manual_hoop.cx, self.manual_hoop.cy)
             legacy = LegacyShotStream(fps, W, manual_hoop=self.manual_hoop, hint=hint,
-                config={"detect": {"center_lock_widths": 3. if self.legacy_center_lock else 0.}})
+                config={"detect": {**self.legacy_detect, "center_lock_widths": 3. if self.legacy_center_lock else 0.}})
             rt.detections_meta["shot_engine"] = "legacy"
             if ball_model is None:
                 rt.detections_meta["visual_error"] = "旧版投篮引擎需要球/筐联合检测权重，当前没有可用权重"
+
+        # Independent preflight: repeated screen-fixed ball-like graphics.
+        graphics=[]
+        if ball_model is not None:
+            try:
+                from .screen_graphics import probe as probe_graphics
+                opts=dict(conf=self.conf,imgsz=self.imgsz,device=self.device,verbose=False)
+                if legacy is not None:
+                    from .legacy_shots.settings import prediction_options
+                    opts.update(prediction_options(legacy.config['detect']))
+                screen_probe=probe_graphics(self.video_path,ball_model,opts)
+                graphics=screen_probe['graphics']
+                rt.detections_meta['screen_graphics']=screen_probe
+                if legacy is not None:legacy.config['detect']['screen_graphics']=graphics
+            except Exception as e:
+                rt.detections_meta['screen_graphics_error']=type(e).__name__
+        cascade_frames=0
+        offcourt_person_dropped=0
 
         # ---- 1) 逐帧检测：球员框（含球衣颜色）+ 球候选 ----
         step(0.02, "检测球员与篮球")
@@ -1241,16 +1367,31 @@ class VideoSource:
                 predict_options = dict(conf=self.conf, imgsz=self.imgsz,
                                        device=self.device, verbose=False)
                 if legacy is not None:
-                    predict_options.update(conf=.25, imgsz=640, iou=.5)
+                    from .legacy_shots.settings import prediction_options
+                    predict_options.update(prediction_options(legacy.config["detect"]))
+                from .screen_graphics import matches as is_screen_graphic
                 rb = ball_model.predict(frame, **predict_options)[0]
-                if rb.boxes is not None:
-                    for b in rb.boxes:
-                        nm = str(rb.names.get(int(b.cls[0]), "")).lower()
+                predictions=[rb]
+                primary_balls=[b for b in rb.boxes if 'ball' in str(rb.names.get(int(b.cls[0]),'')).lower()] if rb.boxes is not None else []
+                graphic_hit=any(is_screen_graphic(frame,[float(v) for v in b.xyxy[0]],graphics) for b in primary_balls)
+                viable=legacy is not None and any(not is_screen_graphic(frame,[float(v) for v in b.xyxy[0]],graphics) and
+                           float(b.conf[0]) >= legacy.config['detect']['ball_conf'] and
+                           legacy.config['detect']['ball_min_w_ratio']*min(W,960) <= float(b.xyxy[0][2]-b.xyxy[0][0]) <= W*.24 for b in primary_balls)
+                # Supplement 640 only when a known graphic has swallowed the ball search.
+                if legacy is not None and graphic_hit and not viable and predict_options.get('imgsz',640)<960:
+                    predictions.append(ball_model.predict(frame,**dict(predict_options,imgsz=960))[0])
+                    cascade_frames+=1
+                # Merge both measured scales. Selection still rejects overlay appearance.
+                det_rows=[(pr,b) for pr in predictions for b in (pr.boxes if pr.boxes is not None else [])]
+                if det_rows:
+                    for pr,b in det_rows:
+                        nm = str(pr.names.get(int(b.cls[0]), "")).lower()
                         if legacy is not None:
                             legacy_detections.append(LegacyDet(nm, float(b.conf[0]),
                                 tuple(float(v) for v in b.xyxy[0])))
                         if "ball" in nm:
                             bx = [float(v) for v in b.xyxy[0]]
+                            if is_screen_graphic(frame,bx,graphics):continue
                             bw, bh = bx[2] - bx[0], bx[3] - bx[1]
                             # 球框应该近似方形、且尺寸在合理范围（远景 8~60px）。
                             # 太扁/太大的多半是误检（球衣、灯箱、观众席）。
@@ -1284,11 +1425,18 @@ class VideoSource:
                             continue          # 贴着画面底边 —— 镜头前的观众
                         if float(b.conf[0]) < self.player_conf:
                             continue          # 人用更高的置信度门槛
+                        # 静态/分时段标定可用时，在检测入口就用脚底点过滤场外人员。
+                        # 这样观众不会进入投篮人关联、球衣识别和回放绿框，再由下游隐藏。
+                        _person_cal = self._cal_at(t)
+                        _on_court = calibrated_person_on_court(_person_cal, xyxy)
+                        if _on_court is False:
+                            offcourt_person_dropped += 1
+                            continue
                         pid = f"T{tid}"
                         if legacy is not None:
                             legacy_persons.append(LegacyDet("person",float(b.conf[0]),tuple(xyxy),pid))
                         if pid not in rt.players:
-                            rt.players[pid] = Player(pid, pid, "home")
+                            rt.players[pid] = Player(pid, "号码待确认", "home")
                         player_pos.setdefault(pid, []).append(
                             (t, cx, (xyxy[1] + xyxy[3]) / 2))
                         player_boxes.setdefault(pid, []).append(
@@ -1329,7 +1477,7 @@ class VideoSource:
                                 jersey_sum.setdefault(pid, {"n": 0, "bins": {}})["n"] += 1
 
             if legacy is not None:
-                legacy.update(idx, t, legacy_detections, legacy_persons, cut=legacy_cut)
+                legacy.update(idx, t, legacy_detections, legacy_persons, cut=legacy_cut, image=frame)
 
             # 颜色线索（YOLO 漏掉的球靠它兜底）；背景运动量已经在上面的 bg_motion 里融合。
             # 但**有专用球检测器时直接跳过** —— 广播画面下这条线索是纯噪声
@@ -1373,6 +1521,8 @@ class VideoSource:
             elif not legacy.real_seen:
                 rt.detections_meta["visual_error"] = "没有有效的真实篮球观测，无法确认投篮结果"
 
+        rt.detections_meta['ball_cascade_frames']=cascade_frames
+
         # ---- 2) 球轨迹连接 ----
         step(0.56, "连接球轨迹")
         from .ball import stitch_tracks
@@ -1408,14 +1558,23 @@ class VideoSource:
         for c in kept:
             if self.sliding and self.sliding.get("anchors"):
                 from .calibcheck import homography_at
-                H = homography_at(self.sliding, int(round(c.t * fps)),
-                                  bool(self.sliding.get("half_court", True)))
-                if H is None:
+                # ⚠️ 变量名**必须**区别于 H（画面高度）。这里以前写成 `H = 单应矩阵`，
+                # 把 run() 里的画面高度覆盖掉了 —— 于是后面 `_load_bug(..., W, H, ...)`
+                # 传进去的是一个 3x3 矩阵，缓存指纹算不出来：
+                # `TypeError: int() argument must be ... not 'list'`，
+                # 表现为"比分牌模板匹配整条路静默失效"。
+                Hf = homography_at(self.sliding, int(round(c.t * fps)),
+                                   bool(self.sliding.get("half_court", True)))
+                if Hf is None:
                     continue
-                xm, ym = apply_homography(H, c.x, c.y)
+                xm, ym = apply_homography(Hf, c.x, c.y)
                 xm, ym = fold_to_analysis(xm, ym, "half")
             elif rt.detections_meta.get("calibration_valid"):
-                xm, ym = self.cal.to_court(c.x, c.y)
+                # 多机位时按**这一帧所属镜头**取标定（单机位就是 self.cal）。
+                _c = self._cal_at(c.t)
+                if _c is None or not _c.H:
+                    continue
+                xm, ym = _c.to_court(c.x, c.y)
             else:
                 continue
             rt.ball_track.append(BallSample(t=round(c.t, 3), x=round(xm, 3),
@@ -1449,6 +1608,12 @@ class VideoSource:
             except Exception as e:  # noqa: BLE001
                 rt.detections_meta["sliding_error"] = f"{type(e).__name__}: {e}"
 
+        rt.detections_meta["court_player_prefilter"] = {
+            "enabled": bool(rt.detections_meta.get("calibration_valid")),
+            "dropped_observations": int(offcourt_person_dropped),
+            "rule": "player_box_bottom_center_inside_calibrated_court",
+        }
+
         # ---- 3b) 套餐 B：把球员像素轨迹投影成球场坐标 ----
         # 只有标定确实适用于这段视频时才投影（标定按机位存，对不上就拒绝），
         # 否则宁可不产出轨迹 —— 错位的俯视战术图比没有更糟。
@@ -1470,6 +1635,7 @@ class VideoSource:
                 rt.detections_meta["sliding_validation_error"] = \
                     f"{type(e).__name__}: {e}"
 
+        on_court_obs = set()
         if rt.detections_meta.get("calibration_valid") or self.sliding:
             rt.detections_meta["player_track_source"] = (
                 "sliding_calibration" if self.sliding else "static_calibration")
@@ -1507,27 +1673,23 @@ class VideoSource:
                     tt, x1, y1, x2, y2 = row[:5]
                     foot_x = (x1 + x2) / 2.0
                     foot_y = y2
-                    # 像素坐标下的球员观测（给「进球是哪一队」用，见 player_obs）
-                    rt.player_obs.append(dict(
-                        t=round(float(tt), 3), player_id=pid, team=team,
-                        foot_x=round(float(foot_x), 1),
-                        foot_y=round(float(foot_y), 1),
-                        cx=round(float((x1 + x2) / 2.0), 1),
-                        cy=round(float((y1 + y2) / 2.0), 1),
-                        box=[round(float(v), 1) for v in (x1, y1, x2, y2)],
-                        conf=round(float(row[5]) if len(row) > 5 else 1.0, 3)))
                     if use_sliding:
                         # 逐帧 H（锚点间插值）——跟住会动的镜头
                         from .calibcheck import homography_at
-                        H = homography_at(self.sliding, int(round(tt * fps)),
-                                          bool(self.sliding.get("half_court", True)))
-                        if H is None:
+                        # 同样：不能叫 H（会覆盖 run() 里的画面高度，见上面那段注释）
+                        Hf = homography_at(self.sliding, int(round(tt * fps)),
+                                           bool(self.sliding.get("half_court", True)))
+                        if Hf is None:
                             continue
-                        px, py = apply_homography(H, foot_x, foot_y)
+                        px, py = apply_homography(Hf, foot_x, foot_y)
                         # sliding 的目标点本身就是折半坐标（half_court=True 时）
                         px, py = fold_to_analysis(px, py, "half")
                     else:
-                        px, py = self.cal.to_court(foot_x, foot_y)
+                        # 多机位时按**这一帧所属镜头**取标定
+                        _c = self._cal_at(tt)
+                        if _c is None or not _c.H:
+                            continue
+                        px, py = _c.to_court(foot_x, foot_y)
                     # 只保留**真正落在场内**的点。这一刀很关键：广播镜头里
                     # 同时会检出替补席、裁判、观众（实测 30 秒里 83 条轨迹），
                     # 它们站在边线外/中线外/底线后方，投影出来正好贴着边线或
@@ -1536,8 +1698,20 @@ class VideoSource:
                     # 范围必须取"这份标定实际覆盖的球场"，不能写死 |y|<=14：
                     # 半场标定只覆盖 y∈[-14,0]（或 [0,14]），用对称范围会把
                     # 远底线后方的观众当成场内球员收进来。
-                    if not self.cal.in_court(px, py, tol=0.12):
+                    _cc = self._cal_at(tt) or self.cal
+                    if not _cc.in_court(px, py, tol=0.12):
                         continue
+                    key = (round(float(tt), 3), pid)
+                    on_court_obs.add(key)
+                    # 像素观测也只保留场内球员；分队、球衣 OCR 与进球归属不能再吃到观众。
+                    rt.player_obs.append(dict(
+                        t=key[0], player_id=pid, team=team,
+                        foot_x=round(float(foot_x), 1),
+                        foot_y=round(float(foot_y), 1),
+                        cx=round(float((x1 + x2) / 2.0), 1),
+                        cy=round(float((y1 + y2) / 2.0), 1),
+                        box=[round(float(v), 1) for v in (x1, y1, x2, y2)],
+                        conf=round(float(row[5]) if len(row) > 5 else 1.0, 3)))
                     rt.player_track.append(PlayerSample(
                         t=round(float(tt), 3), player_id=pid, team=team,
                         x=round(px, 3), y=round(py, 3), conf=1.0))
@@ -1547,6 +1721,23 @@ class VideoSource:
             #     把碎片接回同一个人（经典 tracklet stitching）。
             rt.player_track, stitched = stitch_player_tracks(rt.player_track)
             rt.detections_meta["player_stitch"] = stitched
+            # 回放绿框使用同一份场内判定。标定有效时，场外人员保留原始检测证据，
+            # 但显式标为 on_court=false，前端不再把他们画成球员。
+            legacy_meta = rt.detections_meta.get("legacy_shots") or {}
+            hidden = shown = 0
+            for frame_row in legacy_meta.get("frames") or []:
+                stamp = round(float(frame_row.get("t") or 0.0), 3)
+                for person in frame_row.get("persons") or []:
+                    pid = str(person.get("track_id") or "")
+                    person["on_court"] = (stamp, pid) in on_court_obs
+                    if person["on_court"]:
+                        shown += 1
+                    else:
+                        hidden += 1
+            rt.detections_meta["court_player_filter"] = {
+                "enabled": True, "shown_observations": shown,
+                "hidden_off_court_observations": hidden,
+                "rule": "player_box_bottom_center_inside_calibrated_court"}
         rt.detections_meta["player_track"] = {
             "samples": len(rt.player_track),
             "players": len({s.player_id for s in rt.player_track}),
@@ -1561,6 +1752,17 @@ class VideoSource:
             self._sample_jersey_colors(rt)
         except Exception as e:  # noqa: BLE001
             rt.detections_meta["jersey_color_error"] = f"{type(e).__name__}: {e}"
+
+        step(0.635, '识别球衣号码')
+        try:
+            from .jersey_numbers import recognize as recognize_jerseys
+            rt.detections_meta['jersey_numbers']=recognize_jerseys(
+                self.video_path,rt.player_obs,rt.players,
+                cuts=[r['t'] for r in (legacy.frames if legacy is not None else []) if r.get('cut')], device=self.device)
+        except Exception as e:
+            # Ancillary identity OCR must not discard completed detections.
+            rt.detections_meta['jersey_numbers']={'available':False,'reason':type(e).__name__}
+        assign_player_short_labels(rt.players)
 
         # ---- 4) 比分牌（有覆盖层时最硬的一路证据）----
         sb_ok = False
@@ -2080,6 +2282,21 @@ class VideoSource:
                         for a in atts if a.team == "away")}
 
     # ------------------------------------------------------------------
+    def _cal_at(self, t: float):
+        """取 t 时刻该用哪份标定。
+
+        多机位（`multi_cal` 带 segments）时按"这一帧属于哪个镜头"取那一份 H；
+        单机位就直接用 `self.cal` —— 调用方不用关心是哪种。
+        为什么必须按帧取：两个机位没有共同坐标系，用错一份 H 投出来的球员
+        会整片落在球场外（实测把球员投到边线外好几米）。
+        """
+        mc = getattr(self, "multi_cal", None)
+        if mc is None:
+            return self.cal
+        c = mc.cal_at(t)
+        return c if c is not None else self.cal
+
+    # ------------------------------------------------------------------
     def _calibration_matches(self, W: int, H: int) -> bool:
         """标定文件是不是这段视频的。
 
@@ -2089,7 +2306,23 @@ class VideoSource:
         所以标定文件现在显式记录它属于哪个视频（`for_video`），对不上就拒绝。
         """
         if not self.cal or not self.cal.H:
+            # 多机位：self.cal 只是"主标定"那一份，也可能为空 ——
+            # 只要有一段对得上就算对得上。
+            mc = getattr(self, "multi_cal", None)
+            if mc is not None:
+                try:
+                    return bool(mc.matches_video(self.video_path, W, H))
+                except Exception:                            # noqa: BLE001
+                    return False
             return False
+        mc = getattr(self, "multi_cal", None)
+        if mc is not None and len(getattr(mc, "segments", []) or []) > 1:
+            # 多机位：任意一段与本视频匹配即可（每段都是同一台机器的不同镜头）
+            try:
+                if mc.matches_video(self.video_path, W, H):
+                    return True
+            except Exception:                                # noqa: BLE001
+                pass
         return bool(self.cal.matches_video(self.video_path, W, H))
 
     # ------------------------------------------------------------------

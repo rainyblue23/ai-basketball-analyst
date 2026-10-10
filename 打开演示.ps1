@@ -79,7 +79,7 @@ else         { Write-Host "[1/3] Python: 通过 py 启动器" -ForegroundColor G
 
 # ---- 2) 从 8080 起找一个没被占用的端口 --------------------------------------
 $port = 0
-for ($p = 8080; $p -le 8100; $p++) {
+for ($p = 8000; $p -le 8010; $p++) {
     $busy = $false
     try {
         $l = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $p)
@@ -88,11 +88,25 @@ for ($p = 8080; $p -le 8100; $p++) {
     if (-not $busy) { $port = $p; break }
 }
 if ($port -eq 0) {
-    Write-Host "[错误] 8080~8100 端口都被占用了，请先关掉占用端口的程序。" -ForegroundColor Red
+    Write-Host "[错误] 8000~8010 端口都被占用了，请先关掉占用端口的程序。" -ForegroundColor Red
     Read-Host "按回车键退出"
     exit 1
 }
-$Url = "http://127.0.0.1:$port/web/index.html"
+# 8000 上已经有本地服务在跑？那就**别再起第二个**：第二个进程会占住另一个端口，
+# 浏览器打开的却是 8000，看起来像"软件坏了"；更糟的是两个进程写同一份任务记录。
+# 注意：登录网关上线后 /api/health 未登录会返回 401 —— 401 同样是"我们的服务活着"
+# 的证据，所以这里只认"返回了本项目的 JSON"，不要求 200，否则会把正在跑的后端
+# 误判成没起来，然后又去起一个。
+$AlreadyUp = $false
+try {
+    Invoke-WebRequest -Uri "http://127.0.0.1:8000/api/me" -UseBasicParsing -TimeoutSec 3 | Out-Null
+    $AlreadyUp = $true
+} catch {
+    $resp = $_.Exception.Response
+    if ($resp -and [int]$resp.StatusCode -eq 401) { $AlreadyUp = $true }
+}
+if ($AlreadyUp) { $port = 8000 }   # 服务已经在 8000 上，端口探测选出来的别的号没用
+$Url = "http://127.0.0.1:$port/web/index.html"   # 明确打开应用；未登录时由网关转到新版登录页
 Write-Host "[2/3] 本地服务端口: $port" -ForegroundColor Green
 
 # ---- 3) 启动服务（新窗口，方便你看日志/随时关掉）---------------------------
@@ -110,7 +124,7 @@ Set-Location -LiteralPath '$Root'
 Write-Host '正在提供本地服务，演示期间请勿关闭本窗口。' -ForegroundColor Green
 Write-Host '结束后按 Ctrl+C 停止。' -ForegroundColor DarkGray
 Write-Host ''
-& '$Python' -m http.server $port --bind 127.0.0.1
+& '$Python' -B -m aihoop.cli serve --port $port
 "@
 if (-not $Python) {
     $inner = @"
@@ -122,9 +136,14 @@ Write-Host ''
 "@
 }
 
-Start-Process -FilePath "powershell.exe" `
-    -ArgumentList @("-NoExit", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", $inner) `
-    -WindowStyle Minimized
+if ($AlreadyUp) {
+    Write-Host "  8000 上已经有本地服务在运行：不再另起第二个，直接打开页面。" -ForegroundColor Green
+    Write-Host "  （再起一个会占住另一个端口，还会让两个进程写同一份任务记录）" -ForegroundColor DarkGray
+} else {
+    Start-Process -FilePath "powershell.exe" `
+        -ArgumentList @("-NoExit", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", $inner) `
+        -WindowStyle Minimized
+}
 
 # 等服务起来（最多等 5 秒）
 $ready = $false

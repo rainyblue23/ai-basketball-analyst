@@ -260,7 +260,8 @@ def run_pipeline(rt: RawTrack, cfg: Optional[PipelineConfig] = None,
               "unavailable": True, "reason": cal_reason}
         zones_by_team = {t: {} for t in ("home", "away")}
     meta["court_outputs_available"] = cal_charts
-    meta["court_outputs_unverified"] = bool(cal_charts and not cal_usable)
+    independent_ok = (rt.detections_meta.get("calibration_hoop_check") or {}).get("ok") is True
+    meta["court_outputs_unverified"] = bool(cal_charts and (not cal_usable or not independent_ok))
     if not cal_charts:
         meta["court_outputs_reason"] = cal_reason
     elif not cal_usable:
@@ -310,6 +311,15 @@ def run_pipeline(rt: RawTrack, cfg: Optional[PipelineConfig] = None,
     # 球员坐标能不能用？两条路：① 已通过校验的静态标定；② 自动逐帧标定（兜底，标注未校验）
     sliding_ok, sliding_why = _sliding_position_ok(meta)
     pos_via_sliding = bool(not cal_usable and sliding_ok)
+    # 最后一道闸：坐标自身在物理上说得通吗？
+    # 分数（ratio/达标率）会骗人（实测 sliding 自称 14.5 / 0.999，坐标却把 90% 的
+    # 球员压在边线上），但坐标的分布骗不了人。过不了就整层不出，并说明原因。
+    coords_ok, coords_why = _tactics_coords_sane(rt.player_track)
+    if cfg.make_tactics and not coords_ok:
+        step(0.68, "战术层：跳过（球员坐标在物理上说不通）")
+        pos_via_sliding = False
+        cal_usable = False
+        sliding_why = coords_why
     if cfg.make_tactics and not cal_usable and not pos_via_sliding:
         # 战术层整层都建立在球场坐标上 —— 标定错，它就整层错。
         # 这里明确标成"不适用"，而不是给一张错的俯视图。
@@ -345,7 +355,9 @@ def run_pipeline(rt: RawTrack, cfg: Optional[PipelineConfig] = None,
             tactics_data.setdefault("notes", []).append(
                 "⚠ 位置未校验：" + tactics_data["position_note"])
         elif tactics_data.get("available"):
-            tactics_data["position_unverified"] = False
+            tactics_data["position_unverified"] = not independent_ok
+            if not independent_ok:
+                tactics_data["position_note"] = "静态标定未通过独立篮筐校验，位置仅供参考。"
             tactics_data["position_source"] = "static_calibration"
         if tactics_data.get("available"):
             tactics_frames = build_tactics_frames(
@@ -571,6 +583,77 @@ def _sliding_position_ok(meta: dict) -> tuple[bool, str]:
     return True, ("%d 个锚点，达标率 %.2f，中位 ratio %.2f" % (n_a, ok_ratio, med))
 
 
+def _tactics_coords_sane(player_track) -> tuple[bool, str]:
+    """球员球场坐标在**物理上**说得通吗？（出战术图前的最后一道闸）
+
+    为什么必须有这一道（用户实测）：自动逐帧标定自称 `median_ratio=14.5、
+    达标率 0.999`，静态标定却是 `valid=False / rmse=23.5m`。战术层于是走了
+    "自动标定"那条兜底路，**照样出了一张战术图** —— 而那张图上：
+
+        x 分布: 90% 的点挤在 x=7.47~7.60（正好是边线 7.5）
+        y 范围: -8.31 ~ 0.12（只有半个半场）
+
+    90% 的球员"贴着同一条边线站"，物理上不可能 —— 那是 H 把画面挤成了一根线。
+    分数（ratio/达标率）看不出来这种错，但**坐标自己的分布**能看出来。
+
+    判据用两条与几何无关的硬约束：
+      ① 贴边堆叠：某个轴的坐标里超过 70% 落在"边界 0.4m 以内"，**且这个轴自己也被压扁**
+         （展布 < 3m）—— 这才是"H 把画面挤成了一根线"；
+      ② 展布过窄：某个轴展布 < 1.5m，而另一个方向还铺得开（≥4m）—— 塌成一条带。
+
+    ⚠️ 样本语义的守卫（用户 2026-10-05）：
+    120 个采样点可能只是**一个球员停留几秒**，不代表"多人分布"。所以在判定之前先要求：
+      * 采样点 ≥120；
+      * **不同球员 ≥3**（一个人的坐标分布说明不了标定好坏）；
+      * 时间跨度 ≥15s（只覆盖十几秒的片段不做物理判定）。
+    这三条挡住的是"单人长时间停留""只拍了 8 秒的边线发球""局部取景"这类**合法但不具代表性**的轨道。
+    """
+    rows = list(player_track or [])
+    xs = [float(p.x) for p in rows]
+    ys = [float(p.y) for p in rows]
+    ts = [float(getattr(p, "t", 0.0)) for p in rows]
+    n = len(xs)
+    if n < 120:
+        return True, ""
+    players = {getattr(p, "player_id", None) for p in rows}
+    players.discard(None)
+    if len(players) < 3:
+        return True, ""
+    if (max(ts) - min(ts)) < 15.0:
+        return True, ""
+    W, L = 15.0, 28.0
+    # 每个球员各自的采样（判"是不是**全员**都贴在边界上"）：
+    # 实测争议点：某段时间只有一个球员站在边线附近，整体贴边比例也会很高 —— 但那不能说明
+    # 标定塌了。真正塌掉的变换会让**每个人**都被压到同一条线上，所以要看球员级比例。
+    per_player = {}
+    for p in rows:
+        per_player.setdefault(getattr(p, "player_id", None), []).append(p)
+    problems = []
+    for name, vals, half, other, attr in (("横向 x", xs, W / 2.0, ys, "x"), ("纵向 y", ys, L / 2.0, xs, "y")):
+        near_edge = sum(1 for v in vals if abs(abs(v) - half) <= 0.4)
+        frac = near_edge / float(n)
+        spread = max(vals) - min(vals)
+        other_spread = max(other) - min(other)
+        pinned_players = []
+        for vals_p in per_player.values():
+            vv = [float(getattr(q, attr)) for q in vals_p]
+            share = sum(1 for v in vv if abs(abs(v) - half) <= 0.4) / float(len(vv))
+            pinned_players.append(share)
+        all_pinned = len(pinned_players) >= 3 and all(s > 0.60 for s in pinned_players)
+        if frac > 0.70 and all_pinned:
+            problems.append("%s 有 %.0f%% 的点贴在边界 %.1fm 以内，而且**每个球员**都这样"
+                            "（不是某个人站在边线上）" % (name, frac * 100, half))
+        elif spread < 1.5 and other_spread >= 4.0:
+            problems.append("%s 只铺开 %.2fm（另一个方向 %.1fm）" % (name, spread, other_spread))
+    if not problems:
+        return True, ""
+    return False, (
+        "球员坐标在物理上说不通（%s）—— 这几乎一定是**标定不可用**造成的，"
+        "不是球员真的挤在边线上。为避免给你一张错的俯视图，这次不出战术图。"
+        "修法：在「上传与分析」页重新标一次球场，标完看「吻合度读数」是否 ≥1.25。"
+        % "；".join(problems))
+
+
 def _judgement(meta: dict, shots: list) -> dict:
     """这次到底「判出来了」还是「判不了」，以及为什么。
 
@@ -585,9 +668,29 @@ def _judgement(meta: dict, shots: list) -> dict:
     policy = str(meta.get("score_policy", "scoreboard") or "scoreboard").lower()
     if policy in ("court", "visual", "auto"):
         made = [s for s in shots if s.made]
+        # 只把**计入得分**的命中算进「合计 N 分」。原来的写法用 sum(s.points)，
+        # 而 Shot.points 是"这次出手本身的得分（不管是否计入总分）"，
+        # 于是出现过一句自相矛盾的话：note 写「4 次命中，合计 8 分」，
+        # 而 game.score 是 2:4（6 分）—— 差的正是那次 counts_for_score=False 的命中
+        # （实测：4 分钟真视频 job 6038f6b8326a）。判为命中但不计分的必须单独说清楚，
+        # 不能混进"合计"里，否则就是拿一个和比分对不上的数字糊弄人。
+        counted = [s for s in made if s.counts_for_score]
+        unmatched = [s for s in made if not s.counts_for_score]
         if made:
-            note = (f"按场上检测到的进球计分：本片段 {len(made)} 次命中，"
-                    f"合计 {sum(s.points for s in made)} 分。")
+            if counted:
+                note = (f"按场上检测到的进球计分：本片段 {len(counted)} 次命中，"
+                        f"合计 {sum(s.score_points for s in counted)} 分。")
+                if unmatched:
+                    # 注意：这句话是**纯文本**渲染的（overview.js 用 {{ }} 插值，
+                    # 不走 Markdown），所以这里不能用 **加粗** 语法，否则页面上会
+                    # 原样显示星号。
+                    note += (f" 另有 {len(unmatched)} 次判为命中但未计入得分"
+                             "（队别或计分口径未确认），已保留在出手明细与高光里，"
+                             "可在「人工复核」页确认。")
+            else:
+                note = (f"本片段有 {len(unmatched)} 次出手判为命中，但都没有计入得分"
+                        "（队别或计分口径未确认）；已保留在出手明细与高光里，"
+                        "可在「人工复核」页确认。")
             fin = meta.get("scoreboard_final") or {}
             if fin:
                 note += (f" 比分牌读数 {fin.get('home', 0)} : {fin.get('away', 0)}"
@@ -676,5 +779,5 @@ def _shot_event(s: Shot, rt: RawTrack) -> dict:
             "x": round(s.x, 2), "y": round(s.y, 2),
             "zone": "位置未知" if "location_unknown" in s.tags else zone_of(s.x, s.y), "confidence": s.confidence,
             "source": s.outcome_source, "period": s.period,
-            "tags": s.tags, "evidence": s.evidence,
+            "tags": s.tags, "evidence": s.evidence, "review_reason": s.review_reason,
             "crossing_t": s.crossing_t, "review_t": s.review_t, "suggested_made": s.suggested_made}

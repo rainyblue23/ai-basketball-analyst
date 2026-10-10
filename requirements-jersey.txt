@@ -1,0 +1,2 @@
+# Optional local jersey OCR; existing torch/torchvision runtime required.
+easyocr==1.7.2

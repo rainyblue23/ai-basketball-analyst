@@ -31,6 +31,7 @@ window.PAGES['review'] = {
     };
   },
   computed: {
+    isExample: function () { return (this.S.jobId || "").indexOf("example_") === 0; },
     game: function () { return this.S.game; },
     /** 全部出手（timeline 口径），用于「显示全部」模式 */
     allShots: function () {
@@ -52,7 +53,7 @@ window.PAGES['review'] = {
       };
     },
     /** 是否可提交到后端（演示/无后端时只做本地改判） */
-    canSubmit: function () { return this.S.backendOk && !this.S.demoMode && this.S.jobId && this.S.jobId !== 'demo'; }
+    canSubmit: function () { return this.S.backendOk && !this.S.demoMode && this.S.jobId && this.S.jobId !== 'demo' && this.S.jobId.indexOf('example_') !== 0; }
   },
   watch: {
     // game 变化（新建任务/切换任务）时重建复核队列
@@ -122,7 +123,9 @@ window.PAGES['review'] = {
     },
     unknownReason: function (row) {
       if (!this.isUnknown(row)) return '';
-      var codes = [row.evidence].concat(row.tags || []);
+      var codes = [row.review_reason, row.evidence].concat(row.tags || []);
+      if (codes.includes('no_rim_outcome_evidence')) return '已跟踪轨迹没有进入筐口区域，也没有穿越记录，结果无法判定。';
+      if (codes.includes('below_rim_tracking_gap')) return '球在筐下方出现后，连续实测球轨迹中断，结果无法判定。';
       if (codes.includes('cross_hoop_uncertain')) return '这一刻篮筐位置不够稳定，无法可靠判定。';
       if (codes.includes('cross_rim_contact')) return '球的轨迹靠近筐沿，可能擦筐；是否进球需要人工确认。';
       return '';
@@ -147,13 +150,14 @@ window.PAGES['review'] = {
     nameOf: function (row) {
       var id = row.player_id;
       for (var i = 0; i < (this.S.players || []).length; i++) {
-        if (this.S.players[i].player_id === id) return this.S.players[i].name;
+        if (this.S.players[i].player_id === id) return D.playerLabel(this.S.players[i]);
       }
-      return id;
+      return D.playerLabel({player_id:id});
     },
 
     /** 改判入口：value 传 1|2|3，made 传 true/false */
     async correct(row, made, value) {
+      if ((this.S.jobId || '').indexOf('example_') === 0) { this.$message.warning('样例只供查看'); return; }
       var self = this;
       if (this.busyIdx !== -1) return;
       if (!Number.isInteger(row._index) || row._index < 0) {
@@ -301,36 +305,31 @@ window.PAGES['review'] = {
     '  <div class="card" v-if="!game">',
     '    <el-empty description="暂无比赛数据" />',
     '  </div>',
-
     '  <template v-else>',
     '    <!-- ① 说明与统计 -->',
     '    <div class="card">',
     '      <h3 class="card-title">人工复核',
     '        <span class="grow"></span>',
     '        <el-tag :type="canSubmit ? \'success\' : \'warning\'" size="small" effect="dark">',
-    '          {{ canSubmit ? \'改判将写回后端\' : \'演示模式：仅本地改判\' }}',
+    '          {{ isExample ? \'样例只读\' : canSubmit ? \'改判将写回后端\' : \'演示模式：仅本地改判\' }}',
     '        </el-tag>',
     '      </h3>',
     '      <div class="grid grid-4">',
-    '        <div class="kpi"><div class="k">自动识别出手</div><div class="v">{{ stats.total }}</div><div class="d">整场事件流</div></div>',
-    '        <div class="kpi"><div class="k">待复核出手</div><div class="v" style="color:#f5a623">{{ stats.need }}</div><div class="d">含结果未知与系统建议</div></div>',
-    '        <div class="kpi"><div class="k">已人工确认</div><div class="v" style="color:#22a06b">{{ stats.done }}</div><div class="d">本次会话内</div></div>',
-    '        <div class="kpi"><div class="k">无需复核占比</div><div class="v">{{ (stats.rate*100).toFixed(1) }}%</div><div class="d">= 1 - 待复核 / 总出手</div></div>',
-    '      </div>',
-    '      <div class="hint" style="margin-top:12px">',
-    '        系统建议尚未计入命中统计。请核对视频后逐球确认；批量维持原判会跳过结果未知的出手。',
-    '        确认后更新比赛统计。球队或分值不确定时，还需核对归属与分值。',
+    '        <div class="kpi"><div class="k">识别出手</div><div class="v">{{ stats.total }}</div><div class="d">记录</div></div>',
+    '        <div class="kpi"><div class="k">待复核</div><div class="v" style="color:#f5a623">{{ stats.need }}</div><div class="d">含建议</div></div>',
+    '        <div class="kpi"><div class="k">已确认</div><div class="v" style="color:#22a06b">{{ stats.done }}</div><div class="d">本次</div></div>',
+    '        <div class="kpi"><div class="k">无需复核</div><div class="v">{{ (stats.rate*100).toFixed(1) }}%</div><div class="d"><copy-note label="口径">= 1 - 待复核 / 总出手</copy-note></div></div>',
     '      </div>',
     '      <div class="row" style="margin-top:10px;flex-wrap:wrap">',
-    '        <el-switch v-model="showAll" active-text="显示全部出手（含高置信度）" />',
-    '        <el-checkbox v-model="onlyInferred">只看待确认建议</el-checkbox>',
-    '        <el-button size="small" @click="build">重新载入待复核队列</el-button>',
-    '        <el-button size="small" type="primary" plain :disabled="!stats.left" @click="confirmAll">批量维持原判</el-button>',
+    '        <el-switch v-model="showAll" active-text="全部出手" />',
+    '        <el-checkbox v-model="onlyInferred">仅看建议</el-checkbox>',
+    '        <el-button size="small" @click="build">刷新</el-button>',
+    '        <el-button size="small" type="primary" plain :disabled="!stats.left || isExample" @click="confirmAll">维持原判</el-button>',
     '      </div>',
     '    </div>',
     '    <!-- ①.5 手动补录 -->',
-    '    <div class="card">',
-    '      <h3 class="card-title">手动补录进球 <span class="sub">自动检测漏掉时使用：填时间/球队/分值，后端按 manual 出手重算</span></h3>',
+    '    <div class="card" v-if="!isExample">',
+    '      <h3 class="card-title">补录进球 </h3>',
     '      <div class="row" style="gap:12px;flex-wrap:wrap">',
     '        <el-input-number v-model="manual.t" :min="0" :max="36000" :step="0.1" controls-position="right" style="width:160px" />',
     '        <el-select v-model="manual.team" style="width:120px">',
@@ -339,16 +338,14 @@ window.PAGES['review'] = {
     '        <el-select v-model="manual.value" style="width:120px">',
     '          <el-option label="1 分" :value="1" /><el-option label="2 分" :value="2" /><el-option label="3 分" :value="3" />',
     '        </el-select>',
-    '        <el-button type="primary" :loading="adding" :disabled="!canSubmit" @click="addManual">补录进球并重算</el-button>',
+    '        <el-button type="primary" :loading="adding" :disabled="!canSubmit" @click="addManual">补录进球</el-button>',
     '      </div>',
-    '      <div class="hint">时间单位：秒；例如视频 3.8 秒处的进球填 3.8。</div>',
     '    </div>',
-
     '    <!-- ② 复核列表 -->',
     '    <div class="card">',
-    '      <h3 class="card-title">出手列表 <span class="sub">当前筛选 {{ list.length }} 条</span></h3>',
+    '      <h3 class="card-title">出手列表 <span class="sub">筛选 {{ list.length }} 条</span></h3>',
     '      <div class="rev-row rev-head">',
-    '        <div>时刻 / 节次</div><div>球员与位置</div><div>位置缩略图</div><div>当前判定</div><div>改判操作</div>',
+    '        <div>时刻</div><div>球员</div><div>位置</div><div>结果</div><div>操作</div>',
     '      </div>',
     '      <div v-for="(row,i) in list" :key="i" class="rev-row">',
     '        <div>',
@@ -356,56 +353,55 @@ window.PAGES['review'] = {
     '          <div class="muted" style="font-size:12px">第{{ row.period }}节 · 序号 {{ row._index===undefined ? \'—\' : row._index }}</div>',
     '        </div>',
     '        <div>',
-    '          <div><span class="tl-badge" :class="row.team===\'home\'?\'h\':\'a\'">{{ row.team===\'home\' ? teamName(\'home\') : teamName(\'away\') }}</span>',
+    '          <div><span v-if="row.team===\'home\' || row.team===\'away\'" class="tl-badge" :class="row.team===\'home\'?\'h\':\'a\'">{{ row.team===\'home\' ? teamName(\'home\') : teamName(\'away\') }}</span>',
     '            <b style="margin-left:6px">{{ nameOf(row) }}</b></div>',
     '          <div class="muted" style="font-size:12px;margin-top:4px">',
     '            {{ row.zone || \'—\' }} · 距篮 {{ row.distance !== undefined ? row.distance : \'—\' }}m · 坐标 ({{ Number(row.x).toFixed(2) }}, {{ Number(row.y).toFixed(2) }})',
     '          </div>',
-    '          <div class="muted" style="font-size:12px">证据来源：{{ row.outcome_source || row.source || \'—\' }}</div>',
+    '          <div class="muted" style="font-size:12px">来源：{{ row.outcome_source || row.source || \'—\' }}</div>',
     '        </div>',
     '        <div v-html="thumb(row)"></div>',
     '        <div>',
     '          <el-tag size="small" :type="isUnknown(row) ? \'info\' : row.made ? \'success\' : \'danger\'" effect="dark">',
-    '            {{ resultLabel(row) }} {{ row.value }} 分',
+    '            {{ resultLabel(row) }} · {{ row.value_assumed ? \'分值未确认\' : row.value + \' 分\' }}',
     '          </el-tag>',
     '          <div v-if="unknownReason(row)" style="margin-top:8px">',
-    '            <div><strong>判定依据：</strong>{{ unknownReason(row) }}</div>',
-    '            <div v-if="row.crossing_t != null">建议核对 {{ mmss(row.crossing_t) }} 附近画面</div>',
+    '            <div><copy-note label="未知原因">{{ unknownReason(row) }}</copy-note></div>',
+    '            <div v-if="row.crossing_t != null">回看 {{ mmss(row.crossing_t) }} 附近</div>',
     '          </div>',
     '          <div v-if="hasSuggestion(row)" style="margin-top:8px">',
     '            <strong>系统建议：{{ row.suggested_made ? \'进球\' : \'未中\' }}</strong>',
-    '            <div>{{ suggestionReason(row) }}。尚未计入命中统计。</div>',
-    '            <div v-if="suggestionReviewTime(row) != null">建议核对 {{ mmss(suggestionReviewTime(row)) }} 附近画面</div>',
+    '            <div><copy-note label="不计分">{{ suggestionReason(row) }}。尚未计入命中统计。</copy-note></div>',
+    '            <div v-if="suggestionReviewTime(row) != null">回看 {{ mmss(suggestionReviewTime(row)) }} 附近</div>',
     '          </div>',
     '          <div v-else class="muted" style="font-size:12px;margin-top:6px">置信度 {{ conf(row) }}%</div>',
     '          <div v-if="!hasSuggestion(row)" class="conf-bar"><i :style="{width: conf(row) + \'%\', background: conf(row)<40 ? \'#e5484d\' : \'#f5a623\'}"></i></div>',
     '          <el-tag v-if="row._corrected" size="small" type="success" effect="plain" style="margin-top:6px">已改判</el-tag>',
     '        </div>',
     '        <div>',
-    '          <el-button v-if="hasSuggestion(row)" size="small" :disabled="busyIdx !== -1" @click="correct(row, row.suggested_made, row.value)">确认此建议</el-button>',
+    '          <el-button v-if="hasSuggestion(row)" size="small" :disabled="busyIdx !== -1 || (S.jobId || \'\').indexOf(\'example_\')===0" @click="correct(row, row.suggested_made, row.value)">采纳建议</el-button>',
     '          <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px">',
-    '            <el-button size="small" type="success" :loading="busyIdx===row._index" @click="correct(row, true, row.value)">判为命中</el-button>',
-    '            <el-button size="small" type="danger" plain :loading="busyIdx===row._index" @click="correct(row, false, row.value)">判为未中</el-button>',
+    '            <el-button size="small" type="success" :loading="busyIdx===row._index" :disabled="isExample" @click="correct(row, true, row.value)">命中</el-button>',
+    '            <el-button size="small" type="danger" plain :loading="busyIdx===row._index" :disabled="isExample" @click="correct(row, false, row.value)">未中</el-button>',
     '          </div>',
     '          <div class="row" style="gap:6px;margin-top:6px">',
-    '            <span class="muted" style="font-size:12px">分值改判：</span>',
-    '            <el-button size="small" text @click="correct(row, true, 1)">1分</el-button>',
-    '            <el-button size="small" text @click="correct(row, true, 2)">2分</el-button>',
-    '            <el-button size="small" text @click="correct(row, true, 3)">3分</el-button>',
+    '            <span class="muted" style="font-size:12px">分值：</span>',
+    '            <el-button size="small" text :disabled="isExample" @click="correct(row, true, 1)">1分</el-button>',
+    '            <el-button size="small" text :disabled="isExample" @click="correct(row, true, 2)">2分</el-button>',
+    '            <el-button size="small" text :disabled="isExample" @click="correct(row, true, 3)">3分</el-button>',
     '          </div>',
     '        </div>',
     '      </div>',
-    '      <el-empty v-if="!list.length" :image-size="70" description="当前筛选下没有待复核出手" />',
+    '      <el-empty v-if="!list.length" :image-size="70" description="暂无待复核" />',
     '    </div>',
-
     '    <!-- ③ 改判记录：答辩时用来说明「写回口径」 -->',
     '    <div class="card" v-if="localLog.length">',
-    '      <h3 class="card-title">本次会话改判记录 <span class="sub">展示改判前后取值与是否写回后端</span></h3>',
+    '      <h3 class="card-title">改判记录 </h3>',
     '      <el-table :data="localLog" size="small" border>',
     '        <el-table-column prop="t" label="时刻" width="90" />',
     '        <el-table-column prop="player" label="球员" width="120" />',
     '        <el-table-column label="改判前" min-width="140">',
-    '          <template #default="s">{{ resultLabel(s.row.before) }} {{ s.row.before.value }} 分（置信度 {{ (s.row.confidence*100).toFixed(0) }}%）</template>',
+    '          <template #default="s">{{ resultLabel(s.row.before) }} {{ s.row.before.value }} 分（可信度 {{ (s.row.confidence*100).toFixed(0) }}%）</template>',
     '        </el-table-column>',
     '        <el-table-column label="改判后" min-width="120">',
     '          <template #default="s">{{ s.row.made ? \'命中\' : \'未中\' }} {{ s.row.value }} 分</template>',

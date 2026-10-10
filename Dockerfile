@@ -10,14 +10,16 @@ RUN apt-get update \
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.txt requirements-full.txt ./
+RUN pip install --no-cache-dir -r requirements.txt -r requirements-full.txt
 
 COPY src/ ./src/
 COPY web/ ./web/
-COPY tests/ ./tests/
 COPY scripts/ ./scripts/
+COPY data/.gitkeep data/botsort_reid.yaml data/court_kp_map.json data/scoreboard_templates.npz ./data/
 COPY README.md ./
+
+RUN mkdir -p /app/out /app/data/uploads
 
 ENV PYTHONPATH=/app/src
 ENV PYTHONUNBUFFERED=1

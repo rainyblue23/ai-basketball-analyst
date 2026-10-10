@@ -115,6 +115,19 @@ def shot_value(x: float, y: float) -> int:
     return ShotValue.THREE.value if is_three_pointer(x, y) else ShotValue.TWO.value
 
 
+def is_free_throw_position(x: float, y: float,
+                           lateral_tol: float = 1.25,
+                           line_tol: float = 0.9) -> bool:
+    """出手脚点是否位于 FIBA 罚球线的保守区域。
+
+    只有已有可信球场标定的调用方才能使用。该规则不猜上篮、扣篮或跳投，
+    只负责把比赛出手归入罚球、两分、三分三种计分口径。
+    """
+    return (math.isfinite(x) and math.isfinite(y)
+            and abs(x) <= lateral_tol
+            and abs(abs(y) - 5.8) <= line_tol)
+
+
 # --------------------------------------------------------------------------
 # 2) 融合判定命中
 # --------------------------------------------------------------------------
@@ -323,6 +336,10 @@ def build_shots(attempts: list[dict],
             tags.append("needs_review")
         if value == 3:
             tags.append("three")
+        elif value == 2:
+            tags.append("two")
+        else:
+            tags.append("free_throw")
         if src == OutcomeSource.MANUAL.value:
             tags.append("manual")
         if src == OutcomeSource.BROADCAST_SCOREBOARD.value:
@@ -369,7 +386,7 @@ def build_shots(attempts: list[dict],
             clip_start=max(0.0, t - cfg.clip_pad_before),
             clip_end=max(t + cfg.clip_pad_after, float(a.get("clip_end") or 0)),
             tags=list(dict.fromkeys(tags)),
-            evidence=a.get("evidence", ""),
+            evidence=a.get("evidence", ""), review_reason=a.get("review_reason") or "",
             crossing_t=a.get("crossing_t"), review_t=a.get("review_t"),
             decision_t=a.get("decision_t"), release_source=a.get("release_source", ""),
             suggested_made=a.get("suggested_made"),
@@ -448,6 +465,7 @@ def compute_player_stats(shots: list[Shot],
                 "player_id": pid,
                 "name": p.name if p else pid,
                 "jersey": p.jersey if p else None,
+                "short_label": p.short_label if p else None,
                 "team": p.team if p else team,
                 "points": 0, "fgm": 0, "fga": 0, "tpm": 0, "tpa": 0,
                 "ftm": 0, "fta": 0,

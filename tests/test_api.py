@@ -20,7 +20,15 @@ sys.path.insert(0, str(ROOT / "src"))
 def _client():
     from fastapi.testclient import TestClient
     from aihoop import api
-    return TestClient(api.app), api
+    # Explicit test account in isolated auth storage; production has no bypass for tests.
+    import tempfile
+    from aihoop import auth
+    auth.DATA = Path(tempfile.mkdtemp(prefix="aihoop-auth-test-"))
+    auth.save_account("integration", "integration-test-password")
+    client = TestClient(api.app)
+    response = client.post("/api/login", json={"username":"integration", "password":"integration-test-password"})
+    assert response.status_code == 200, response.text
+    return client, api
 
 
 def _wait_done(c, job_id: str, timeout: float = 180.0) -> dict:

@@ -1,0 +1,22 @@
+{
+  "sample": "yang",
+  "source": "human_user",
+  "confirmed_date": "2026-10-10",
+  "scope": "all_players_entire_video",
+  "time_basis": "approximate_release_seconds",
+  "free_throws_separate": true,
+  "supersedes_previous_aggregate": true,
+  "totals": {"field_attempts": 8, "field_made": 6, "free_throw_attempts": 2, "free_throw_made": 2},
+  "shots": [
+    {"id": "yang_01", "release_t": 5, "result": "made", "is_free_throw": false, "value": null},
+    {"id": "yang_02", "release_t": 15, "result": "missed", "is_free_throw": false, "value": null},
+    {"id": "yang_03", "release_t": 23, "result": "made", "is_free_throw": false, "value": null},
+    {"id": "yang_04", "release_t": 31, "result": "made", "is_free_throw": true, "value": 1},
+    {"id": "yang_05", "release_t": 35, "result": "made", "is_free_throw": true, "value": 1},
+    {"id": "yang_06", "release_t": 45, "result": "made", "is_free_throw": false, "value": 3},
+    {"id": "yang_07", "release_t": 53, "result": "missed", "is_free_throw": false, "value": null, "note": "勉强上篮，人工确认计为一次出手"},
+    {"id": "yang_08", "release_t": 63, "result": "made", "is_free_throw": false, "value": null},
+    {"id": "yang_09", "release_t": 74, "result": "made", "is_free_throw": false, "value": null},
+    {"id": "yang_10", "release_t": 85, "result": "made", "is_free_throw": false, "value": null}
+  ]
+}

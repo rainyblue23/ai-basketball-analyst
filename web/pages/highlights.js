@@ -55,6 +55,7 @@ window.PAGES['highlights'] = {
       }
       return n;
     },
+    sampleReview: function () { return ((this.S.game || {}).meta || {}).sample_review || null; },
     game: function () { return this.S.game; },
     clips: function () {
       var list = (this.S.highlights || []).slice();
@@ -82,6 +83,7 @@ window.PAGES['highlights'] = {
     }
   },
   methods: {
+    clipOutcome: function (c) { if (c.result === 'unknown') return '待确认'; if (!c.made) return '未中'; return c.value == null || c.value_assumed ? '命中 · 分值未确认' : '命中 · ' + c.value + '分'; },
     teamName: function (s) { return window.D.teamName(this.game, s); },
     mmss: function (t) { return window.D.mmss(t); },
     /** 片段播放地址：优先 /api/media，兜底原始视频；绝对文件路径不可用时返回空串 */
@@ -126,6 +128,7 @@ window.PAGES['highlights'] = {
     },
     /** 提交判断：POST /api/feedback（下次分析同一视频会自动用它过滤） */
     submitFeedback: function () {
+      if ((this.S.jobId || '').indexOf('example_') === 0) { this.$message.warning('样例只供查看'); return; }
       var self = this;
       var items = Object.keys(this.verdicts).map(function (t) {
         return { t: Number(t), label: self.verdicts[t] };
@@ -192,13 +195,8 @@ window.PAGES['highlights'] = {
   },
   template: [
     '<div>',
-
-    // ---- 进球确认：把「这一下到底进没进」的人工判断记下来 ----
-    // 为什么放在高光页：这里本来就是"逐球回看"的地方。判过之后
-    //   1) 后端下次分析同一段视频会自动用它过滤误报；
-    //   2) 这些带标签的时刻会攒成训练/评估数据（GET/POST /api/feedback）。
-    '  <div class="card" v-if="S.backendOk && S.jobId && S.jobId!==\'demo\'">',
-    '    <h3 class="card-title">进球确认 <span class="sub">逐球回看并标记「进了 / 没进」——判过的会用于过滤误报，并攒成训练数据</span>',
+    '  <div class="card" v-if="S.backendOk && S.jobId && S.jobId!==\'demo\' && S.jobId.indexOf(\'example_\')!==0">',
+    '    <h3 class="card-title">进球确认 ',
     '      <span class="grow"></span>',
     '      <el-tag size="small" type="warning" effect="plain" v-if="cand.list && cand.list.length">自动判定 {{ cand.list.length }} 球 · 已确认 {{ confirmed }} 个</el-tag>',
     '    </h3>',
@@ -229,30 +227,25 @@ window.PAGES['highlights'] = {
     '        </template>',
     '      </el-table-column>',
     '    </el-table>',
-    '    <div class="hint" v-else>点「读取本次自动判定」看这次分析把哪些时刻判成了进球；逐条标记后提交。</div>',
     '  </div>',
-
     '  <div class="card" v-if="!clips.length">',
-    '    <h3 class="card-title">高光集锦 <span class="sub">本片段没有可剪的回合</span></h3>',
+    '    <h3 class="card-title">{{ sampleReview ? \'逐球回放\' : \'高光集锦\' }} <span class="sub">没有可剪的回合</span></h3>',
     '    <el-alert type="info" :closable="false" show-icon',
-    '      title="没有高光片段 —— 因为这次分析没有判定出任何进球/出手"',
-    '      :description="emptyWhy" />',
-    '    <div class="hint" style="max-width:620px;text-align:left;margin-top:10px">',
-    '      技术说明：高光由后端在任务里勾选「生成高光片段」后产出'
-    + '（<code>make_highlights=true</code>，依赖 ffmpeg）；'
-    + '但没有进球/出手时，它会正确地产出**空集**，而不是随便剪几段充数。',
-    '    </div>',
+    '      title="暂无可用片段"',
+    '      ><copy-note label="说明">没有高光片段 —— 因为这次分析没有判定出任何进球/出手。{{ emptyWhy }}</copy-note></el-alert>',
+    '    <div class="hint" style="max-width:620px;text-align:left;margin-top:10px"><copy-note label="说明">',
+    '      技术说明：高光由后端在任务里勾选「生成高光片段」后产出（<code>make_highlights=true</code>，依赖 ffmpeg）；但没有进球/出手时，它会正确地产出**空集**，而不是随便剪几段充数。',
+    '    </copy-note></div>',
     '  </div>',
-
     '  <template v-else>',
     '    <div class="card">',
-    '      <h3 class="card-title">高光集锦 <span class="sub">数据来源：GET /api/games/{{ S.jobId }}/highlights · 片段文件经 /api/media/{{ S.jobId }}/… 访问</span>',
+    '      <h3 class="card-title">{{ sampleReview ? \'逐球回放\' : \'高光集锦\' }}',
     '        <span class="grow"></span>',
     '        <el-tag size="small" type="info" effect="plain">共 {{ clips.length }} 个片段 · 可播 {{ availableCount }} 个</el-tag>',
     '      </h3>',
     '      <div class="row">',
     '        <el-radio-group v-model="sortBy" size="small">',
-    '          <el-radio-button label="index">按精彩度</el-radio-button>',
+    '          <el-radio-button label="index">按序号</el-radio-button>',
     '          <el-radio-button label="points">按得分</el-radio-button>',
     '          <el-radio-button label="three">优先三分</el-radio-button>',
     '          <el-radio-button label="time">按时间</el-radio-button>',
@@ -262,14 +255,13 @@ window.PAGES['highlights'] = {
     '        <el-button size="small" @click="downloadIndex">下载索引 JSON</el-button>',
     '      </div>',
     '    </div>',
-
     '    <div class="card clip-grid">',
     '      <div class="clip" v-for="(c,i) in clips" :key="i">',
     '        <video v-if="playing[i] && playable(c) && !failed[i]" :src="clipSrc(c)" controls autoplay',
     '               @error="onErr(i)" style="width:100%"></video>',
     '        <div v-else class="thumb" @click="play(c,i)">',
     '          <span>▶</span>',
-    '          <span class="lab">{{ c.result === \'unknown\' ? \'待确认\' : c.made ? \'+\' + c.value + \' 分\' : \'未中\' }}</span>',
+    '          <span class="lab">{{ clipOutcome(c) }}</span>',
     '        </div>',
     '        <div class="body">',
     '          <div class="ttl">',
@@ -277,8 +269,8 @@ window.PAGES['highlights'] = {
     '          </div>',
     '          <div class="mt">',
     '            时刻 {{ mmss(c.t) }} · 区间 {{ mmss(c.start) }} ~ {{ mmss(c.end) }}<br>',
-    '            <span class="tl-badge" :class="c.team===\'home\'?\'h\':\'a\'">{{ c.team===\'home\' ? teamName(\'home\') : teamName(\'away\') }}</span>',
-    '            <span style="margin-left:6px">{{ c.player_id }}</span> · {{ c.value }} 分球<br>',
+    '            <span v-if="c.team===\'home\' || c.team===\'away\'" class="tl-badge" :class="c.team===\'home\'?\'h\':\'a\'">{{ c.team===\'home\' ? teamName(\'home\') : teamName(\'away\') }}</span>',
+    '            <span style="margin-left:6px">{{ c.player_id }}</span><span v-if="c.value != null && !c.value_assumed"> · {{ c.value }} 分球</span><br>',
     '            <span class="muted">文件：{{ c.path || \'（未生成）\' }}</span>',
     '          </div>',
     '          <div class="row" style="margin-top:8px">',
@@ -291,31 +283,26 @@ window.PAGES['highlights'] = {
     '        </div>',
     '      </div>',
     '    </div>',
-
     '    <div class="card">',
-    '      <h3 class="card-title">没有片段文件怎么办？ <span class="sub">两条兜底路径，答辩现场不会卡住</span></h3>',
-    '      <div class="hint">',
-    '        <b>路径 1 · 用原始视频按时间点跳转：</b>后端 <code>GET /api/games/{id}/video</code> 支持 Range 请求，',
-    '        下方的播放器点「跳到该回合」即可复现任意片段（片段的 start/end 已经在表里给出）。',
-    '      </div>',
+    '      <h3 class="card-title">没有片段文件怎么办？ </h3>',
     '      <div class="row" style="margin:10px 0">',
-    '        <el-select v-model="activeIdx" size="small" style="width:320px" placeholder="选择要跳转的片段">',
+    '        <el-select v-model="activeIdx" size="small" style="width:320px" placeholder="选择片段">',
     '          <el-option v-for="(c,i) in clips" :key="i" :label="\'#\'+(c.index===undefined?i+1:c.index)+\' \'+mmss(c.start)+\' \'+(c.player_id||\'\')" :value="i" />',
     '        </el-select>',
     '        <el-button size="small" type="primary" :disabled="activeIdx<0 || isDemo"',
     '                   @click="activeIdx>=0 && play(clips[activeIdx], activeIdx)">跳到该回合（原始视频）</el-button>',
     '      </div>',
     '      <video v-if="videoSrc" ref="raw" :src="videoSrc" controls preload="metadata"',
-    '             style="width:100%;max-height:360px;border-radius:10px;background:#000"></video>',
+    '             style="width:100%;max-height:360px;border-radius:var(--r-sm);background:var(--bg)"></video>',
     '      <el-alert v-else type="info" :closable="false"',
-    '                title="演示数据模式下没有原始视频；连接后端并新建 video 任务后，这里会显示原始视频播放器。" />',
+    '                title="暂无可用片段" >演示数据没有原视频</el-alert>',
     '      <el-divider />',
-    '      <div class="hint">',
+    '      <div class="hint"><copy-note label="说明">',
     '        <b>路径 2 · 本机用 ffmpeg 现场切片</b>（后端没装 ffmpeg 或只跑合成数据时）：',
     '        <div class="stage-log" style="margin-top:8px"><div>{{ ffmpegHint }}</div></div>',
     '        把 <code>-ss/-to</code> 换成上表任意片段的 <code>start/end</code> 即可；',
     '        <code>-c copy</code> 不重新编码，速度最快。',
-    '      </div>',
+    '      </copy-note></div>',
     '    </div>',
     '  </template>',
     '</div>'

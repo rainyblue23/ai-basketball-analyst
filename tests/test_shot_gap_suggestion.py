@@ -1,5 +1,5 @@
 import unittest
-from aihoop.legacy_shots.scorer import ScoreEngine
+from aihoop.legacy_shots.scorer import ScoreEngine, Attempt
 from aihoop.legacy_shots.stream import DEFAULT_CONFIG
 from aihoop.legacy_shots.detector import Det
 from aihoop.legacy_shots.adapter import to_attempts
@@ -26,6 +26,31 @@ class GapSuggestions(unittest.TestCase):
   self.assertTrue(row['suggested_made']);self.assertIsNone(row['crossing_t'])
   self.assertAlmostEqual(row['review_t'],.633)
   self.assertEqual(row['points'],0)
+ def test_review_time_without_rim_evidence_cannot_suggest(self):
+  for kind in ('miss','uncertain'):
+   with self.subTest(kind=kind):
+    e=ScoreEngine(DEFAULT_CONFIG,30)
+    e.attempt=Attempt(start_frame=0,start_t=0,release_xy=(100,80),dist_est_m=1,player_id=None)
+    e.attempt.review_t=.8
+    row=e._close(30,1,kind,None)
+    self.assertEqual(row['result'],'unknown')
+    self.assertIsNone(row['made']);self.assertIsNone(row['suggested_made'])
+    self.assertIsNone(row['review_t']);self.assertEqual(row['points'],0)
+    self.assertEqual(row['review_reason'],'no_rim_outcome_evidence')
+    self.assertEqual(row['evidence_grade'],'unknown')
+    rt=RawTrack(fps=30,duration=2)
+    shot=build_shots([to_attempts([row],rt)[0].to_dict()],[],[])[0]
+    self.assertFalse(shot.counts_for_score);self.assertIsNone(shot.suggested_made)
+    self.assertEqual(shot.review_reason,'no_rim_outcome_evidence')
+    self.assertEqual(shot.to_dict()['review_reason'],'no_rim_outcome_evidence')
+    self.assertEqual(_shot_event(shot,rt)['review_reason'],'no_rim_outcome_evidence')
+ def test_crossing_zero_is_valid_evidence_for_suggestion(self):
+  e=ScoreEngine(DEFAULT_CONFIG,30)
+  e.attempt=Attempt(start_frame=0,start_t=0,release_xy=(100,80),dist_est_m=1,player_id=None)
+  e.attempt.crossing_t=0.;e.attempt.review_t=.8
+  row=e._close(30,1,'uncertain',None)
+  self.assertTrue(row['suggested_made']);self.assertEqual(row['review_t'],.8)
+  self.assertIsNone(row['made']);self.assertEqual(row['points'],0)
  def test_wide_approach_is_not_valid_aperture(self):
   self.assertIsNone(sequence(x=130)[0]['suggested_made'])
  def test_gap_upper_bound(self):

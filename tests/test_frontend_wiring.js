@@ -158,4 +158,27 @@ assert.ok(ov.template.includes('evidenceFlagLabel'), '模板要真的渲染证�
 assert.ok(ov.template.includes('不是</b>投篮与否的判定') || ov.template.includes('不是投篮与否的判定'),
   '要写明证据提示不是投篮判定（实测真实投篮窗口里也会出现这些提示）');
 
+// ---- 6) 标定暂停提示：真实组件、页面挂载与注册 ----
+require(path.join(ROOT, 'web/components.js'));
+const gaps = window.COMPONENTS['calibration-gaps'];
+assert.ok(gaps && gaps.template.includes('坐标暂停'));
+assert.ok(gaps.template.includes('coverage.paused_frames'));
+const condition = gaps.template.match(/v-if="([^"]+)"/)[1];
+const visible = coverage => !!Function('coverage', 'return ('+condition+')')(coverage);
+for (const game of [null, {}, {meta:{}}, {meta:{sliding_calibration:{}}}]) {
+  assert.equal(gaps.computed.coverage.call({game}), undefined);
+  assert.equal(visible(gaps.computed.coverage.call({game})), false);
+}
+const coverage = {analyzed_frames:240,paused_frames:8,paused_fraction:8/240,ranges_s:[[16/30,20/30],[31/30,35/30]]};
+assert.equal(gaps.computed.coverage.call({game:{meta:{sliding_calibration:{coverage}}}}), coverage);
+assert.equal(visible(coverage), true);
+assert.equal(visible({...coverage, paused_frames:0}), false);
+for (const page of ['tactics','shotchart']) {
+  require(path.join(ROOT,'web/pages/'+page+'.js'));
+  assert.ok(window.PAGES[page].template.includes('<calibration-gaps :game="game" />'));
+}
+assert.match(read('web/app.js'), /app\.component\('calibration-gaps', window\.COMPONENTS\['calibration-gaps'\]\)/);
+assert.ok(gaps.template.includes('coverage.ranges_s'));
+assert.ok(gaps.template.includes('不含结束时刻'));
+
 console.log('Frontend wiring: videoUrl/jobVideoUrl + 取帧前置条件 + 位置未知不出热区 + 候选标签在 methods + 跨段候选单列 + 证据提示非判定 (checks passed)');

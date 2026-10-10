@@ -14,7 +14,7 @@ import json
 import math
 from typing import Optional
 
-from .model import Shot, ShotValue
+from .model import Shot, ShotValue, player_label
 from .rules import zone_of
 
 
@@ -23,8 +23,10 @@ def build_report_json(game: dict, players: list[dict], shots: list[Shot],
     home, away = game["teams"]["home"], game["teams"]["away"]
     hs, as_ = home["stats"], away["stats"]
 
+    labels={p["player_id"]:player_label(p) for p in players}
+
     def top(rows, key, n=3):
-        return [{"player": r["name"], "value": r[key]} for r in
+        return [{"player": player_label(r), "value": r[key]} for r in
                 sorted(rows, key=lambda x: -x[key])[:n] if r_has(r, key)]
 
     def r_has(r, k):
@@ -57,8 +59,9 @@ def build_report_json(game: dict, players: list[dict], shots: list[Shot],
                                          "ftm", "fta", "points")},
         },
         "tactics": _compact_tactics(tactics),
+        "calibration_coverage": ((game.get("meta") or {}).get("sliding_calibration") or {}).get("coverage"),
         "hot_zones": _hot_zones(shots),
-        "key_shots": _key_shots(shots, game),
+        "key_shots": [dict(k,player_name=labels.get(k["player_id"],"号码待确认")) for k in _key_shots(shots, game)],
         "carry_in": game.get("carry_in") or {},
         "confidence": {
             "total": len(shots),
@@ -115,6 +118,9 @@ def build_report_md(game: dict, players: list[dict], shots: list[Shot],
 
     A(f"# {r['title']}")
     A("")
+    coverage = r.get("calibration_coverage")
+    if coverage:
+        A(f"标定分析范围内暂停坐标输出：{coverage['paused_frames']}/{coverage['analyzed_frames']} 帧（{coverage['paused_fraction']:.1%}）。不代表未检测到球员。")
     jg = game.get("judgement") or {}
     if jg.get("state") == "cannot_judge":
         # 判不出来时**不能**只甩一个 0:0 了事 —— 那会被读成「双方都没得分」。
@@ -264,7 +270,7 @@ def build_report_md(game: dict, players: list[dict], shots: list[Shot],
     A("| 球员 | 球队 | 得分 | 投篮 | 三分 | 罚球 | 篮板 | 助攻 |")
     A("|---|---|---|---|---|---|---|---|")
     for p in players[:12]:
-        A(f"| {p['name']} | {p['team']} | {p['points']} | "
+        A(f"| {player_label(p)} | {p['team']} | {p['points']} | "
           f"{p['fgm']}/{p['fga']} | {p['tpm']}/{p['tpa']} | "
           f"{p['ftm']}/{p['fta']} | {p['reb']} | {p['ast']} |")
     A("")
@@ -289,7 +295,7 @@ def build_report_md(game: dict, players: list[dict], shots: list[Shot],
     A("## 五、关键球")
     A("")
     for k in r["key_shots"]:
-        A(f"- 第{k['period']}节 {_mmss(k['t'])} — 球员 {k['player_id']} "
+        A(f"- 第{k['period']}节 {_mmss(k['t'])} — 球员 {k['player_name']} "
           f"在 {k['zone']}（距篮 {k['distance']}m）命中 {k['value']} 分球")
     A("")
 
@@ -319,7 +325,7 @@ def build_report_md(game: dict, players: list[dict], shots: list[Shot],
     _tactics_section(A, game, tactics)
     A("---")
     A("")
-    A("*本报告由 AI 篮球分析软件自动生成：计分规则引擎负责 1/2/3 分判定与"
+    A("*本报告由哨响之后自动生成：计分规则引擎负责 1/2/3 分判定与"
       "命中融合，统计口径与热区划分均为自研实现。*")
     return "\n".join(L)
 

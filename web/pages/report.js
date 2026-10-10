@@ -52,7 +52,8 @@ window.PAGES['report'] = {
     },
     keyShots: function () {
       var j = this.reportJson;
-      return (j && j.key_shots) || [];
+      var labels={};(this.S.players||[]).forEach(function(p){labels[p.player_id]=window.D.playerLabel(p);});
+      return ((j && j.key_shots) || []).map(function(k){return Object.assign({},k,{player_name:labels[k.player_id]||k.player_name||'号码待确认'});});
     },
     // 位置未知（占位坐标）的出手条数：热区/距离类结论必须排除它们，
     // 否则会把占位点聚成"全在禁区"的假热区（后端 export/report 已按同一口径挡掉）。
@@ -81,7 +82,7 @@ window.PAGES['report'] = {
         function top(k) {
           return list.slice().sort(function (a, b) { return b[k] - a[k]; }).slice(0, 3)
             .filter(function (p) { return p[k] > 0; })
-            .map(function (p) { return { player: p.name, value: p[k] }; });
+            .map(function (p) { return { player: window.D.playerLabel(p), value: p[k] }; });
         }
         out[t] = { scoring: top('points'), rebounds: top('reb'), assists: top('ast') };
       });
@@ -257,13 +258,13 @@ window.PAGES['report'] = {
   template: [
     '<div>',
     '  <div class="card" v-if="!markdown && !game">',
-    '    <el-empty description="暂无战报，请先运行分析任务或载入演示数据" />',
+    // 同样改成"按情况说清"，别让跑过任务的用户以为是自己没跑（见 stats.js 的同类注释）
+    '    <el-empty :description="S.jobId ? \'这次分析没有产出战报内容（原因见页面顶部提示）\' : \'还没有选中分析任务：到「上传与分析」页跑一次，或在顶栏「当前任务」里挑一个\'" />',
     '  </div>',
-
     '  <template v-else>',
     '    <!-- ① 导出按钮区 -->',
     '    <div class="card">',
-    '      <h3 class="card-title">导出与报告 <span class="sub">数据来源：GET /api/games/{{ S.jobId }}/report 与 /export?fmt=…</span>',
+    '      <h3 class="card-title">导出与报告',
     '        <span class="grow"></span>',
     '        <el-tag :type="S.backendOk && !S.demoMode ? \'success\' : \'warning\'" size="small" effect="plain">',
     '          {{ S.backendOk && !S.demoMode ? \'后端导出（/export）\' : \'本地降级导出\' }}',
@@ -277,47 +278,35 @@ window.PAGES['report'] = {
     '                     :loading="downloading===e.fmt" @click="download(e)">下载</el-button>',
     '        </div>',
     '      </div>',
-    '      <div class="hint" style="margin-top:10px">',
-    '        后端可用时点击直接命中 <code>GET /api/games/{id}/export?fmt=csv_stats|csv_shots|json|report_md</code>；',
-    '        演示数据模式下前端用同一套统计口径在浏览器里现场生成等价文件（CSV 带 UTF-8 BOM，Excel 双击不乱码）。',
-    '        最后两个卡片对应后端产物目录里的原始文件（stats.csv / shots.csv），经 <code>/api/media/{id}/…</code> 取回。',
-    '      </div>',
     '    </div>',
-
     '    <!-- ② 可信度 + 关键球 + 高效区 -->',
     '    <div class="grid grid-3">',
     '      <div class="card">',
     '        <h3 class="card-title">数据可信度 <span class="sub">report.json · confidence</span></h3>',
     '        <div class="row" style="gap:18px">',
-    '          <el-statistic title="自动识别出手" :value="confidence.total || 0" />',
+    '          <el-statistic :title="game && game.meta && game.meta.sample_review ? \'人工复核出手\' : \'自动识别出手\'" :value="confidence.total || 0" />',
     '          <el-statistic title="低置信度待复核" :value="confidence.needs_review || 0" />',
     '        </div>',
     '        <div style="margin-top:12px">',
-    '          <div class="hint">自动判定准确率参考值</div>',
     '          <el-progress :percentage="Math.round((confidence.rate||0)*100)" :stroke-width="12"',
     '                       :color="(confidence.rate||0) > 0.85 ? \'#22a06b\' : \'#f5a623\'" />',
     '        </div>',
-    '        <div class="hint" style="margin-top:10px">',
-    '          低置信度出手在「人工复核」页一键改判，修正结果会写回统计口径（分值/命中）。',
-    '        </div>',
     '      </div>',
-
     '      <div class="card">',
     '        <h3 class="card-title">关键球 <span class="sub">report.json · key_shots（末节得分球与三分）</span></h3>',
     '        <el-table :data="keyShots" size="small" border empty-text="暂无关键球">',
     '          <el-table-column label="时刻" width="76"><template #default="s">{{ mmss(s.row.t) }}</template></el-table-column>',
     '          <el-table-column prop="period" label="节" width="52" align="center" />',
     '          <el-table-column label="球队" width="90"><template #default="s">{{ teamName(s.row.team) }}</template></el-table-column>',
-    '          <el-table-column prop="player_id" label="球员" min-width="80" />',
+    '          <el-table-column prop="player_name" label="球员" min-width="80" />',
     '          <el-table-column prop="zone" label="区域" min-width="96" />',
     '          <el-table-column prop="value" label="分值" width="62" align="center" />',
     '          <el-table-column prop="distance" label="距篮(m)" width="86" align="center" />',
     '        </el-table>',
     '      </div>',
-
     '      <div class="card">',
-    '        <h3 class="card-title">高效出手区域 <span class="sub">report.json · hot_zones（按每次出手得分排序）</span></h3>',
-    '        <p v-if="!hotZones.length && noLocation" class="hint">本片段有 <b>{{ noLocation }}</b> 次出手的位置是占位估计（缺少这个机位的球场标定），所以不给热区 —— 与其画一张全是「禁区」的假热区，不如空着。比分与命中判定不依赖坐标。</p>',
+    '        <h3 class="card-title">高效出手区域 </h3>',
+    '        <p v-if="!hotZones.length && noLocation" class="hint"><copy-note label="说明">本片段有 <b>{{ noLocation }}</b> 次出手的位置是占位估计（缺少这个机位的球场标定），所以不给热区 —— 与其画一张全是「禁区」的假热区，不如空着。比分与命中判定不依赖坐标。</copy-note></p>',
     '        <el-table :data="hotZones" size="small" border empty-text="暂无数据">',
     '          <el-table-column prop="zone" label="区域" min-width="104" />',
     '          <el-table-column prop="att" label="出手" width="66" align="center" />',
@@ -327,7 +316,6 @@ window.PAGES['report'] = {
     '        </el-table>',
     '      </div>',
     '    </div>',
-
     '    <!-- ③ 得分榜（来自 report.json.leaders） -->',
     '    <div class="card">',
     '      <h3 class="card-title">两队领先球员 <span class="sub">report.json · leaders</span></h3>',
@@ -348,10 +336,9 @@ window.PAGES['report'] = {
     '        </div>',
     '      </div>',
     '    </div>',
-
     '    <!-- ④ 战报正文 -->',
     '    <div class="card">',
-    '      <h3 class="card-title">比赛分析报告 <span class="sub">report.markdown · 轻量 Markdown 渲染（标题/表格/列表/粗体）</span>',
+    '      <h3 class="card-title">比赛分析报告 ',
     '        <span class="grow"></span>',
     '        <el-button size="small" text @click="copyMd">复制 Markdown</el-button>',
     '        <el-button size="small" text :loading="polishing" @click="polish">LLM 润色（可选）</el-button>',

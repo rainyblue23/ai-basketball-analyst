@@ -1,0 +1,55 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>哨响之后 · 球场标定</title><style>
+body{margin:0;background:#020617;color:#F8FAFC;font:16px "Fira Sans","Microsoft YaHei",system-ui,sans-serif;color-scheme:dark;-webkit-font-smoothing:antialiased;line-height:1.6}
+main{max-width:1100px;margin:auto;padding:24px}h1{font-size:26px;text-wrap:balance}p{line-height:1.7;color:#CBD5E1}
+.grid{display:grid;grid-template-columns:1fr 300px;gap:20px}.panel{background:#0E1223;border:1px solid #334155;padding:20px;border-radius:14px}
+canvas{width:100%;touch-action:none;background:#080e17}video{width:100%;background:#000}
+button,a{display:inline-block;background:#1E40AF;color:white;padding:10px 15px;border:0;border-radius:8px;margin:5px;cursor:pointer;text-decoration:none;touch-action:manipulation;transition:transform 120ms cubic-bezier(.2,0,0,1),background-color 120ms cubic-bezier(.2,0,0,1)}
+button:hover,a:hover{background:#1D4ED8}button:active,a:active{transform:scale(.96)}button:disabled{opacity:.4;cursor:not-allowed}
+button.primary{background:#1E40AF;font-size:17px;padding:12px 22px}
+select,input[type=number]{padding:8px;margin:4px 0;width:100%;box-sizing:border-box;background:#020617;color:#F8FAFC;border:1px solid #334155;border-radius:6px}
+svg{width:100%}label{display:block;margin:10px 0}
+#status{min-height:24px;color:#22C55E;font-size:15px}
+.picked{font-size:14px;color:#CBD5E1;margin:6px 0}.picked b{color:#FCD34D}
+.steps{margin:0 0 14px;padding-left:22px;font-size:14px;color:#94A3B8}.steps li{margin:6px 0}
+.steps li.on{color:#F8FAFC;font-weight:600}.steps li.on::marker{color:#D97706}
+.steps li.done{color:#22C55E}
+#confirmBox{margin-top:14px;border:1px solid #334155;border-radius:10px;padding:12px 14px;background:#020617}
+#confirmBox h3{margin:0 0 6px;font-size:15px;color:#93c5fd}
+.why{font-size:13px;color:#FCD34D;margin:6px 0 0}
+:where(a,button,select,input,canvas,video):focus-visible{outline:2px solid #D97706;outline-offset:2px}
+@media(max-width:700px){.grid{grid-template-columns:1fr}}
+</style><main><a id="back">← 返回上传预览 / 跳过</a><h1>让站位对应到球场</h1>
+<p>仅用于固定机位、无平移缩放或切镜头的片段。第一版使用标准 FIBA 限制区尺寸；非标准球场请跳过。点的是<strong>地面交点</strong>，不是篮筐。</p>
+<div class="grid">
+<section class="panel">
+  <ol class="steps" id="steps">
+    <li id="step1">选一张能看清地面线的画面（拖进度条 → 点「截取当前画面」，或直接用系统预览）</li>
+    <li id="step2">选「这一下要点哪个标志点」，再在画面上点它 —— 攒够 4 个即可，看不清的点不点</li>
+    <li id="step3">点「预览球场线」，看黄线是否贴合真实球场线</li>
+    <li id="step4">勾选下方两个确认框，点「保存标定并返回」</li>
+  </ol>
+  <video id="video" crossorigin="anonymous" controls preload="metadata"></video>
+  <button id="capture">① 截取当前画面并开始点选</button>
+  <select id="picture" aria-label="选择系统预览画面"></select>
+  <label>复用机位标定<select id="profile"><option value="">本次手工标定</option></select></label>
+  <select id="landmark" aria-label="选择要标记的地面标志点"></select>
+  <p id="picked"></p>
+  <canvas id="court"></canvas>
+  <p id="step"></p>
+  <button id="undo">撤销一点</button><button id="reset">重新点选</button>
+  <button id="preview" class="primary">③ 预览球场线</button>
+  <div id="confirmBox">
+    <h3>④ 核对后保存</h3>
+    <label><input id="fixed" type="checkbox"> 这段视频<b>全程固定</b>，且限制区线符合右侧示意图</label>
+    <label><input id="aligned" type="checkbox" disabled> 我已在画面上核对：黄线贴合真实球场线</label>
+    <label>存为机位（选填）<input id="profileName" maxlength="60" placeholder="例如：主场看台固定机位"></label>
+    <button id="save" disabled>保存标定并返回</button>
+    <button id="clear" type="button">移除已有标定</button>
+    <p id="why" class="why"></p>
+  </div>
+</section>
+<aside class="panel"><h2>示意图（默认四点）</h2><svg viewBox="0 0 240 240" aria-label="限制区四个地面角点示意图"><path d="M25 190H215 M65 190V45H175V190" stroke="#9bbedb" stroke-width="3" fill="none"/><g fill="#f4bd5f"><circle cx="65" cy="190" r="12"/><circle cx="175" cy="190" r="12"/><circle cx="65" cy="45" r="12"/><circle cx="175" cy="45" r="12"/></g><g text-anchor="middle" fill="#101722"><text x="65" y="196">1</text><text x="175" y="196">2</text><text x="65" y="51">3</text><text x="175" y="51">4</text></g><g fill="white" text-anchor="middle"><text x="120" y="225">底线</text><text x="120" y="25">罚球线</text></g></svg>
+<p>左右以示意图为准，与摄像机画面左右不一定相同。画面里只看得见一两个点时，就只点看得见的那些（另加两侧三分底角、罚球圈端点也行），凑够 4 个即可。</p>
+<p id="quality" class="picked"></p>
+</aside></div><p id="status" role="status"></p></main><script src="./hoopai-calibration.js?v=2-profiles"></script></html>

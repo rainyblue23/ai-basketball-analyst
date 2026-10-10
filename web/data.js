@@ -142,13 +142,22 @@
    * 规范化 players.json（数组）。
    * 数据来源接口：GET /api/games/{job_id}/players
    */
+  D.playerLabel = function (p) {
+    p = p || {};
+    if (p.jersey !== null && p.jersey !== undefined && /^[0-9]{1,2}$/.test(String(p.jersey))) return String(p.jersey) + '号';
+    var name = String(p.name || '');
+    if (name && name !== (p.player_id || p.id) && !/^T[0-9]+$/.test(name) && name !== 'UNASSIGNED' && name !== '号码待确认') return name;
+    if (/^[AB][1-9][0-9]?$/.test(String(p.short_label || ''))) return String(p.short_label);
+    return '号码待确认';
+  };
+
   D.normalizePlayers = function (list) {
     list = Array.isArray(list) ? list : [];
     var keys = ['points', 'fgm', 'fga', 'tpm', 'tpa', 'ftm', 'fta',
       'reb', 'ast', 'stl', 'blk', 'tov', 'pf'];
     list.forEach(function (p) {
       keys.forEach(function (k) { p[k] = Number(p[k] || 0); });
-      p.name = p.name || p.player_id;
+      p.name = D.playerLabel(p);
       p.team = p.team || 'home';
       p.fg_pct = p.fg_pct === undefined || p.fg_pct === null ? (p.fga ? p.fgm / p.fga : 0) : p.fg_pct;
       p.tp_pct = p.tp_pct === undefined || p.tp_pct === null ? (p.tpa ? p.tpm / p.tpa : 0) : p.tp_pct;

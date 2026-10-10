@@ -17,10 +17,17 @@ services:
     volumes:
       - ./data:/app/data          # 视频、标定、任务库
       - ./out:/app/out            # 分析产物
-      - ./web:/app/web:ro         # 前端静态文件（只读挂载）
+      - ./models:/app/models:ro   # 服务器自行提供的模型权重
     environment:
       - PYTHONPATH=/app/src
       - PYTHONUNBUFFERED=1
+      - AIHOOP_REGISTER_CODE=${AIHOOP_REGISTER_CODE}
+      - AIHOOP_ALLOWED_ORIGINS=${AIHOOP_ALLOWED_ORIGINS:-}
+      - AIHOOP_COOKIE_SECURE=${AIHOOP_COOKIE_SECURE:-0}
+      - AIHOOP_MODELS=/app/models
+      - YOLO_CONFIG_DIR=/app/data/ultralytics
+    env_file:
+      - .env
     command: uvicorn aihoop.api:app --host 0.0.0.0 --port 8000
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
@@ -30,16 +37,3 @@ services:
       start_period: 10s
     restart: unless-stopped
 
-  # 可选：把前端也托管起来（用 nginx 提供静态文件并反代 API）
-  # 不启也不影响，直接双击 web/index.html 一样能用。
-  web:
-    image: nginx:alpine
-    container_name: aihoop-web
-    ports:
-      - "8080:80"
-    volumes:
-      - ./web:/usr/share/nginx/html:ro
-    depends_on:
-      - api
-    restart: unless-stopped
-    profiles: ["with-web"]

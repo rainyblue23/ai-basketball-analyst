@@ -577,9 +577,20 @@ class ScoreEngine:
                reason: str | None = None, suggested_made: bool | None = None) -> dict[str, Any]:
         assert self.attempt is not None
         at = self.attempt
+        # Leaving the broad approach area is not outcome evidence when the
+        # track never reached the rim band and has no observed crossing.
+        # Retain the event/time for review, but do not manufacture a miss.
+        if kind == EVENT_MISS and not at.entered and at.crossing_t is None:
+            kind = EVENT_UNCERTAIN
+            reason = "no_rim_outcome_evidence"
         if kind == EVENT_UNCERTAIN and at.review_t is not None:
-            suggested_made = True
-            reason = "occlusion_descent_suggestion"
+            # A review timestamp alone must not upgrade a no-evidence result.
+            if at.entered or at.crossing_t is not None:
+                suggested_made = True
+                reason = "occlusion_descent_suggestion"
+            else:
+                suggested_made = None
+                reason = reason or "no_rim_outcome_evidence"
         points, verified = (self._points(at.dist_est_m) if kind == EVENT_MAKE else (0, False))
         ev = {
             "type": kind,

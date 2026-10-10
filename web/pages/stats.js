@@ -23,6 +23,7 @@ window.PAGES['stats'] = {
     };
   },
   computed: {
+    sampleReview: function () { return ((this.S.game || {}).meta || {}).sample_review || null; },
     players: function () { return this.S.players || []; },
     game: function () { return this.S.game; },
 
@@ -61,7 +62,7 @@ window.PAGES['stats'] = {
           trigger: 'axis', axisPointer: { type: 'shadow' },
           formatter: function (ps) {
             var row = top[ps[0].dataIndex];
-            return row.name + '<br/>得分 ' + row.points +
+            return window.D.playerLabel(row) + '<br/>得分 ' + row.points +
               '<br/>投篮 ' + row.fgm + '/' + row.fga + '（' + window.D.pctSmart(row.fg_pct) + '）' +
               '<br/>三分 ' + row.tpm + '/' + row.tpa + '（' + window.D.pctSmart(row.tp_pct) + '）' +
               '<br/>罚球 ' + row.ftm + '/' + row.fta;
@@ -69,13 +70,13 @@ window.PAGES['stats'] = {
         },
         grid: { left: 96, right: 48, top: 12, bottom: 24, containLabel: true },
         xAxis: { type: 'value', name: '得分' },
-        yAxis: { type: 'category', data: top.map(function (p) { return p.name; }), axisLabel: { fontSize: 11.5 } },
+        yAxis: { type: 'category', data: top.map(function (p) { return window.D.playerLabel(p); }), axisLabel: { fontSize: 11.5 } },
         series: [{
           type: 'bar', barMaxWidth: 18,
           label: { show: true, position: 'right', formatter: '{c} 分' },
           itemStyle: {
             borderRadius: [0, 4, 4, 0],
-            color: function (p) { return top[p.dataIndex].team === 'home' ? '#2f6fed' : '#f2762e'; }
+            color: function (p) { return top[p.dataIndex].team === 'home' ? '#3D8BFF' : '#FF7A33'; }
           },
           data: top.map(function (p) { return p.points; })
         }]
@@ -85,7 +86,7 @@ window.PAGES['stats'] = {
     compareOptions: function () {
       var self = this;
       return this.players.map(function (p) {
-        return { value: p.player_id, label: p.name + '（' + window.D.teamName(self.game, p.team) + '）' };
+        return { value: p.player_id, label: window.D.playerLabel(p) + '（' + window.D.teamName(self.game, p.team) + '）' };
       });
     },
 
@@ -114,7 +115,7 @@ window.PAGES['stats'] = {
         return m;
       }
       var mp = maxOf('points'), mr = maxOf('reb'), ma = maxOf('ast');
-      var colors = ['#2f6fed', '#f2762e', '#22a06b', '#8b5cf6'];
+      var colors = ['#3D8BFF', '#FF7A33', '#22a06b', '#8b5cf6'];
       return {
         tooltip: {},
         legend: { bottom: 0 },
@@ -133,7 +134,7 @@ window.PAGES['stats'] = {
           symbolSize: 4,
           data: sel.map(function (p, i) {
             return {
-              name: p.name,
+              name: window.D.playerLabel(p),
               value: [
                 Math.round(p.points / mp * 100),
                 Math.round(p.reb / mr * 100),
@@ -212,26 +213,36 @@ window.PAGES['stats'] = {
   },
   template: [
     '<div>',
-    '  <div class="card" v-if="!players.length">',
-    '    <el-empty description="暂无球员数据，请先在上传页创建分析任务或载入演示数据" />',
-    '  </div>',
+    '  <section class="card" v-if="sampleReview">',
+    '    <h3 class="card-title">全片出手统计 <el-tag size="small" effect="plain">人工复核</el-tag></h3>',
+    '    <table class="data-table" style="width:100%;text-align:left"><thead><tr><th>类型</th><th>出手</th><th>命中</th><th>命中率</th></tr></thead><tbody>',
+    '      <tr><td>运动战</td><td>{{ sampleReview.field_attempts }}</td><td>{{ sampleReview.field_made }}</td><td>{{ sampleReview.field_attempts ? Math.round(100*sampleReview.field_made/sampleReview.field_attempts) : 0 }}%</td></tr>',
+    '      <tr><td>罚球</td><td>{{ sampleReview.free_throw_attempts }}</td><td>{{ sampleReview.free_throw_made }}</td><td>{{ sampleReview.free_throw_attempts ? Math.round(100*sampleReview.free_throw_made/sampleReview.free_throw_attempts) : 0 }}%</td></tr>',
+    '    </tbody></table>',
+    '    <p>共 {{ sampleReview.attempts }} 次出手。队别与出手人尚未确认，不拆分个人得分。</p>',
+    '    <a href="#/overview">逐球时间轴</a> · <a href="#/highlights">全部出手回放</a> · <a href="#/report">查看战报与导出</a>',
+    '  </section>',
 
-    '  <template v-else>',
+    '  <div class="card" v-if="!players.length && !sampleReview">',
+    // 原文案是「请先在上传页创建分析任务或载入演示数据」—— 用户明明跑过任务却看到这句，
+    // 会以为是自己的操作漏了（实测：跑的是 8 秒片段 → 0 名球员）。分两种情况说清楚。
+    '    <el-empty :description="S.jobId ? \'这次分析没有识别到球员，所以统计表是空的（原因见页面顶部提示）\' : \'还没有选中分析任务：到「上传与分析」页跑一次，或在顶栏「当前任务」里挑一个\'" />',
+    '  </div>',
+    '  <template v-if="players.length">',
     '    <div class="grid grid-court">',
     '      <div class="card">',
-    '        <h3 class="card-title">得分榜 <span class="sub">数据来源：GET /api/games/{{ S.jobId }}/players（players.json）</span></h3>',
+    '        <h3 class="card-title">得分榜</h3>',
     '        <echarts-box :option="scoreOption" height="380px" />',
     '      </div>',
     '      <div class="card">',
-    '        <h3 class="card-title">球队数据对比 <span class="sub">game.teams[side].stats</span></h3>',
+    '        <h3 class="card-title">球队数据对比</h3>',
     '        <stat-compare v-for="(m,i) in teamMetrics" :key="i" :label="m.label"',
     '                      :home="m.home" :away="m.away" :is-pct="m.isPct"',
     '                      :home-name="teamName(\'home\')" :away-name="teamName(\'away\')" />',
     '      </div>',
     '    </div>',
-
     '    <div class="card">',
-    '      <h3 class="card-title">球员统计表 <span class="sub">表头可排序；点击行首箭头展开该球员出手散点（左右半场已镜像到同一侧半场）</span>',
+    '      <h3 class="card-title">球员统计表 ',
     '        <span class="grow"></span>',
     '        <el-radio-group v-model="teamFilter" size="small">',
     '          <el-radio-button label="all">全部</el-radio-button>',
@@ -297,9 +308,8 @@ window.PAGES['stats'] = {
     '        <el-table-column prop="pf" label="犯规" width="80" sortable align="center" />',
     '      </el-table>',
     '    </div>',
-
     '    <div class="card">',
-    '      <h3 class="card-title">球员能力对比（雷达图） <span class="sub">得分/篮板/助攻按全体最大值归一，命中率类直接取百分比</span></h3>',
+    '      <h3 class="card-title">球员能力对比（雷达图） </h3>',
     '      <el-select v-model="compare" multiple filterable collapse-tags placeholder="选择 1~4 名球员进行对比"',
     '                 style="width:100%;max-width:640px">',
     '        <el-option v-for="o in compareOptions" :key="o.value" :label="o.label" :value="o.value" />',

@@ -17,7 +17,9 @@
 window.PAGES = window.PAGES || {};
 
 /** 每个模块一句"能看什么"，用来在首页卡片上解释（菜单表里只有标题） */
+var HOME_COVERS = {};
 var HOME_BLURBS = {
+  examples: '直接看视频与提前生成的分析结果',
   upload: '选一段比赛视频 → 自动认出出手与进球，产出比分、命中率、热区与战报',
   overview: '比分、节次得分、命中率、关键事件时间轴',
   review: '把结果未知或系统建议的球逐条确认，改判会写回比分与统计',
@@ -25,8 +27,8 @@ var HOME_BLURBS = {
   shotchart: '投篮点分布与热区（命中的球才有位置，未知的不进图）',
   tactics: '阵型与回合级别的战术看图（需要标定球场）',
   highlights: '自动切片生成的高光片段（逐段可播放/下载）',
-  report: '导出 CSV / Markdown 战报 / 高光清单，一键交给别人复查',
-  train: '逐球标注"进没进"，攒人工样本用来改进判据'
+  report: '导出 CSV / Markdown 战报 / 高光清单，一键交给别人复查'
+  // train: 已下线（用户要求删除「训练标注」模块），说明一并移除
 };
 
 window.PAGES['home'] = {
@@ -61,9 +63,10 @@ window.PAGES['home'] = {
     cards: function () {
       var menus = window.MENUS || [];
       return menus.filter(function (m) { return m.key !== 'home'; })
+        .sort(function(a,b) { var order = ['upload','overview','tactics']; var ai = order.indexOf(a.key), bi = order.indexOf(b.key); return (ai < 0 ? 3 : ai) - (bi < 0 ? 3 : bi); })
         .map(function (m) {
           return { key: m.key, icon: m.icon, title: m.title,
-                   desc: HOME_BLURBS[m.key] || '', href: '#/' + m.key };
+                   cover: 'modules/' + m.key + '.svg', art: (window.MODULE_ART || {})[m.key] || '', desc: HOME_BLURBS[m.key] || '', href: '#/' + m.key };
         });
     }
   },
@@ -92,26 +95,25 @@ window.PAGES['home'] = {
   created: function () { this.loadRecent(); },
   template: [
     '<div class="page-home">',
-
-    // ---- ① hero：这是什么 + 从哪开始 ----
-    '  <div class="card">',
-    '    <h3 class="card-title">把比赛视频变成可复查的数据',
-    '      <span class="sub">上传一段比赛/训练视频，自动认出出手与进球，产出比分、命中率、热区、高光与文字战报</span>',
-    '    </h3>',
-    '    <div class="hint" style="margin:6px 0 14px">',
-    '      第一步只需要一段视频；球场标定是<strong>可选</strong>的 —— 不标也能出比分、命中率、球员统计与战报，',
-    '      只有热图、战术图和 2 分/3 分区分需要标定。',
+    // 首页 hero：左边文字、右边原球场照片。图片只做陪衬（文字区始终落在纯色块上，
+    // 不会出现"字压在照片上读不清"的情况）；图片是 CC0，说明见 web/img/CREDITS.md。
+    '  <div class="card home-hero">',
+    '    <div class="hero-text">',
+    '      <h3 class="card-title"><span>把比赛视频</span><span>变成可复查的数据</span>',
+    // 灰色说明只留一行「怎么做 / 得到什么」；为什么、边界这类内容放进点开的说明里，
+    // 不要把整段理由摊在页面上（用户反馈：灰色说明太多太长）。
+    '      </h3>',
+    '      <div class="row" style="gap:10px;flex-wrap:wrap">',
+    '        <el-button type="primary" @click="go(\'upload\')">开始分析一段视频</el-button>',
+    '        <el-button plain @click="go(\'examples\')">先看样例比赛</el-button>',
+    '        <el-button v-if="hasGame" plain @click="go(\'overview\')">看当前比赛的比分</el-button>',
+    '        <el-button v-if="hasGame && reviewCount" plain type="warning" @click="go(\'review\')">',
+    '          去复核待确认的 {{ reviewCount }} 球</el-button>',
+    '        <el-tag v-if="!backendOk" type="warning" effect="plain">后端未连接</el-tag>',
+    '      </div>',
     '    </div>',
-    '    <div class="row" style="gap:10px;flex-wrap:wrap">',
-    '      <el-button type="primary" @click="go(\'upload\')">开始分析一段视频</el-button>',
-    '      <el-button v-if="hasGame" plain @click="go(\'overview\')">看当前比赛的比分</el-button>',
-    '      <el-button v-if="hasGame && reviewCount" plain type="warning" @click="go(\'review\')">',
-    '        去复核待确认的 {{ reviewCount }} 球</el-button>',
-    '      <el-tag v-if="!backendOk" type="warning" effect="plain">后端未连接：先双击「启动后端.bat」，再点右上角「重新探测」</el-tag>',
-    '    </div>',
+    '    <div class="hero-art" aria-hidden="true"></div>',
     '  </div>',
-
-    // ---- ② 当前状态：比赛快照 / 来源 ----
     '  <div class="card">',
     '    <h3 class="card-title">当前比赛',
     '      <span class="sub">{{ backendOk ? \'数据来自后端\' : \'演示数据模式（未连后端）\' }}</span>',
@@ -122,25 +124,23 @@ window.PAGES['home'] = {
     '      <div class="kpi"><div class="k">待复核</div><div class="v">{{ reviewCount }}</div></div>',
     '      <div class="kpi"><div class="k">任务</div><div class="v mono">{{ (S.jobId || \'—\').slice(0, 8) }}</div></div>',
     '    </div>',
-    '    <div v-else class="hint">还没有分析结果。点上面「开始分析一段视频」新建一个任务；',
-    '      跑完后这里会显示比分与待复核球数。</div>',
+    '    <div v-else class="hint">还没有分析结果</div>',
     '  </div>',
-
-    // ---- ③ 模块入口卡片 ----
     '  <div class="card">',
     '    <h3 class="card-title">各模块 <span class="sub">点卡片直接进入</span></h3>',
     '    <div class="grid grid-3" style="margin-top:6px">',
-    '      <a v-for="c in cards" :key="c.key" :href="c.href" class="home-card">',
-    '        <div class="home-card-head"><span class="home-card-ico">{{ c.icon }}</span>',
+    '      <a v-for="c in cards" :key="c.key" :href="c.href" class="home-card" :class="{ hasCover: c.cover }">',
+    '        <div v-if="c.art" class="module-cover" aria-hidden="true" v-html="c.art"></div>',
+    '        <div class="home-card-head"><span class="home-card-ico" v-html="c.icon"></span>',
     '          <b>{{ c.title }}</b></div>',
+    // 每张卡片一行说明，直接显示 —— 原来这里是 10 个「模块说明」按钮，
+    // 首页一眼看过去全是这种小按钮，很难看（用户反馈）。
     '        <div class="home-card-desc">{{ c.desc }}</div>',
     '      </a>',
     '    </div>',
     '  </div>',
-
-    // ---- ④ 最近任务 ----
     '  <div class="card" v-if="backendOk">',
-    '    <h3 class="card-title">最近任务 <span class="sub">点「查看」直接回看产物</span></h3>',
+    '    <h3 class="card-title">最近任务 </h3>',
     '    <el-table :data="recent" size="small" border empty-text="暂无任务">',
     '      <el-table-column prop="job_id" label="任务 ID" min-width="200" show-overflow-tooltip />',
     '      <el-table-column prop="status" label="状态" width="100" />',
@@ -152,7 +152,6 @@ window.PAGES['home'] = {
     '    </el-table>',
     '    <div class="hint" v-if="recentErr">{{ recentErr }}（不影响其它功能）</div>',
     '  </div>',
-
     '</div>'
   ].join('\n')
 };

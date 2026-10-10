@@ -33,6 +33,8 @@ window.PAGES['tactics'] = {
       courtSVG: window.Court.courtSVG({ view: 'half' }),
       loading: false,
       err: '',
+      // 在飞的加载 Promise（同一时刻只允许一份，见 load()）
+      _loadPromise: null,
       // 播放器
       altJobs: [],          // 其它「有战术数据」的任务（空状态下一键切换）
       playing: false,
@@ -88,6 +90,16 @@ window.PAGES['tactics'] = {
       return lo;
     },
     frame: function () { return this.frames[this.frameIdx] || null; },
+    populationIssue: function () {
+      var f=this.frame;if(!f)return false;
+      if(f.population_quality && f.population_quality.valid===false)return true;
+      var counts={};(f.players||[]).forEach(function(p){counts[p[1]]=(counts[p[1]]||0)+1;});
+      return (f.players||[]).length>10 || Object.keys(counts).some(function(k){return counts[k]>5;});
+    },
+    populationNeedsRebuild: function () {
+      if(this.tac && this.tac.population_quality)return false;
+      return this.frames.some(function(f){var counts={};(f.players||[]).forEach(function(p){counts[p[1]]=(counts[p[1]]||0)+1;});return (f.players||[]).length>10 || Object.keys(counts).some(function(k){return counts[k]>5;});});
+    },
     teamOf: function () {
       var m = {};
       (this.frame ? this.frame.players : []).forEach(function (p) { m[p[0]] = p[1]; });
@@ -95,23 +107,23 @@ window.PAGES['tactics'] = {
     },
     /** 最近 10 帧的轨迹尾迹（按球员 id 聚合） */
     trails: function () {
-      if (!this.showTrails || !this.frames.length) return {};
+      if (!this.showTrails || !this.frames.length || this.populationIssue) return {};
       var out = {}, i0 = Math.max(0, this.frameIdx - 10);
       for (var i = i0; i <= this.frameIdx; i++) {
         (this.frames[i].players || []).forEach(function (p) {
-          (out[p[0]] = out[p[0]] || []).push([p[2], p[3]]);
-        });
+          if (Object.prototype.hasOwnProperty.call(this.teamOf, p[0])) (out[p[0]] = out[p[0]] || []).push([p[2], p[3]]);
+        }, this);
       }
       return out;
     },
     overlayHTML: function () {
-      if (!this.frame) return '';
+      if (!this.frame || this.populationIssue) return '';
       var f = this.frame;
       var teams = this.teamOf;
       var trails = {};
       Object.keys(this.trails).forEach(function (k) { trails[k] = this.trails[k]; }, this);
       return window.Court.tacticsPlayersLayer(f, trails, {
-        showTrails: this.showTrails, teamOf: teams
+        showTrails: this.showTrails, teamOf: teams, players:this.S.players || []
       });
     },
     timeLabel: function () { return window.D.mmss(this.playT); },
@@ -129,10 +141,10 @@ window.PAGES['tactics'] = {
     netEdges: function () {
       var self = this;
       var names = {};
-      (this.net.nodes || []).forEach(function (n) { names[n.id] = n.name || n.id; });
+      (this.net.nodes || []).forEach(function (n) { names[n.id] = D.playerLabel(n); });
       return (this.net.edges || []).slice(0, 8).map(function (e) {
         return {
-          from: names[e.source] || e.source, to: names[e.target] || e.target,
+          from: names[e.source] || '号码待确认', to: names[e.target] || '号码待确认',
           value: e.value
         };
       });
@@ -187,10 +199,10 @@ window.PAGES['tactics'] = {
         yAxis: { type: 'value', name: this.METRICS.filter(function (x) { return x.key === m; })[0].label },
         series: [
           { name: window.D.teamName(this.game, 'home'), type: 'line', showSymbol: false,
-            smooth: true, lineStyle: { width: 2, color: '#2f6fed' }, itemStyle: { color: '#2f6fed' },
+            smooth: true, lineStyle: { width: 2, color: '#3D8BFF' }, itemStyle: { color: '#3D8BFF' },
             data: pick('home') },
           { name: window.D.teamName(this.game, 'away'), type: 'line', showSymbol: false,
-            smooth: true, lineStyle: { width: 2, color: '#f2762e' }, itemStyle: { color: '#f2762e' },
+            smooth: true, lineStyle: { width: 2, color: '#FF7A33' }, itemStyle: { color: '#FF7A33' },
             data: pick('away') }
         ]
       };
@@ -214,20 +226,40 @@ window.PAGES['tactics'] = {
     // ---- 数据加载 ----
     load: function () {
       var self = this;
-      if (self.S.tacticsLoaded) return Promise.resolve();
+      if (self._loadPromise) return self._loadPromise;
       self.loading = true;
-      return window.APP_TACTICS().then(function () {
+      var requestedJobId = '';
+      // 每次进页都针对**当前选中任务**刷新战术产物（force），避免首次进入时拿到
+      // bootstrap 之前的演示数据或上一个任务的缓存。延后一微任务，让根组件先启动 bootstrap。
+      var request = Promise.resolve().then(function () {
+        return window.APP_WAIT_READY ? window.APP_WAIT_READY() : null;
+      }).then(function () {
+        requestedJobId = self.S.jobId;
+        return window.APP_TACTICS(true);
+      }).then(function () {
+        // Keep the selected match; switching requires an explicit user action.
+      }).then(function () {
         self.loading = false;
+        // 任务可能在请求过程中被切换（顶栏「当前任务」/ 本页一键切换）。丢弃旧任务结果
+        // 并跟进新 ID，不能把旧的空状态留在当前页面上。
+        if (requestedJobId !== self.S.jobId) {
+          self._loadPromise = null;
+          return self.load();
+        }
         if (!self.hasTactics && self.S.backendOk) self.loadAltJobs();
       }).catch(function (e) {
         self.loading = false;
         self.err = String((e && e.message) || e);
+      }).finally(function () {
+        self._loadPromise = null;
       });
+      self._loadPromise = request;
+      return request;
     },
     /** 后端连着但这一场没有战术数据时，列出"有战术数据"的任务供一键切换。 */
     loadAltJobs: function () {
       var self = this;
-      return window.API.listJobs().then(function (list) {
+      return window.API.listJobs(true).then(function (list) {
         var arr = Array.isArray(list) ? list : (list && list.jobs) || [];
         self.altJobs = arr.filter(function (j) {
           return j.status === 'done' && j.has_tactics && j.job_id !== self.S.jobId;
@@ -267,9 +299,9 @@ window.PAGES['tactics'] = {
     },
     colorOf: function (label) {
       var map = {
-        '五外拉开': '#2f6fed', '四外一内': '#0ea5e9', '三外两内': '#22a06b',
-        '双塔（内线为主）': '#f2762e', '均衡落位': '#8b5cf6', '转换进攻': '#e5484d',
-        '人盯人': '#2f6fed', '2-3 联防': '#22a06b', '3-2 联防': '#f5a623',
+        '五外拉开': '#3D8BFF', '四外一内': '#0ea5e9', '三外两内': '#22a06b',
+        '双塔（内线为主）': '#FF7A33', '均衡落位': '#8b5cf6', '转换进攻': '#e5484d',
+        '人盯人': '#3D8BFF', '2-3 联防': '#22a06b', '3-2 联防': '#f5a623',
         '1-3-1 联防': '#8b5cf6', '1-2-2 联防': '#0ea5e9', '收缩联防': '#64748b',
         '前场施压（紧逼）': '#e5484d', '混合防守': '#94a3b8'
       };
@@ -311,6 +343,12 @@ window.PAGES['tactics'] = {
     },
     step: function (d) { this.seek(Math.max(0, Math.min(this.duration, this.playT + d))); }
   },
+  watch: {
+    // bootstrap 选完任务、或用户在本页/顶栏切换任务时，刷新对应任务的战术结果。
+    'S.jobId': function (id, oldId) {
+      if (id && id !== oldId) this.load();
+    }
+  },
   mounted: function () {
     this.load();
   },
@@ -320,23 +358,22 @@ window.PAGES['tactics'] = {
   },
   template: [
     '<div class="page">',
+    '  <calibration-gaps :game="game" />',
     '  <div class="page-head">',
     '    <h2>战术分析</h2>',
-    '    <div class="page-sub">控球归属 → 传球网络 → 阵型识别 → 空间指标；俯视战术图可逐帧回放。</div>',
+    '    <div class="page-sub">控球 · 传球 · 阵型 · 空间</div>',
     '  </div>',
-
-    '  <el-skeleton v-if="loading" :rows="6" animated />',
-
+    // 首次打开要有"已经在做事"的反馈：只给一个骨架屏，用户不知道是在加载
+    // 还是又空了一次（队友 d0247ee）。
+    '  <div v-if="loading" class="card">',
+    '    <el-alert type="info" :closable="false" show-icon',
+    '      title="战术分析已打开，正在载入当前任务的战术图与逐帧数据" />',
+    '    <el-skeleton :rows="6" animated />',
+    '  </div>',
     '  <el-alert v-else-if="!hasTactics" type="warning" :closable="false" show-icon',
     '            title="本场没有战术数据">',
     '    <div style="line-height:1.7">',
-    '      {{ reason || "战术层需要球员逐帧球场坐标：真视频要么有一份通过校验的球场标定，要么自动逐帧标定达标（工具会自动尝试）；合成数据源默认自带。" }}',
-    '      <div class="muted" style="margin-top:6px">',
-    '        怎么拿到战术数据：① 用「上传与分析」建一个 <b>synthetic</b> 任务（最快，零依赖）；',
-    '        ② 真视频任务：保持球员检测开启，并做一次球场标定（同一帧里点 6 个以上、不在同一条线上的特征点）；',
-    '        没标定时工具会尝试<b>自动逐帧标定</b>，不达标时上面的原因里会给出读数；',
-    '        ③ 无后端时把 <code>web/demo/tactics.json</code> 准备好（跑一次 sync_demo 脚本）。',
-    '      </div>',
+    '      <copy-note label="缺少战术数据">{{ reason || "战术层需要球员逐帧球场坐标：真视频要么有一份通过校验的球场标定，要么自动逐帧标定达标（工具会自动尝试）；合成数据源默认自带。" }}</copy-note>',
     '      <div v-if="altJobs.length" style="margin-top:10px">',
     '        <div class="muted">下面这些任务<b>已经有战术数据</b>，点一下直接切过去：</div>',
     '        <el-button v-for="j in altJobs" :key="j.job_id" size="small" type="primary"',
@@ -346,21 +383,20 @@ window.PAGES['tactics'] = {
     '      </div>',
     '    </div>',
     '  </el-alert>',
-
     '  <template v-else>',
-    // 位置来源提示：静态标定没通过校验、改用**自动逐帧标定**算球员坐标时，
+    // 位置来源提示：静态标定没通过校验、或**多机位里有一段不可信**时，
     // 结论照给，但必须说清"这些坐标没有经过独立校验"——不能让它冒充已校验。
+    // 标题只陈述事实（不再断言"来自自动逐帧标定"：多机位弱段也会把它置真），
+    // 具体原因由后端 position_note 给，没有就落在下面的说明里。
     '    <el-alert v-if="tac.position_unverified" type="warning" :closable="false" show-icon style="margin:6px 0 12px">',
-    '      <template #title>球员位置来自<b>自动逐帧标定</b>（未独立校验）</template>',
-    '      <div style="line-height:1.7">',
-    '        {{ tac.position_note || "这份坐标是按球场线自动拟合出来的，没有用画面里的真值点核对过：回合/传球/阵型/间距等相对结论可参考，具体坐标可能有系统偏差。" }}',
-    '        <div class="muted" style="margin-top:6px">',
-    '          想要更可信的位置：回到「上传与分析」→ 标球场，在<b>同一帧里点 6 个以上不在同一条线上</b>的特征点（底线两角 + 罚球区两角 + 中圈）。',
-    '        </div>',
-    '      </div>',
+    '      <template #title>球员位置<b>未通过独立校验</b></template>',
+    '      <div style="line-height:1.7"><copy-note label="说明">',
+    '        {{ tac.position_note || "这份坐标没有用画面里的真值点核对过，常见两种原因：① 用的是按球场线自动拟合出来的逐帧标定；② 多机位标定里有一段不可信 —— 那一段时间的球员坐标会整体偏掉（去「上传与分析」打开「叠加球场线自检」，看红色虚线压不压在白线上就能判断是哪一段）。回合/传球/阵型/间距等相对结论可参考，具体坐标可能有系统偏差。" }}',
+    '      </copy-note></div>',
     '    </el-alert>',
+    '    <el-alert v-if="populationNeedsRebuild" type="warning" :closable="false" title="旧结果含人数异常，战术统计暂停展示，请重新分析。" />',
     '    <!-- ① KPI -->',
-    '    <div class="kpi-row">',
+    '    <div class="kpi-row" v-if="!populationNeedsRebuild">',
     '      <div class="kpi"><div class="v">{{ tac.possession.total }}</div><div class="k">回合数</div></div>',
     '      <div class="kpi"><div class="v">{{ tac.passes.total }}</div><div class="k">成功传球</div></div>',
     '      <div class="kpi"><div class="v">{{ tac.passes.turnovers }}</div><div class="k">球权转换</div></div>',
@@ -368,14 +404,13 @@ window.PAGES['tactics'] = {
     '      <div class="kpi"><div class="v">{{ tac.possession.avg_duration }}s</div><div class="k">平均回合时长</div></div>',
     '      <div class="kpi"><div class="v">{{ attackSideText }}</div><div class="k">进攻方向</div></div>',
     '    </div>',
-
     '    <!-- ② 俯视战术图 + 战术亮点 -->',
     '    <el-card shadow="never" class="blk">',
     '      <template #header><b>① 俯视战术图</b>',
-    '        <span class="muted">（半场俯视 · 左右两侧进攻已折叠到同一套坐标 · 点轨迹为最近 5 秒）</span>',
     '      </template>',
     '      <div class="tac-grid">',
     '        <div>',
+    '          <p v-if="populationIssue" role="status">本时刻人数异常，暂停显示阵型。请核对分队与球场边界。</p>',
     '          <div class="court-wrap">',
     '            <div v-html="courtSVG"></div>',
     '            <div class="tac-overlay" v-html="overlayHTML"></div>',
@@ -398,25 +433,23 @@ window.PAGES['tactics'] = {
     '        <div>',
     '          <div class="blk-title">战术亮点</div>',
     '          <ul class="insight-list">',
-    '            <li v-for="(i,k) in tac.insights" :key="k">',
+    '            <li v-for="(i,k) in (populationNeedsRebuild ? [] : tac.insights)" :key="k">',
     '              <a href="javascript:void(0)" @click="jumpTo(i.t)">▶ {{ mmss(i.t) }}</a>',
     '              <span>{{ i.text }}</span>',
     '            </li>',
-    '            <li v-if="!tac.insights.length" class="muted">本场没有提取到战术亮点。</li>',
+    '            <li v-if="!tac.insights.length" class="muted">没有战术亮点</li>',
     '          </ul>',
     '          <div class="blk-title" style="margin-top:14px">口径说明</div>',
     '          <div class="muted small">',
-    '            控球 = 球位置上「最近的球员」在 {{ (tac.config && tac.config.possess_radius) || 2.5 }}m 内；',
-    '            传球 = 控球人在队友之间切换；阵型 = 可解释的几何规则（不是训练模型）。',
+    '            <copy-note label="说明">控球 = 球位置上「最近的球员」在 {{ (tac.config && tac.config.possess_radius) || 2.5 }}m 内；',
+    '            传球 = 控球人在队友之间切换；阵型 = 可解释的几何规则（不是训练模型）。</copy-note>',
     '          </div>',
     '        </div>',
     '      </div>',
     '    </el-card>',
-
     '    <!-- ③ 传球网络 -->',
-    '    <el-card shadow="never" class="blk">',
+    '    <el-card v-if="!populationNeedsRebuild" shadow="never" class="blk">',
     '      <template #header><b>② 传球网络</b>',
-    '        <span class="muted">（节点=球员平均站位，圆内数字=传球+接球次数，连线粗细=二人之间传球次数）</span>',
     '      </template>',
     '      <el-radio-group v-model="netTeam" size="small" style="margin-bottom:10px">',
     '        <el-radio-button label="home">{{ teamName("home") }}</el-radio-button>',
@@ -432,11 +465,9 @@ window.PAGES['tactics'] = {
     '        </el-table>',
     '      </div>',
     '    </el-card>',
-
     '    <!-- ④ 阵型识别 -->',
-    '    <el-card shadow="never" class="blk">',
+    '    <el-card v-if="!populationNeedsRebuild" shadow="never" class="blk">',
     '      <template #header><b>③ 阵型识别</b>',
-    '        <span class="muted">（进攻落位与防守阵型的时间轴；点击时间轴可跳到该时刻）</span>',
     '      </template>',
     '      <el-table :data="formationRows" size="small">',
     '        <el-table-column label="球队" width="110">',
@@ -466,11 +497,9 @@ window.PAGES['tactics'] = {
     '        <span class="bar-track" v-html="b.html"></span>',
     '      </div>',
     '    </el-card>',
-
     '    <!-- ⑤ 间距曲线 -->',
-    '    <el-card shadow="never" class="blk">',
+    '    <el-card v-if="!populationNeedsRebuild" shadow="never" class="blk">',
     '      <template #header><b>④ 空间/间距曲线</b>',
-    '        <span class="muted">（球队整体的空间拉开程度随时间变化；两队对比）</span>',
     '      </template>',
     '      <el-radio-group v-model="metric" size="small" style="margin-bottom:8px">',
     '        <el-radio-button v-for="m in METRICS" :key="m.key" :label="m.key">',

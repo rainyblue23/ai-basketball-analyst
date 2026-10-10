@@ -9,10 +9,57 @@
 (function () {
   'use strict';
 
+  /**
+   * 读 CSS 变量。浅色/深色模式只换 CSS 变量值，所以图表、球场 SVG 也一律读变量，
+   * 不再写死颜色 —— 否则切到浅色会出现"灰字看不见 / 深色球场"的问题。
+   */
+  window.AIHOOP_CSSVAR = window.AIHOOP_CSSVAR || function (name, fallback) {
+    try {
+      var v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      return v || fallback;
+    } catch (e) { return fallback; }
+  };
+  /** ECharts 内置主题：深色用 'dark'，浅色用默认（null = 不指定） */
+  window.AIHOOP_ECHARTS_THEME = window.AIHOOP_ECHARTS_THEME || function () {
+    return document.documentElement.getAttribute('data-theme') === 'light' ? null : 'dark';
+  };
+
   // ECharts 统一主题：与 styles.css 的深顶栏 / 浅内容区一致
-  var PALETTE = ['#2f6fed', '#f2762e', '#22a06b', '#8b5cf6', '#f5a623', '#0ea5e9'];
+  // 调色板**每次现读**：切到浅色后 --chart-c4/5/6 会变，写死一次就会用到旧颜色。
+  function palette() {
+    return ['#3D8BFF', '#FF7A33', '#22C55E',
+      window.AIHOOP_CSSVAR('--chart-c4', '#B6C5D8'),
+      window.AIHOOP_CSSVAR('--chart-c5', '#7F9FBF'),
+      window.AIHOOP_CSSVAR('--chart-c6', '#5BC8DF')];
+  }
 
   window.COMPONENTS = {};
+  window.COMPONENTS['calibration-gaps'] = {
+    props: ['game'],
+    computed: { coverage: function(){ return (((this.game||{}).meta||{}).sliding_calibration||{}).coverage; } },
+    template: '<div v-if="coverage && coverage.paused_frames" class="hint">坐标暂停 {{ coverage.paused_frames }} 帧 <copy-note label="查看时段"><p>标定分析范围内暂停 {{ coverage.paused_frames }}/{{ coverage.analyzed_frames }} 帧（{{ (100*coverage.paused_fraction).toFixed(1) }}%），不代表没检测到球员。</p><p v-for="(r,i) in coverage.ranges_s" :key="i">{{ r[0].toFixed(2) }}–{{ r[1].toFixed(2) }} 秒：定位依据不连续，暂停输出坐标（不含结束时刻）。</p></copy-note></div>'
+  };
+  window.COMPONENTS['copy-note'] = {
+    props: {label: {type:String, default:'说明'}},
+    template: '<el-popover trigger="click" placement="bottom-start" :width="360" popper-class="copy-note-panel"><template #reference><button type="button" class="copy-note-trigger" :aria-label="label + \'，查看说明\'">{{ label }}</button></template><div class="copy-note-body"><slot></slot></div></el-popover>'
+  };
+  window.COMPONENTS['page-help'] = {
+    props: ['page'],
+    computed: {steps: function(){return {
+      home:'上传比赛视频，分析后先看总览，再逐条复核待确认出手。',
+      upload:'选择视频 → 设置分析参数 → 开始分析。球场标定可选，需要位置分析时再标。',
+      overview:'拖动原视频回看；选择事件定位画面，再到人工复核确认结果。',
+      review:'先核对画面，再确认结果与分值；系统建议确认前不计分。',
+      report:'先检查待复核记录，再下载战报或数据文件。',
+      highlights:'选择事件并回看；导出片段前核对起止时间。',
+      shotchart:'选择球队或球员，切换散点与热区；位置不可用的出手不绘图。',
+      tactics:'查看球员位置、传球与阵型；自动坐标未校验时只作参考。',
+      stats:'切换球队，按列排序查看球员统计。'
+      // train: 已下线（用户要求删除「训练标注」模块），对应文案一并移除
+    }[this.page] || '先查看结果，再核对原视频。';}},
+    template: '<div class="page-help"><el-popover trigger="click" placement="bottom-end" :width="360" popper-class="copy-note-panel"><template #reference><button type="button" class="copy-note-trigger">怎么用</button></template><p class="copy-note-body">{{ steps }}</p></el-popover><el-popover trigger="click" placement="bottom-end" :width="400" popper-class="copy-note-panel"><template #reference><button type="button" class="copy-note-trigger">方法与口径</button></template><div class="copy-note-body"><p><b>仅提示、不计分：</b>轨迹候选与未确认建议不自动加入出手和命中统计；matched只代表时间接近，不证明同一次出手。</p><p><b>结果未知：</b>证据不足不能当作未中；没有记录也不代表没有投篮。</p><p><b>球检测观测率：</b>这是模型检测到球的比例，不是录像里有没有球的判定。</p><p><b>估计值、未校验：</b>分值和自动位置需复核。未标定或位置未知时不据占位坐标生成热区；未知结果不进投篮图。</p><p><b>证据跨段、切镜截断、球框可疑：</b>这些提示说明证据限制，不是投篮与否的结论；不跨切镜自动合链。</p></div></el-popover></div>'
+  };
+
 
   /** ---------------- ECharts 容器 ---------------- */
   window.COMPONENTS['echarts-box'] = {
@@ -24,17 +71,10 @@
     template: '<div ref="el" :style="{width:\'100%\',height:height}"></div>',
     data: function () { return { chart: null, ro: null }; },
     mounted: function () {
-      if (!window.echarts) {
-        console.warn('[echarts-box] ECharts 未加载，请检查 CDN');
-        return;
-      }
-      this.chart = window.echarts.init(this.$refs.el, null, { renderer: 'canvas' });
-      this.chart.setOption(this.buildOption());
-      var self = this;
-      if (window.ResizeObserver) {
-        this.ro = new ResizeObserver(function () { if (self.chart) self.chart.resize(); });
-        this.ro.observe(this.$refs.el);
-      }
+      this.setupChart();
+      // 切换深/浅色时要**重建**图表：ECharts 的主题在 init 时就定死了，
+      // 只 setOption 换不掉内置主题的配色。
+      window.addEventListener('aihoop-theme', this.onThemeChange);
     },
     watch: {
       option: {
@@ -47,22 +87,58 @@
       }
     },
     beforeUnmount: function () {
+      window.removeEventListener('aihoop-theme', this.onThemeChange);
       if (this.ro) this.ro.disconnect();
       if (this.chart) { this.chart.dispose(); this.chart = null; }
     },
     methods: {
+      setupChart: function () {
+        if (!window.echarts) {
+          console.warn('[echarts-box] ECharts 未加载，请检查 CDN');
+          return;
+        }
+        this.chart = window.echarts.init(this.$refs.el, window.AIHOOP_ECHARTS_THEME(), { renderer: 'canvas' });
+        this.chart.setOption(this.buildOption(), true);
+        var self = this;
+        if (window.ResizeObserver && !this.ro) {
+          this.ro = new ResizeObserver(function () { if (self.chart) self.chart.resize(); });
+          this.ro.observe(this.$refs.el);
+        }
+      },
+      onThemeChange: function () {
+        if (this.chart) { this.chart.dispose(); this.chart = null; }
+        this.setupChart();
+      },
       buildOption: function () {
         var o = JSON.parse(JSON.stringify(this.option || {}));
-        o.color = o.color || PALETTE;
-        o.textStyle = Object.assign({ fontFamily: 'PingFang SC, Microsoft YaHei, sans-serif', fontSize: 12 }, o.textStyle || {});
+        o.color = o.color || palette();
+        o.backgroundColor = 'transparent';
+        o.textStyle = Object.assign({ color: window.AIHOOP_CSSVAR('--chart-text', '#9DAEC2'), fontFamily: 'PingFang SC, Microsoft YaHei, sans-serif', fontSize: 12 }, o.textStyle || {});
         if (!o.grid && o.series) {
           o.grid = { left: 46, right: 20, top: 34, bottom: 34, containLabel: true };
         }
         if (o.tooltip === undefined && o.series) {
-          o.tooltip = { trigger: 'axis', axisPointer: { type: 'cross', label: { backgroundColor: '#1f2d3d' } } };
+          o.tooltip = { trigger: 'axis', axisPointer: { type: 'cross', label: { backgroundColor: window.AIHOOP_CSSVAR('--chart-tip-bg', '#1f2d3d') } } };
         }
         if (!o.legend && (o.series || []).length > 1) {
           o.legend = { top: 0, right: 8, icon: 'roundRect', itemWidth: 10, itemHeight: 10 };
+        }
+        (o.series || []).forEach(function(series) {
+          if (series.label) series.label = Object.assign({},series.label,{color:window.AIHOOP_CSSVAR('--chart-label','#EAF0F7')});
+        });
+        ['xAxis','yAxis'].forEach(function(key) {
+          if (!o[key]) return;
+          var axes = Array.isArray(o[key]) ? o[key] : [o[key]];
+          axes.forEach(function(axis) {
+            axis.axisLabel = Object.assign({}, axis.axisLabel || {}, {color:'#9DAEC2'});
+            axis.nameTextStyle = Object.assign({}, axis.nameTextStyle || {}, {color:'#9DAEC2'});
+            axis.splitLine = Object.assign({}, axis.splitLine || {}, {lineStyle:{color:window.AIHOOP_CSSVAR('--chart-split','#2B3748')}});
+          });
+        });
+        if (o.tooltip && typeof o.tooltip === 'object') {
+          o.tooltip.backgroundColor = window.AIHOOP_CSSVAR('--chart-tip-bg', '#1A2330');
+          o.tooltip.borderColor = window.AIHOOP_CSSVAR('--chart-tip-border', '#43536A');
+          o.tooltip.textStyle = Object.assign({}, o.tooltip.textStyle || {}, {color: window.AIHOOP_CSSVAR('--chart-label', '#EAF0F7')});
         }
         return o;
       },
@@ -148,6 +224,7 @@
     template:
       '<div>' +
       '  <div class="scoreboard">' +
+      '    <div class="scoreboard-share" :class="{empty: scoreSum === 0}" aria-hidden="true"><i class="h" :style="{width: homeShare + \'%\'}"></i><i class="a" :style="{width: awayShare + \'%\'}"></i></div>' +
       '    <div class="team home">' +
       '      <div class="nm">{{ name("home") }}</div>' +
       '      <div class="pts">{{ displayScore.home }}</div>' +
@@ -190,6 +267,9 @@
       '  </el-table>' +
       '</div>',
     computed: {
+      scoreSum: function () { return Math.max(0,Number(this.displayScore.home)||0) + Math.max(0,Number(this.displayScore.away)||0); },
+      homeShare: function () { return this.scoreSum ? Math.max(0,Number(this.displayScore.home)||0) / this.scoreSum * 100 : 0; },
+      awayShare: function () { return this.scoreSum ? 100 - this.homeShare : 0; },
       scorePolicy: function () {
         return String(this.game.score_policy || 'scoreboard').toLowerCase();
       },

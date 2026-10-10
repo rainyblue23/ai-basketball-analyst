@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>我的 · 哨响之后</title>
+<style>
+ body{margin:0;font:15px/1.7 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;background:#f5f7fa;color:#243244}
+ .wrap{max-width:760px;margin:0 auto;padding:28px 20px}
+ h1{font-size:20px;margin:0 0 4px}
+ p.sub{color:#6b7a90;font-size:13px;margin:0 0 18px}
+ .card{background:#fff;border-radius:10px;box-shadow:0 6px 24px rgba(20,40,80,.06);padding:20px 22px;margin-bottom:16px}
+ .row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:6px 0}
+ .k{color:#6b7a90;font-size:13px;min-width:76px}
+ .v{font-weight:600}
+ table{width:100%;border-collapse:collapse;font-size:13px}
+ th,td{text-align:left;padding:7px 6px;border-bottom:1px solid #eef1f6}
+ th{color:#6b7a90;font-weight:500}
+ button{padding:8px 14px;border:0;border-radius:6px;background:#2f6fed;color:#fff;font:inherit;cursor:pointer}
+ button.plain{background:#fff;color:#2f6fed;border:1px solid #c9d8f8}
+ button:disabled{opacity:.6;cursor:default}
+ .note{background:#fff8e6;border:1px solid #ffe1a8;border-radius:8px;padding:12px 14px;font-size:13px;color:#7a5a12}
+ .err{color:#c45656;font-size:13px;min-height:18px}
+ input{padding:8px 10px;border:1px solid #d5dbe5;border-radius:6px;font:inherit}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>我的</h1>
+  
+
+  <div class="card">
+    <div class="row"><span class="k">用户名</span><span class="v" id="u">…</span></div>
+    <div class="row"><span class="k">来源</span><span id="src">—</span></div>
+    <div class="row"><span class="k">会话</span><span id="sess">校验中…</span></div>
+    <div class="row" style="margin-top:12px">
+      <button class="plain" onclick="location.href='/web/index.html'">回到分析页</button>
+      <button id="out" onclick="logout()">退出登录</button>
+    </div>
+    <div class="err" id="e"></div>
+  </div>
+
+  <div class="card">
+    <b>我的任务</b>
+    <div class="row"><span class="k">任务列表</span><span id="jobs">读到后再显示</span></div>
+    <div class="note" style="margin-top:10px">
+      任务暂不按账号隔离（所有人看到同一批任务）。
+    </div>
+  </div>
+</div>
+<script>
+async function j(u,o){const r=await fetch(u,o);let d={};try{d=await r.json();}catch(e){}return {r,d};}
+async function load(){
+  const {r,d}=await j('/api/me');
+  if(!r.ok||!d.ok){location.replace('/web/login.html?next='+encodeURIComponent('/web/my.html'));return;}
+  document.getElementById('u').textContent=d.username||'—';
+  document.getElementById('src').textContent=d.internal?'本机（豁免）':'账号登录';
+  document.getElementById('sess').textContent=r.ok?'有效':'已过期';
+  const jb=await j('/api/jobs');
+  const rows=Array.isArray(jb.d)?jb.d:(jb.d.jobs||[]);
+  document.getElementById('jobs').textContent=rows.length?rows.length+' 个（最近：'+(rows[0].job_id||'')+'）':'暂无';
+}
+async function logout(){
+  const b=document.getElementById('out');b.disabled=true;
+  await fetch('/api/logout',{method:'POST'});
+  location.replace('/web/login.html');
+}
+load().catch(e=>{document.getElementById('e').textContent='读取失败：'+(e&&e.message?e.message:e);});
+</script>
+</body>
+</html>

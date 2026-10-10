@@ -146,8 +146,17 @@ def main(argv=None) -> int:
 
     node = shutil.which("node")
     if node:
-        ok1 = run("8/9 前端功能自检 web/_test.js", [node, "web/_test.js"])
-        ok2 = run("8/9 前端口径校验 web/_validate.js", [node, "web/_validate.js"])
+        fixture = ROOT / "out" / "fixture" / "game.json"
+        fixture_ok = True
+        if not fixture.exists():
+            fixture_ok = run(
+                "生成前端自检夹具",
+                [PY, "-B", "-m", "aihoop.cli", "demo", "--seed", "7",
+                 "--duration", "600", "--out", "out/fixture"],
+            )
+        session_ok = run("登录会话交互", [node, "tests/test_session.js"])
+        ok1 = fixture_ok and run("8/9 前端功能自检 web/_test.js", [node, "web/_test.js"])
+        ok2 = fixture_ok and run("8/9 前端口径校验 web/_validate.js", [node, "web/_validate.js"])
         # 复核页「系统建议」的 7 项行为检查（unknown 状态、建议筛选、批量跳过未知、
         # 保存失败不本地改判…）—— 单独一个文件，很容易在门禁里漏掉，所以显式纳入。
         ok3 = run("8b/9 复核页建议行为检查 tests/test_review_suggestions.js",
@@ -177,11 +186,25 @@ def main(argv=None) -> int:
         # return，用户看到的是"没法取帧"。两条都用测试钉住。
         ok9 = run("8h/9 前端接线检查 tests/test_frontend_wiring.js",
                   [node, "tests/test_frontend_wiring.js"])
-        results.append(("前端自检", ok1 and ok2 and ok3 and ok4 and ok5 and ok6 and ok7))
+        copy_ok = run("界面文案预算 tests/test_ui_copy_budget.js", [node, "tests/test_ui_copy_budget.js"])
+        results.append(("前端自检", ok1 and ok2 and ok3 and ok4 and ok5 and ok6 and ok7 and copy_ok and session_ok))
         results.append(("只标中心的篮筐接入（hoopsight）", ok8))
-        results.append(("前端接线（videoUrl / 取帧前置条件）", ok9))
+        ok10 = run("旧版HoopAI标定交互 tests/test_hoopai_calibration.js",
+                   [node, "tests/test_hoopai_calibration.js"])
+        results.append(("前端接线（videoUrl / 取帧前置条件）", ok9 and ok10))
     else:
         _safe_print("\n[skip] 未找到 node，跳过前端自检（不影响后端功能）")
+
+    jersey_ok = run("队标与号码识别 tests/test_graphics_jersey.py", [PY, "-B", "tests/test_graphics_jersey.py"])
+    sampling_ok = run("球衣多时段取帧与裁剪 tests/test_jersey_sampling_v2.py", [PY, "-B", "tests/test_jersey_sampling_v2.py"])
+    results.append(("队标与号码识别", jersey_ok and sampling_ok))
+    if node:
+        results.append(("模块插图与号码标签", run("模块插图与号码标签", [node, "tests/test_module_jersey.js"])))
+    results.append(("只读样例接口", run("只读样例接口 tests/test_examples.py", [PY, "-B", "tests/test_examples.py"])))
+    if node:
+        example_ui_ok = run("样例导航与矢量插图 tests/test_examples.js", [node, "tests/test_examples.js"])
+        example_refresh_ok = run("样例刷新与状态写入 tests/test_examples_refresh.js", [node, "tests/test_examples_refresh.js"])
+        results.append(("样例导航与矢量插图", example_ui_ok and example_refresh_ok))
 
     if args.quick:
         _safe_print("\n[skip] --quick：跳过 API 集成测试")

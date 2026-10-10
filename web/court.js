@@ -458,7 +458,7 @@
     return { w: Math.round(w * k), h: Math.round(h * k), k: k };
   }
 
-  function _name(p) { return (p && (p.name || p.id)) || '?'; }
+  function _name(p) { return window.D.playerLabel(p).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
 
   /**
    * 传球网络图层：画在半场上（节点按球员平均站位摆，边宽 ∝ 传球次数）。
@@ -546,6 +546,9 @@
     }
 
     // ---- 球员 ----
+    // 身份查表：球衣号在 players 里（jersey），标签必须用它，
+    // 不能拿轨迹号后两位冒充号码（我们的 test_module_jersey.js 钉这条）
+    var identities={};(o.players||[]).forEach(function(p){identities[p.player_id]=p;});
     (frame.players || []).forEach(function (p) {
       var pid = p[0], team = p[1], x = p[2], y = p[3];
       var q = mapTactics(x, y);
@@ -553,10 +556,10 @@
       var hi = (o.highlight || []).indexOf(pid) >= 0;
       s.push('<circle cx="' + f(q.u) + '" cy="' + f(q.v) + '" r="' + (hi ? 0.42 : 0.34) + '" ' +
         'fill="' + col + '" stroke="#ffffff" stroke-width="0.09" opacity="0.95">' +
-        '<title>' + pid + ' · ' + (team === 'home' ? '主队' : '客队') +
+        '<title>' + _name(identities[pid]) + ' · ' + (team === 'home' ? '主队' : '客队') +
         ' · x=' + f(x) + ' y=' + f(y) + '</title></circle>');
       s.push('<text x="' + f(q.u) + '" y="' + f(q.v + 0.13) + '" text-anchor="middle" ' +
-        'font-size="0.40" font-weight="700" fill="#ffffff">' + String(pid).slice(-2) + '</text>');
+        'font-size="0.40" font-weight="700" fill="#ffffff">' + _name(identities[pid]) + '</text>');
     });
 
     // ---- 球 ----

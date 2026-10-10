@@ -55,22 +55,111 @@ window.PAGES['upload'] = {
       savedMarks: null,       // 该视频已保存的标点
       // ---- 标球场：点场地特征点解标定（用户建议：不一定要标篮筐）----
       markKind: 'hoop',       // hoop | court
-      courtItems: [],         // [{name,label,hint}] 11 个候选特征点
+      courtItems: [],         // [{name,label,hint,dst}] 当前这一份清单里的特征点
+      // 「列哪些点」由用户选一次（全场 A端/B端 / 只看左半场 / 只看右半场）。
+      // 为什么不让工具自己认：试过用自动标定 + 罚球区可见面积投票，投影会退化、
+      // 面积算成 0，不可靠；而选一次只影响**点名表显示哪一份**，代价极小、结果确定。
+      // 默认全场（队友 d821ab4 的主流程）：同一个物理地标在两幅画面里叫**同一个名字**
+      // （A端底线左角就是一个点），各自解算完再合并 —— 半场清单保留作临时筛选。
+      courtSide: 'full',      // full = 全场 A端/B端 | left = 摄像机拍的是左边那半场 | right
+      // ⚠️ 哪一套点对应哪一侧，必须按**工具内部的坐标约定**来，不能凭直觉：
+      //   court.py 里左半场 = y ∈ [-14, 0]（底线在 y=-14），也就是 **_near 那一套**；
+      //   右半场 = y ∈ [0, 14]（底线在 y=+14），即 **_far 那一套**。
+      //   写反了不会报错，只会把球场整体平移 28m（两分变三分、热区整片错位）。
+      courtSideNames: {
+        // ⚠️ 这三份清单里**都没有「篮筐中心」**（曾经有，已移除）。
+        // 篮圈离地 3.05m，而单应矩阵只能映射地面 —— 把篮筐当球场地点标进去
+        // 会把整份标定拉偏（实测去掉它：两段误差 1.00m→0.03m、2.61m→0.18m）。
+        // 篮筐请用「在画面上标篮筐」，那条路直接存画面坐标，不走单应矩阵。
+        left: [
+          { name: 'corner_near_left', label: '底线左角' },
+          { name: 'corner_near_right', label: '底线右角' },
+          { name: 'lane_near_left', label: '罚球区左角' },
+          { name: 'lane_near_right', label: '罚球区右角' },
+          { name: 'ft_near', label: '罚球线中点' },
+          { name: 'arc_near', label: '三分弧顶' }
+        ],
+        right: [
+          { name: 'corner_far_left', label: '底线左角' },
+          { name: 'corner_far_right', label: '底线右角' },
+          { name: 'lane_far_left', label: '罚球区左角' },
+          { name: 'lane_far_right', label: '罚球区右角' },
+          { name: 'ft_far', label: '罚球线中点' },
+          { name: 'arc_far', label: '三分弧顶' }
+        ],
+        // 全场 15 个地面地标（A端 = y>0 那一端，B端 = y<0）。带 dst 球场坐标（米）：
+        // 解算后用它反投影，就能算出"这个点在你这两幅画面里根本看不见"（见 offFrameNames）。
+        full: [
+          { name: 'corner_far_left', label: 'A端底线左角', dst: [-7.5, 14.0], hint: 'A端篮筐后，底线与左边线交点' },
+          { name: 'corner_far_right', label: 'A端底线右角', dst: [7.5, 14.0], hint: 'A端篮筐后，底线与右边线交点' },
+          // ⚠️ 「A端篮筐中心」**已从这里移除**：篮圈离地 3.05m，不在球场地面上，
+          // 而单应矩阵只能映射地面 —— 把它当球场地点标进去会把整份标定拉偏
+          // （实测：去掉它，两段平均重投影误差 1.00m→0.03m、2.61m→0.18m）。
+          // 篮筐请用上面的「在画面上标篮筐」，那条路直接存画面坐标，不走单应矩阵。
+          { name: 'lane_far_left', label: 'A端罚球区左角', dst: [-2.45, 8.2], hint: 'A端罚球线左端与罚球区边线交点' },
+          { name: 'ft_far', label: 'A端罚球线中点', dst: [0.0, 8.2], hint: 'A端罚球线正中，罚球时站的那条线' },
+          { name: 'lane_far_right', label: 'A端罚球区右角', dst: [2.45, 8.2], hint: 'A端罚球线右端与罚球区边线交点' },
+          { name: 'arc_far', label: 'A端三分弧顶', dst: [0.0, 5.675], hint: 'A端三分弧正对篮筐的最高点' },
+          { name: 'half_left', label: '中线左边线交点', dst: [-7.5, 0.0], hint: '中线与画面左侧边线交点' },
+          { name: 'center', label: '中圈中心', dst: [0.0, 0.0], hint: '中圈或中场标志的圆心' },
+          { name: 'half_right', label: '中线右边线交点', dst: [7.5, 0.0], hint: '中线与画面右侧边线交点' },
+          { name: 'lane_near_left', label: 'B端罚球区左角', dst: [-2.45, -8.2], hint: 'B端罚球线左端与罚球区边线交点' },
+          { name: 'ft_near', label: 'B端罚球线中点', dst: [0.0, -8.2], hint: 'B端罚球线正中，罚球时站的那条线' },
+          { name: 'lane_near_right', label: 'B端罚球区右角', dst: [2.45, -8.2], hint: 'B端罚球线右端与罚球区边线交点' },
+          { name: 'arc_near', label: 'B端三分弧顶', dst: [0.0, -5.675], hint: 'B端三分弧正对篮筐的最高点' },
+          { name: 'corner_near_left', label: 'B端底线左角', dst: [-7.5, -14.0], hint: 'B端篮筐后，底线与左边线交点' },
+          { name: 'corner_near_right', label: 'B端底线右角', dst: [7.5, -14.0], hint: 'B端篮筐后，底线与右边线交点' }
+          // 「B端篮筐中心」同样已移除（理由见上面 A端 那段注释）
+        ]
+      },
       mfFrames: [],           // 抽出来的画面 [{t,image,w,h}]
       mfIdx: 0,               // 当前是第几张
       mfPts: [],              // 已标点 [{t,name,label,x,y}]
       mfTarget: '',           // 当前选中要标的点名
-      autoMode: true,          // 自动识别模式：点位置即可，不用选特征点名字
-      autoHalf: 'far',         // 你看到的主要是哪部分场地：far/near/full
-      autoResult: null,        // 自动识别结果
       mfResult: null,         // 解算结果
       mfPreviewed: false,     // 预览过且可用（界面上用来区分"预览"与"已保存"）
       hoverPt: null,          // 鼠标在画面上的位置（画准星用）
       mfCenter: 60,           // 在哪个时刻附近抽帧（同一镜头内）
       mfSpan: 3,              // 抽帧的时间跨度（秒）
+      // 用户实测反馈：「只能在一个画面里点，想点完所有点根本不显示」——
+      // 一个镜头里只看得见半场，剩下的半场在这个画面里压根不存在，
+      // 于是怎么点都点不全。做法改成**左右两个画面各自点各自的点**：
+      // 左画面标一侧半场、右画面标另一侧半场，两边的点一起送去解算。
+      // 单应矩阵的硬要求没变：**每个画面自己要有 4 个以上、铺得开的点**
+      // （backend /api/calibrate_multi 的 per_frame_fit 就是按这个判的）。
+      dualView: true,         // true = 左右两个画面；false = 老的「一张一张切」
+      mfActive: 0,            // 正在点哪个画面：0=左（上面那张）1=右
+      mfIdx2: 0,              // 右边画面对应的帧下标
       courtPts: [],
       courtIdx: 0,
       courtResult: null,
+      // 标定自检叠加层：把"这份 H 算出来的球场线"画回画面上，
+      // 对不对得上一眼就能看见 —— 而不是只给一个"误差 4.2m"的数字。
+      // 为什么必须加：5 个点里**任取 4 个都能精确解出 H（误差恒为 0）**，
+      // 所以单看误差数字，用户根本无法判断自己点得对不对（实测争议点）。
+      showCourtOverlay: true,
+      overlayW: 0,
+      overlayH: 0,
+      overlayLines: [],        // [[[x,y],...], ...] 画面像素坐标
+      // 「点吸附精修」被采纳时的点（画成空心黄圈，供对照）——
+      // 后端 refine_keypoints 采纳后，**存下来的标定用的是吸附后的点**，
+      // 所以画面上必须也把它画出来，否则用户看到的点和他实际存下来的不一致
+      //（会以为工具偷偷改了位置）。
+      snapPts: [],
+      // 四个未命名点只用于预览；正式标定使用多个人工命名地标。
+      // 为什么不给点命名：corner_near_* 的坐标其实是 y=-14（另一端底线），
+      // 命名与直觉相反，判错一次整张图平移 28m（实测踩过）。
+      courtMini: false,
+      mfMiniPts: [],           // [{t, seq(1..4), x, y}] 按点选顺序
+      // ---- 拖动修正 + 点完自动叠线（用户 2026-10-05 的改进要求）----
+      // mfDrag：正在拖的那个点（{t,name}）；mfDragMoved：这次按住有没有真的移动过
+      // （没移动就是普通单击，仍然走"新增一个点"）
+      mfDrag: null,
+      mfDragMoved: false,
+      // 点位/画面的版本号：自动叠线是异步的，回来时若版本变了（用户又点/拖/切了画面），结果必须丢弃，
+      // 否则慢请求会把**旧点位算出来的线**画在新点位上（用户 2026-10-05 指出的风险）
+      mfVersion: 0,
+      autoPreviewTimer: null,  // 点/拖之后延迟自动解算一次（静默），让球场线立刻出现在画面上
       // ---- 新手上手（onboard）----
       // 目标：让第一次拿到软件的人在 5 分钟内看到一份结果，而不是对着表单发愣。
       // 关闭状态记在 localStorage：看过就不再烦他，但可以随时重新打开。
@@ -118,10 +207,9 @@ window.PAGES['upload'] = {
     activeItems: function () {
       return this.markKind === 'court' ? this.courtItems : this.markItems;
     },
-    /** 当前模式已点的点 */
+    /** 当前模式已点的点（**只用于篮筐模式**；球场模式的左右画面各自渲染
+     *  mfPtsHere / mfPtsRight —— 用 activePts 会让另一边"看起来消失"） */
     activePts: function () {
-      // 球场模式只画**本帧**的点：不同画面的像素坐标不通用，
-      // 把别帧的点叠上来会让人以为标错了
       return this.markKind === 'court' ? this.mfPtsHere : this.markPts;
     },
     /** 当前模式的下标 */
@@ -130,6 +218,16 @@ window.PAGES['upload'] = {
     },
     /** 当前画面 */
     mfCurrent: function () { return this.mfFrames[this.mfIdx] || null; },
+    /** 右画面的帧（两个画面模式下才有意义；没有第二帧就退回跟左画面同一张） */
+    mfCurrentRight: function () {
+      if (!this.dualView) return null;
+      return this.mfFrames[this.mfIdx2] || this.mfFrames[this.mfIdx] || null;
+    },
+    /** 两个画面模式：左右各自一张，t 相同就只有一张（还没加第二帧） */
+    mfDualSplit: function () {
+      return !!(this.dualView && this.mfCurrentRight &&
+                this.mfCurrent && this.mfCurrentRight.t !== this.mfCurrent.t);
+    },
     /** 当前画面的原始像素尺寸。
      *  画点用 SVG 的 viewBox 对齐到图片原始尺寸 —— 之前用百分比定位，
      *  依赖"容器宽度==图片宽度"这个不成立的前提，点会整体偏移。
@@ -146,6 +244,110 @@ window.PAGES['upload'] = {
     mfPtsHere: function () {
       var t = this.mfCurrent ? this.mfCurrent.t : null;
       return this.mfPts.filter(function (p) { return p.t === t; });
+    },
+    /** **右画面**那一帧上的点。
+     *
+     *  为什么必须单独有一个 computed（实测 bug）：右画面以前渲染的是
+     *  `activePts`，而 `activePts === mfPtsHere` 只认 `mfCurrent`（左帧）。
+     *  于是"在左画面标完、切到右画面标"的时候，左画面会把右帧的点排除掉，
+     *  用户看到的现象就是"我标完左画面再标右画面，左画面标的点没了"
+     *  （数据其实都在，是渲染时用错了时刻）。
+     */
+    mfPtsRight: function () {
+      var t = this.mfCurrentRight ? this.mfCurrentRight.t : null;
+      return this.mfPts.filter(function (p) { return p.t === t; });
+    },
+    /** **当前正在点的那一面**上有几个点（撤销/清空按钮的禁用状态要用它）。
+     *  以前用 mfPtsHere（只认左帧），在右画面标完点后按钮还是灰的（实测 bug）。 */
+    mfActivePtsCount: function () {
+      if (!this.mfDualSplit) return this.mfPts.length;
+      return (this.mfActive === 1 ? this.mfPtsRight : this.mfPtsHere).length;
+    },
+    // ---- 「只点 4 个点」模式的点（**必须是 computed，不能放 methods**）----
+    //
+    // 为什么单独写这段注释：一开始把这两个函数放进了 `methods`。模板里写
+    // `miniPtsHere`（不带括号）时，Vue 拿到的是**函数对象本身**，于是：
+    //   * `miniPtsHere.length` 读的是"函数的形参个数" = 0 → 槽位永远显示「未点」；
+    //   * `v-for="p in miniPtsHere"` 遍历一个函数 → 0 次迭代 → **画面上不画任何圈**。
+    // 而点其实全都记进了 mfMiniPts（所以点满 4 个之后守卫会拦住下一次点击）。
+    // 用户看到的就是"点完 4 个啥也点不了了，而且没有圈"（实测三症状同一根因）。
+    /** 左画面（mfCurrent）上的 4 点 */
+    miniPtsHere: function () {
+      var t = this.mfCurrent ? this.mfCurrent.t : null;
+      return this.mfMiniPts.filter(function (p) { return p.t === t; });
+    },
+    /** 右画面上的 4 点 */
+    miniPtsRight: function () {
+      var t = this.mfCurrentRight ? this.mfCurrentRight.t : null;
+      return this.mfMiniPts.filter(function (p) { return p.t === t; });
+    },
+    /** **当前正在点的那一面**上的 4 点 —— 槽位显示要用它。
+     *  以前槽位固定用 miniPtsHere（左帧），在右画面点时槽位全显示「未点」，
+     *  用户会以为没点上（实测 bug）。 */
+    miniPtsActive: function () {
+      if (!this.mfDualSplit) return this.mfMiniPts;
+      return this.mfActive === 1 ? this.miniPtsRight : this.miniPtsHere;
+    },
+    /** 有没有哪一幅画面已经正好点满 4 个点（决定「先试算」能不能按）。
+     *  ⚠️ 不能用 mfEnough —— 它数的是**命名点** mfPts，4 点模式下永远是 0，
+     *  于是按钮一直是灰的、整个 4 点通道点不动（队友那边就是这个状态）。 */
+    miniReady: function () {
+      return this.miniPayload().length > 0;
+    },
+    /** 「点吸附精修」被采纳时的点（模板要画成空心黄圈，供对照）。
+     *  ⚠️ 必须放 computed：放 methods 的话模板里 `snapPtsHere` 拿到的是函数对象，
+     *  `v-for` 迭代 0 次 → 画面上什么都不显示（同类错误还有 miniPtsHere/miniPtsRight）。 */
+    snapPtsHere: function () {
+      var t = this.mfCurrent ? this.mfCurrent.t : null;
+      return (this.snapPts || []).filter(function (p) { return p.t === t; });
+    },
+    snapPtsRight: function () {
+      var t = this.mfCurrentRight ? this.mfCurrentRight.t : null;
+      return (this.snapPts || []).filter(function (p) { return p.t === t; });
+    },
+    /** 另一个画面上的点（已不再用于渲染：右画面现在画 mfPtsRight。
+     *  保留这段注释是为了记住踩过的坑：曾经右画面画的是"除左帧以外的所有点"，
+     *  理由是"另一帧的坐标不通用、只当参照"，但那会让右画面的点出现在左画面上
+     *  或反之，看起来就像"点丢了"。现在两边各画各的那一帧，界限清楚。） */
+    /** 每个画面各自有几个点、够不够 4 个、点铺得开不开。
+     *
+     *  为什么必须单独显示：一个画面里只看得见半场，另一个半场的点要么在画面外、
+     *  要么挤在边角上（点接近共线时单应矩阵的误差照样是 0.00m，但整份标定是错的）。
+     *  所以"这个画面够不够"要当场告诉用户，而不是等解算失败才说一句"误差偏大"。 */
+    mfFrameCov: function () {
+      var F = this.mfFrames || [];
+      return F.map(function (f) {
+        var pts = this.mfPts.filter(function (p) { return p.t === f.t; });
+        var tri = 0;
+        for (var i = 0; i < pts.length; i++) {
+          for (var j = i + 1; j < pts.length; j++) {
+            for (var k = j + 1; k < pts.length; k++) {
+              var a = Math.abs((pts[j].x - pts[i].x) * (pts[k].y - pts[i].y) -
+                               (pts[k].x - pts[i].x) * (pts[j].y - pts[i].y)) / 2;
+              if (a > tri) tri = a;
+            }
+          }
+        }
+        return { idx: F.indexOf(f), t: f.t, n: pts.length, tri: tri,
+                 enough: pts.length >= 4, spread: tri >= 0.02 };
+      }, this);
+    },
+    /** 两个画面模式下，左右画面各自标了几个点（界面顶部那两行读数用的） */
+    mfLeftCov: function () {
+      var t = this.mfCurrent ? this.mfCurrent.t : null;
+      var c = null;
+      this.mfFrameCov.forEach(function (x) { if (x.t === t) c = x; });
+      return c || { t: t, n: 0, tri: 0, enough: false, spread: false };
+    },
+    mfRightCov: function () {
+      var t = this.mfCurrentRight ? this.mfCurrentRight.t : null;
+      var c = null;
+      this.mfFrameCov.forEach(function (x) { if (x.t === t) c = x; });
+      return c || { t: t, n: 0, tri: 0, enough: false, spread: false };
+    },
+    /** 哪些画面自己就够 4 个点（后端 per_frame_fit 也是按这个判的） */
+    solvableFrames: function () {
+      return this.mfFrameCov.filter(function (f) { return f.enough; });
     },
     /** 某个点名是否已标过（按钮变绿） */
     mfDone: function () {
@@ -180,21 +382,20 @@ window.PAGES['upload'] = {
         ? this.calInfo.reproj_error_m : null;
       return [
         { key: 'video', n: 1, title: '选一段视频', done: hasVideo,
-          desc: hasVideo ? ('已选：' + this.videoBaseName)
-                         : '点右按钮用机器上现成的示例素材，或选你本地的文件上传',
+          desc: hasVideo ? ('已选：' + this.videoBaseName) : '用现成示例，或上传本地文件',
           cta: hasVideo ? '换一个视频' : (this.samples.length ? '用示例视频' : '选择本地文件') },
-        { key: 'calib', n: 2, title: '标定球场（可选，推荐做）', done: hasCal,
+        { key: 'calib', n: 2, title: '标定球场（可选）', done: hasCal,
           desc: hasCal
             ? ('已标定' + (rmse != null ? ('：重投影误差 ' + rmse + ' m') : ''))
-            : '告诉软件"球场在画面的哪个位置"：在同一个画面上点 4~6 个地面点即可。'
-              + '不标也能分析（会按「只判进球」跑）：出手 / 进 / 不中 / 未知、比分'
-              + '（分值按图像估计并标注为估计值）、命中率、球员统计、文字战报都能出；'
-              + '只有热图、战术图和 2 分/3 分区分需要标定。',
+            // 一句话说清"怎么做 + 不做的后果"。**必须保留"不标也能分析"这几个字**：
+            // 不写用户就以为标定是硬门槛（`tests/test_upload_payload.js` 也在钉这条）。
+            : '在画面里点 4~6 个地面点；不标也能分析（热图/战术图要标）',
           cta: hasCal ? '重新标定' : '去标定' },
-        { key: 'run', n: 3, title: '开始分析，然后看结果', done: done,
+        { key: 'run', n: 3, title: '开始分析', done: done,
           desc: done
-            ? '分析完成 —— 去【结果总览】看比分、命中率、投篮热图、战术与文字战报'
-            : '点「开始分析」；4 分钟的视频大约要 3 分钟，跑完这里会变成 ✓',
+            // 完成后要指出"判错了去哪儿改"——去掉「训练标注」模块后，
+            // 「人工复核」是唯一的纠错入口，界面上必须还找得到（test_ui_home.js 钉这条）。
+            ? '分析完成；判错去「人工复核」改判' : '点「开始分析」，跑完变 ✓',
           cta: done ? '去看结果' : '开始分析' }
       ];
     },
@@ -250,10 +451,15 @@ window.PAGES['upload'] = {
       }
       var n = this.guideCount;
       var enough = this.mfFrames.length ? this.mfEnough : this.courtEnough;
-      return '已点 ' + n + ' 个（最少 4 个、建议 6 个）' +
+      var tail = this.mfFrames.length
+        ? (this.mfDualSplit
+            ? '。左画面 ' + this.mfLeftCov.n + ' 个、右画面 ' + this.mfRightCov.n +
+              ' 个 —— 每边各自够 4 个才算解得出（两边的点不能互相补）'
+            : '。画面里看不到的点按「跳过这一项」跳过它。')
+        : '';
+      return '已点 ' + n + ' 个（两边合计）' +
         (enough ? '——已经够了，可以直接按「保存并解算标定」；想更准就继续点'
-                : '——还差 ' + (4 - n) + ' 个才能保存') +
-        (this.mfFrames.length ? '。画面里看不到的点按「跳过这一项」跳过它。' : '');
+                : '——每边至少 4 个、建议 5~6 个') + tail;
     },
     /** 已点出的点里，篮筐中心 + 左右缘 → 算出归一化 rx；中心 + 上下沿 → ry */
     markHoop: function () {
@@ -289,7 +495,85 @@ window.PAGES['upload'] = {
     statusText: function () {
       return { queued: '排队中', running: '分析中', done: '已完成', error: '失败' }[this.job.status] || '未开始';
     },
-    percent: function () { return Math.round((Number(this.job.progress) || 0) * 100); }
+    percent: function () { return Math.round((Number(this.job.progress) || 0) * 100); },
+    /** 标定"吻合度"读数：分析端收不收这份标定的硬门槛是 ≥1.25。
+     *  放在 computed 里是因为模板要拿它判颜色/文案。 */
+    fitRatio: function () {
+      var r = this.mfResult || this.courtResult;
+      var f = r && r.calibration_fit;
+      var v = f && f.ratio;
+      return (typeof v === 'number') ? v : 0;
+    },
+    /** 多机位标定里"不可信的那几段"（后端 calibration_fit.weak_segments）。
+     *
+     *  为什么必须逐段摆出来（用户实测踩到）：多机位是**每一段各解一份 H**，
+     *  而以前返回的吻合度取的是 max —— 好段把坏段盖住了（实测两段 0.34 / 3.12，
+     *  界面报 3.12、说"标定可用"），于是**半个视频的球员坐标是错的**，
+     *  用户看到的现象就是"战术图到了一分钟之后怎么就乱码了"。
+     *  现在后端给的是**最差那一段**的读数 + 不可信段清单，这里把它们逐段显示出来：
+     *  哪一段时间不可信、吻合度多少、误差多少。
+     *  老后端没有这个字段 → 返回空数组，界面不多说一句话。 */
+    weakSegs: function () {
+      var r = this.mfResult || this.courtResult;
+      var f = r && r.calibration_fit;
+      var list = (f && f.weak_segments) || [];
+      if (!Array.isArray(list)) return [];
+      return list.map(function (s) {
+        // ⚠️ 缺字段要显示成 "?"，不能靠 Number(undefined)=NaN 之外的小聪明：
+        // Number(null) 是 0，naive 写法会把"没给开始时刻"显示成 0.0s（假读数）。
+        var a = (s && s.t_start != null) ? Number(s.t_start) : NaN;
+        var b = (s && s.t_end != null) ? Number(s.t_end) : NaN;
+        return {
+          from: isFinite(a) ? a.toFixed(1) : '?',
+          to: isFinite(b) ? b.toFixed(1) : '?',
+          ratio: (s && s.ratio != null) ? s.ratio : '—',
+          rmse_m: (s && s.rmse_m != null) ? s.rmse_m : '—',
+          why: (s && s.why) || '这一段不可信'
+        };
+      });
+    },
+    /** 哪些点名在某一幅画面里根本看不见（用解出来的 H 反投影判断）。
+     *
+     *  为什么要这个：这台机位只拍得到半场时，「另一侧的底线角」在画面里
+     *  压根不存在，用户硬点只能靠猜 —— 误差就是这么来的（实测：用户把
+     *  "底线右角"点成了罚球区右角，偏 9m）。解算后用同一份 H 就能算出
+     *  每个特征点该落在画面的哪个位置，落在画面外的就是"看不见"。
+     *
+     *  ⚠️ 必须放在 computed：模板里当值用（offFrameNames.length）。
+     */
+    offFrameNames: function () {
+      var r = this.mfResult || this.courtResult;
+      var H = r && r.H;
+      if (!H || this.markKind !== 'court') return [];
+      // 和叠加层同一个方向问题：H 是「像素 → 球场米」，反投影必须用它的逆。
+      var inv = this._invertH(H);
+      if (!inv) return [];
+      var items = this.courtItems || [];
+      var frames = (this.mfFrames || []).slice();
+      if (!frames.length && this.frameW) {
+        frames = [{ t: null, w: this.frameW, h: this.frameH }];
+      }
+      if (!frames.length) return [];
+      var out = [];
+      items.forEach(function (it) {
+        var m = it.dst;                 // 球场全场坐标（米）；半场那两份清单没带 dst
+        if (!m || m.length < 2) return;
+        var w = inv[2][0] * m[0] + inv[2][1] * m[1] + inv[2][2];
+        if (Math.abs(w) < 1e-9) { out.push(it.label); return; }
+        var u = (inv[0][0] * m[0] + inv[0][1] * m[1] + inv[0][2]) / w;
+        var v = (inv[1][0] * m[0] + inv[1][1] * m[1] + inv[1][2]) / w;
+        if (!isFinite(u) || !isFinite(v)) { out.push(it.label); return; }
+        // 至少得在**一幅**画面里能看见，否则这个点名就是"点了也白点"。
+        // 用 6% 的宽容边框：标定本身有误差，紧贴边缘的点不算"看不见"。
+        var seen = frames.some(function (f) {
+          var pad = 0.06;
+          return u > -pad * f.w && u < f.w * (1 + pad) &&
+                 v > -pad * f.h && v < f.h * (1 + pad);
+        });
+        if (!seen) out.push(it.label);
+      });
+      return out;
+    }
   },
   mounted: function () {
     this.refreshJobs();
@@ -303,6 +587,11 @@ window.PAGES['upload'] = {
     if (this.watcher) this.watcher.close();
   },
   methods: {
+    /** 分析完成后跳「人工复核」：判错的球在那儿改判（会写回比分与统计） */
+    goReview: function () { location.hash = '#/review'; },
+    /** 跳「结果总览」 */
+    goOverview: function () { location.hash = '#/overview'; },
+
     /* ------------------------------------------------------------------
        在画面上标篮筐（不用敲命令行）
        ------------------------------------------------------------------ */
@@ -320,40 +609,31 @@ window.PAGES['upload'] = {
         self.savedMarks = (r && r.exists) ? r.marks : null;
       }).catch(function () { self.savedMarks = null; });
     },
-    /** 打开「标球场」：抽 N 个画面，多帧累加标点 */
+    /** 打开「标球场」：抽帧 → 在画面里点地标 → 解算（走 /api/calibrate_multi） */
     openCourt: function () {
-      var self = this;
       var v = String(this.form.video_path || '').trim();
       if (!v) { this.$message.warning('先选一个视频'); return; }
       this.markKind = 'court';
       this.markOpen = true;
       this.mfFrames = [];
       this.mfIdx = 0;
+      this.mfIdx2 = 0;
+      this.mfActive = 0;
       this.mfPts = [];
       this.mfTarget = '';
       this.mfResult = null;
       this.markImg = '';
       this.loadPlayer();                 // 挂上原片：可以拖着找到"场地看得最全"的那一帧再加进来
-      if (!this.courtItems.length) {
-        window.API.courtLandmarks().then(function (d) {
-          self.courtItems = (d && d.landmarks) || [];
-        }).catch(function () {});
-      }
-      this.$message.info('正在抽画面…');
-      window.API.getFrames(v, 6, this.mfCenter, this.mfSpan).then(function (d) {
-        self.mfFrames = (d && d.frames) || [];
-        if (!self.mfFrames.length) {
-          self.$message.error('抽不到画面（视频太短或全是黑帧？）');
-          return;
-        }
-        self.$message.success('抽到 ' + self.mfFrames.length +
-          ' 个画面：请挑场地看得最全的那一帧，一次点够 5~6 个点（同一帧里的点才算数）');
-      }).catch(function (e) {
-        self.$message.error('抽帧失败：' + (e && e.message ? e.message : e));
-      });
-      window.API.getCalibration(v).then(function (r) {
-        self.calInfo = (r && r.exists) ? r : null;
-      }).catch(function () { self.calInfo = null; });
+      // 点名表**只用本地这张表**（按"摄像机拍的是哪一侧"取 7 个），不再拉后端那 17 个。
+      // 后端那 17 个里有一半是"另一侧/中圈那一头"的点，在这种机位下画面里根本不存在，
+      // 列出来只会让用户去点不存在的东西（实测：把"底线右角"点成了罚球区右角，偏 9.17m）。
+      this.setCourtSide(this.courtSide);
+      // 默认直接走"自动挑同一镜头的两帧"：用户不用自己拖，也就不会拖到两个镜头里。
+      // （原来的"在 mfCenter 附近抽 6 帧"已删掉：那批帧是**同一秒附近**的，
+      //   对"两侧半场各标一遍"没意义，还会和自动挑的两帧抢 mfFrames。）
+      this.$message.info('正在判断镜头有没有切…（约 3 秒）');
+      this.pickStableFrames();
+      this.loadCalInfo();                // 顺便读回"这段视频已有标定没有"
     },
     /** 读回"这段视频有没有标定"（保存/撤销之后要刷新状态与 revision） */
     loadCalInfo: function () {
@@ -375,8 +655,10 @@ window.PAGES['upload'] = {
       if (!el) { return; }
       try { el.currentTime = Math.max(0, Number(t) || 0); } catch (e) { /* 元数据还没到就忽略 */ }
     },
-    /** 把某一时刻的画面**加进帧列表**（球场模式用：想标哪一帧就加哪一帧） */
-    addFrameAtTime: function (t) {
+    /** 把某一时刻的画面**加进帧列表**（球场模式用：想标哪一帧就加哪一帧）     *
+     *  `onReady(t)` 可选：加完帧后回调，两个画面模式用它把新帧直接放到对应半边
+     *  （不然用户"加了一帧却不知道它在哪个画面里"）。 */
+    addFrameAtTime: function (t, onReady) {
       var self = this;
       var v = String(this.form.video_path || '').trim();
       var tt = Number(Number(t).toFixed(2));
@@ -385,6 +667,11 @@ window.PAGES['upload'] = {
         self.mfIdx = self.mfFrames.length - 1;
         self.mfTarget = '';
         self.mfResult = null;
+        self.mfVersion++;
+        if (typeof onReady === 'function') {
+          onReady(tt);
+          return;                     // 由回调给出更贴切的提示
+        }
         self.$message.success('已加入 t=' + tt + 's 这一帧（共 ' + self.mfFrames.length +
           ' 帧）—— 现在可以在它上面标点');
       }).catch(function (e) {
@@ -395,7 +682,21 @@ window.PAGES['upload'] = {
     useVideoMoment: function () {
       var el = this.$refs.markVideo;
       var t = (el && el.currentTime) ? el.currentTime : this.markAt;
-      if (this.markKind === 'court') { this.addFrameAtTime(t); return; }
+      if (this.markKind === 'court') {
+        var self = this;
+        var side = this.mfDualSplit ? this.mfActive : 0;
+        this.addFrameAtTime(t, function (tt) {
+          var i = self.mfFrames.length - 1;
+          if (self.dualView) {          // 两个画面模式：放到当前那一半，并切过去
+            if (side === 1) self.mfIdx2 = i; else self.mfIdx = i;
+            self.mfActive = side;
+          }
+          self.$message.success('已把 t=' + tt + 's 的这幅画面放到' +
+            (self.dualView ? (side === 0 ? '左' : '右') : '') +
+            '画面 —— 现在可以在它上面点这个半场的点');
+        });
+        return;
+      }
       this.markAt = Number(Number(t).toFixed(2));
       this.loadMarkFrame(false);
       this.$message.success('已取 t=' + this.markAt + 's 的画面，可以在它上面标点了');
@@ -406,16 +707,28 @@ window.PAGES['upload'] = {
       var v = String(this.form.video_path || '').trim();
       if (!v) return;
       window.API.getFrames(v, 6, this.mfCenter, this.mfSpan).then(function (d) {
-        // 换镜头就清空已标点：不同镜头的像素坐标不通用
+        // 换批画面：只保留"新画面里还有同一时刻"的点。
+        // 不能一律清空 —— 用户可能已经辛辛苦苦标了一个半场，重抽一次就全没了；
+        // 也不能一律留着 —— 画面换了以后那些点会飘到别的地方去（实测反馈的"点跟着漂"）。
+        var frames = (d && d.frames) || [];
+        var kept = 0, lost = 0;
         if (self.mfPts.length) {
-          self.mfPts = [];
-          self.$message.info('已换镜头，原标点已清空（不同镜头坐标不通用）');
+          var ts = {};
+          frames.forEach(function (f) { ts[f.t] = 1; });
+          var before = self.mfPts.length;
+          self.mfPts = self.mfPts.filter(function (p) { return !!ts[p.t]; });
+          kept = self.mfPts.length;
+          lost = before - kept;
         }
-        self.mfFrames = (d && d.frames) || [];
+        self.mfFrames = frames;
         self.mfIdx = 0;
+        self.mfIdx2 = Math.min(1, Math.max(0, self.mfFrames.length - 1));
+        self.mfActive = 0;
         self.$message.success('抽到 ' + self.mfFrames.length + ' 帧（t=' +
           (self.mfFrames.length ? self.mfFrames[0].t + '~' +
-           self.mfFrames[self.mfFrames.length - 1].t : '') + 's）');
+           self.mfFrames[self.mfFrames.length - 1].t : '') + 's）' +
+          (lost ? ('；' + lost + ' 个点所在的画面已经不在这批里，已丢弃（保留 ' +
+                   kept + ' 个）') : ''));
       }).catch(function (e) {
         self.$message.error('抽帧失败：' + (e && e.message ? e.message : e));
       });
@@ -426,79 +739,317 @@ window.PAGES['upload'] = {
       else this.$message.info('已经是最后一个画面了');
     },
     mfPick: function (item) { this.mfTarget = item.name; },
-    /** 在当前画面上点一个点（必须是先选中了某个特征点） */
+    /** 当前要往哪个画面的帧上落点（左右各自一张画面时以点击的那张为准） */
+    mfClickT: function (ev) {
+      var el = ev && ev.currentTarget;
+      var side = (el && el.getAttribute) ? el.getAttribute('data-side') : null;
+      if (side === '1' && this.mfCurrentRight) { this.mfActive = 1; return this.mfCurrentRight.t; }
+      if (side === '0' && this.mfCurrent) { this.mfActive = 0; return this.mfCurrent.t; }
+      return this.mfCurrent ? this.mfCurrent.t : null;
+    },
+    /** 切换「只点 4 个点」模式：两边点集不通用，切换时清干净并说明。 */
+    setCourtMini: function (v) {
+      this.courtMini = !!v;
+      this.mfMiniPts = [];
+      this.mfPts = [];
+      this.mfTarget = '';
+      this.mfResult = null;
+      this.snapPts = [];
+      this.mfVersion++;          // 点集换了 → 在途的自动叠线结果作废
+      this.$message.info(this.courtMini
+        ? '已切到「4 点试算」：仅预览投影线，不能保存为正式（热区/战术图）标定'
+        : '已切回「命名地标」：标 4 个以上看得见的地标，并核对球场线投影');
+    },
+    /** 在画面上点一个点（必须是先选中了某个特征点）
+     *
+     *  左右两个画面各有各的坐标系：点落在**哪一张画面**上，就记那一张的 t。
+     *  以前这里只认 mfCurrent，于是"在右边画面点的点"会被记到左边画面上，
+     *  坐标整体跑到另一边去。 */
     mfClick: function (ev) {
       if (!this.mfCurrent) return;
-      if (this.autoMode) {
-        var e0 = (ev.target && ev.target.tagName === 'IMG') ? ev.target
-                                                            : ev.currentTarget;
-        var b0 = e0.getBoundingClientRect();
-        var ax = Math.max(0, Math.min(1, (ev.clientX - b0.left) / b0.width));
-        var ay = Math.max(0, Math.min(1, (ev.clientY - b0.top) / b0.height));
-        this.mfPts.push({ t: this.mfCurrent.t, name: 'auto' + this.mfPts.length,
-                          label: '点' + (this.mfPts.length + 1), x: ax, y: ay });
-        this.autoResult = null;
-        this.$message.success('已记录第 ' + this.mfPts.length + ' 个点');
-        return;
-      }
-      if (!this.mfTarget) {
-        this.$message.warning('先在上面选一个特征点（比如「中圈中心」），再在画面里点它');
-        return;
-      }
-      if (!this.mfCurrent) return;
+      var t = this.mfClickT(ev);
+      if (t === null) return;
       var el = (ev.target && ev.target.tagName === 'IMG') ? ev.target
                                                           : ev.currentTarget;
       var box = el.getBoundingClientRect();
       var x = Math.max(0, Math.min(1, (ev.clientX - box.left) / box.width));
       var y = Math.max(0, Math.min(1, (ev.clientY - box.top) / box.height));
+
+      // ---- 「只点 4 个点」模式：**不给点命名**，按点选顺序记录 ----
+      // 顺序本身就是数据：它决定这 4 个点对应球场上的哪一套地物，后端拿它
+      // 穷举试 10 种组合、用"投影线压在白线上"挑最好的那套。所以**不能**按名字存。
+      if (this.courtMini) {
+        var sameHere = this.mfMiniPts.filter(function (p) { return p.t === t; });
+        if (sameHere.length >= 4) {
+          this.$message.warning('这一幅画面已经点了 4 个点。要重来请按「重点这一幅」。');
+          return;
+        }
+        this.mfMiniPts.push({ t: t, seq: sameHere.length + 1, x: x, y: y });
+        this.mfResult = null;
+        this.$message.success('第 ' + (sameHere.length + 1) + ' 个点 → (' +
+          x.toFixed(3) + ', ' + y.toFixed(3) + ')' +
+          (sameHere.length + 1 < 4 ? '，继续点第 ' + (sameHere.length + 2) + ' 个'
+                                   : '，4 个点齐了，按「先试算」'));
+        return;
+      }
+
+      if (!this.mfTarget) {
+        this.$message.warning('先在下面选一个特征点（比如「篮筐中心」），再在画面里点它位置'
+          + (this.mfDualSplit ? '—— 选一次就能在两边各点一下' : ''));
+        return;
+      }
       var item = null;
       for (var i = 0; i < this.courtItems.length; i++) {
         if (this.courtItems[i].name === this.mfTarget) { item = this.courtItems[i]; }
       }
-      // 同一点名只保留最后一次（重复点=修正）
+      // 同名点只保留最后一次，但**只在同一个画面里替换**：
+      // 「底线左角」在左半场和右半场各出现一次，那是两个不同的点；
+      // 以前按名字全局去重，点第二半场时会把第一半场的点删掉
+      // （用户看到的现象就是"点完所有点一个都不显示"）。
       var self = this;
-      this.mfPts = this.mfPts.filter(function (p) { return p.name !== self.mfTarget; });
-      this.mfPts.push({ t: this.mfCurrent.t, name: this.mfTarget,
+      var sameT = this.mfPts.filter(function (p) {
+        return p.t === t && p.name === self.mfTarget; });
+      var extra = sameT.length ? '（改到了新位置）' : '（这也是一幅画面里的第 ' +
+        (this.mfPtsHere.length + 1) + ' 个点）';
+      this.mfPts = this.mfPts.filter(function (p) {
+        return !(p.t === t && p.name === self.mfTarget); });
+      this.mfPts.push({ t: t, name: this.mfTarget,
                         label: item ? item.label : this.mfTarget, x: x, y: y });
       this.mfTarget = '';
+      this.mfVersion++;
       // ★ 加了新点就清掉上一次的解算结果 —— 否则界面一直显示"旧报错"，
       // 用户会以为补点之后还是不行（实测踩到：先点 4 个点报错，再补到 6 个，
       // 红框仍写着"只点了 4 个点"，用户就卡在这里了）
       this.mfResult = null;
       // 立刻回显坐标：用户一眼就能看出记的是不是鼠标点的地方
-      this.$message.success('已记录 ' + (item ? item.label : '') +
-        ' → (' + x.toFixed(3) + ', ' + y.toFixed(3) + ')');
+      this.$message.success('已记录 ' + (item ? item.label : '') + extra +
+        ' → (' + x.toFixed(3) + ', ' + y.toFixed(3) + ')' +
+        (this.mfDualSplit ? ('（' + (this.mfActive === 1 ? '右' : '左') + '画面）') : ''));
+      // ★ 点完就自动算一次并叠线（静默）：用户不用先按「预览」才知道压得准不准
+      this.scheduleAutoPreview();
+    },
+    /* ---------------- 拖动修正 + 自动叠线（用户 2026-10-05 要求） ----------------
+     *
+     *  为什么要有拖动：一个点偏 3~5 像素，整份标定就会整体歪一点，而"撤销重标"还得
+     *  重新去点名表里找同一个名字，实测用户更想**直接把那个点拖到新位置**。
+     *  为什么要有自动叠线：叠线是唯一能肉眼判断对错的证据（4 个点就能精确解出 H、
+     *  误差恒为 0，数字看不出来），点完立刻看见红线压没压在画面白线上，才知道下一个点往哪点。
+     */
+    /** 按住已标的点开始拖动（28px 内算抓住那个点；没抓到就是普通单击 → 新增一个点） */
+    mfDragStart: function (ev) {
+      if (this.markKind !== 'court' || !this.mfFrames.length) return;
+      var t = this.mfClickT(ev);
+      if (t === null) return;
+      var el = ev.currentTarget;
+      var box = el.getBoundingClientRect();
+      if (!box.width) return;
+      var mx = (ev.clientX - box.left) / box.width;
+      var my = (ev.clientY - box.top) / box.height;
+      var tol = Math.max(0.012, 28 / Math.max(1, box.width));
+      var hit = null, best = 1e9;
+      this.mfPts.forEach(function (p) {
+        if (p.t !== t) return;
+        var d = Math.sqrt((p.x - mx) * (p.x - mx) + (p.y - my) * (p.y - my));
+        if (d <= tol && d < best) { best = d; hit = p; }
+      });
+      if (!hit) return;
+      this.mfDrag = { t: t, name: hit.name };
+      this.mfDragMoved = false;
+      if (ev.preventDefault) ev.preventDefault();
+    },
+    /** 拖动中：实时改那个点的归一化坐标（返回 true 表示这一下是拖动，别再走悬停准星） */
+    mfDragMove: function (ev) {
+      if (!this.mfDrag) return false;
+      var el = ev.currentTarget;
+      var box = el.getBoundingClientRect();
+      if (!box.width) return true;
+      var x = Math.max(0, Math.min(1, (ev.clientX - box.left) / box.width));
+      var y = Math.max(0, Math.min(1, (ev.clientY - box.top) / box.height));
+      var d = this.mfDrag;
+      this.mfPts = this.mfPts.map(function (p) {
+        return (p.t === d.t && p.name === d.name)
+          ? { t: p.t, name: p.name, label: p.label, x: x, y: y } : p;
+      });
+      this.mfDragMoved = true;
+      return true;
+    },
+    /** 松手：真的移动过就作废旧结果、报一次坐标，并自动重算叠线 */
+    mfDragEnd: function () {
+      if (!this.mfDrag) return;
+      var d = this.mfDrag, moved = this.mfDragMoved;
+      this.mfDrag = null;
+      this.mfDragMoved = false;
+      if (!moved) return;
+      var p = null;
+      this.mfPts.forEach(function (q) { if (q.t === d.t && q.name === d.name) p = q; });
+      this.mfResult = null;
+      this.mfVersion++;
+      this.$message.success('已修正「' + (p ? p.label : d.name) + '」的位置' +
+        (p ? (' → (' + p.x.toFixed(3) + ', ' + p.y.toFixed(3) + ')') : ''));
+      this.scheduleAutoPreview();
+    },
+    /** 点/拖之后延迟自动解算一次（静默、不弹提示），只为把球场线立刻叠上去 */
+    scheduleAutoPreview: function () {
+      var self = this;
+      if (this.markKind !== 'court' || !this.mfFrames.length) return;
+      if (this.autoPreviewTimer) clearTimeout(this.autoPreviewTimer);
+      this.autoPreviewTimer = setTimeout(function () {
+        self.autoPreviewTimer = null;
+        if (self.markSaving) return;
+        // 接口层还没就绪（页面刚加载 / 单测环境里没有 window.API）时直接跳过：
+        // 自动叠线是"锦上添花"，绝不能因为它把页面搞崩（实测：单测里定时器抛出
+        // TypeError 直接把进程带走了）。
+        if (!window.API || !window.API.calibrateMulti) return;
+        var enough = self.mfDualSplit
+          ? (self.mfLeftCov.enough || self.mfRightCov.enough)
+          : (self.mfPtsHere.length >= 4);
+        if (!enough) return;                 // 还不够 4 个点：静默等着，别弹错误
+        self.previewCourtMulti(true);
+      }, 600);
     },
     mfUndo: function () {
-      if (this.mfPts.length) this.mfPts.pop();
-      this.mfResult = null;      // 撤销后旧结果失效
-    },
-    mfClear: function () { this.mfPts = []; this.mfTarget = ''; this.mfResult = null; },
-    /** 自动识别标定：把当前帧的点交给后端，让它自己认出对应关系 */
-    solveAutoCalib: function () {
-      var self = this;
-      var pts = (this.mfPtsHere || []).map(function (p) { return [p.x, p.y]; });
-      if (pts.length < 5) {
-        this.$message.warning('自动识别至少要点 5 个点（现在 ' + pts.length +
-          ' 个）—— 4 个点时任何配对都能精确拟合，分不出对错；第 5 个点才能投票');
+      // 「4 点试算」模式下点不在 mfPts 里（走 mfMiniPts），不单独处理的话
+      // 页脚那个「撤销上一个点」在 4 点模式下就是个死按钮。
+      if (this.courtMini) {
+        var tm = this.mfClickTForActive();
+        for (var k = this.mfMiniPts.length - 1; k >= 0; k--) {
+          if (this.mfMiniPts[k].t === tm) {
+            this.mfMiniPts.splice(k, 1);
+            this.mfResult = null;
+            this.$message.success('已撤销这一幅的最后一个 4 点');
+            return;
+          }
+        }
+        this.$message.info('这一幅还没有点');
         return;
       }
-      this.autoResult = { loading: true };
-      window.API.calibrateAuto({
-        video_path: this.videoPath || this.form.video_path,
-        points: pts,
-        half: this.autoHalf,
-        t: this.mfCurrent ? this.mfCurrent.t : 0
-      }).then(function (r) {
-        self.autoResult = r;
-        if (r && r.ok) {
-          self.$message.success('自动识别成功：' + r.named + '，误差 ' + r.rmse_m + ' m');
-        } else {
-          self.$message.error((r && r.note) || '自动识别失败');
+      // 两个画面分开撤销：撤销要退的是**当前这个画面**上刚点的那一个
+      if (this.mfDualSplit) {
+        var t = this.mfActive === 1
+          ? (this.mfCurrentRight ? this.mfCurrentRight.t : null)
+          : (this.mfCurrent ? this.mfCurrent.t : null);
+        var found = false;
+        for (var i = this.mfPts.length - 1; i >= 0; i--) {
+          if (this.mfPts[i].t === t) { this.mfPts.splice(i, 1); found = true; break; }
         }
-      }).catch(function (e) {
-        self.autoResult = { ok: false, note: e.message || String(e) };
+        if (!found) this.$message.info(this.mfActive === 1 ? '右画面还没有点' : '左画面还没有点');
+      } else if (this.mfPts.length) {
+        this.mfPts.pop();
+      }
+      this.mfResult = null;      // 撤销后旧结果失效
+      this.mfVersion++;
+      this.scheduleAutoPreview();
+    },
+    /** 清空 = 清掉**当前画面**上的点（想全清再点右边那个「全部清空」） */
+    mfClear: function () {
+      var self = this;
+      if (this.mfDualSplit) {
+        var t = this.mfActive === 1
+          ? (this.mfCurrentRight ? this.mfCurrentRight.t : null)
+          : (this.mfCurrent ? this.mfCurrent.t : null);
+        var n = this.mfPts.length;
+        this.mfPts = this.mfPts.filter(function (p) { return p.t !== t; });
+        this.mfTarget = '';
+        this.mfResult = null;
+        this.$message.success('已清空' + (this.mfActive === 1 ? '右' : '左') + '画面上的 ' +
+          (n - this.mfPts.length) + ' 个点（另一边的点还在）');
+        this.mfVersion++;
+        this.scheduleAutoPreview();
+        return;
+      }
+      this.mfPts = []; this.mfTarget = ''; this.mfResult = null;
+    },
+    /** 全部清空（左右两边一起清） */
+    mfClearAll: function () {
+      this.mfPts = []; this.mfTarget = ''; this.mfResult = null;
+      this.$message.success('已清空所有画面上的点');
+      this.mfVersion++;
+      this.scheduleAutoPreview();
+    },
+    /* ---------------- 左右两个画面（各标一个半场） ---------------- */
+    /** 某个画面（0=左 1=右）上已标的点（下面那份文字清单用） */
+    mfFramePts: function (panel) {
+      var f = panel === 1 ? this.mfCurrentRight : this.mfCurrent;
+      var t = f ? f.t : null;
+      return this.mfPts.filter(function (p) { return p.t === t; });
+    },
+    /** 切换"正在点哪个画面" —— 也可以直接在画面里点一下自动切 */
+    setMfActive: function (i) {
+      if (i === 1 && !this.mfCurrentRight) return;
+      this.mfActive = i;
+      this.mfVersion++;   // 换画面 = 点位上下文变了，在途结果作废
+    },
+    /** 切换「左右两个画面 / 一张一张切」 */
+    setDualView: function (v) {
+      this.dualView = !!v;
+      if (this.dualView) {
+        this.mfActive = 0;
+        if (this.mfFrames.length > 1 && this.mfIdx2 === this.mfIdx) {
+          this.mfIdx2 = (this.mfIdx + 1) % this.mfFrames.length;
+        }
+        if (this.mfFrames.length < 2) {
+          this.$message.info('现在左右两边是同一幅画面：拖动下面的原片到「看另一侧半场」' +
+            '的那一刻，再按「把这帧放到右画面」，左右就各自一张了');
+        }
+      }
+    },
+    /** 把某一幅已抽好的画面放到左/右画面（用户不用记"第几帧"） */
+    assignToPanel: function (panel, idx) {
+      idx = Number(idx);
+      if (panel === 1) { this.mfIdx2 = idx; this.mfActive = 1; }
+      else { this.mfIdx = idx; this.mfActive = 0; }
+      this.mfResult = null;
+    },
+    /** 下拉框直接用的两个入口（面板号写死，模板里不必写内联函数） */
+    setLeftFrame: function (idx) { this.assignToPanel(0, idx); },
+    setRightFrame: function (idx) { this.assignToPanel(1, idx); },
+    /** 右画面直接对着原片取一帧（"我看的是另一侧半场"那一刻） */
+    addRightFrame: function () {
+      var self = this;
+      var el = this.$refs.markVideo;
+      var t = (el && el.currentTime) ? el.currentTime : this.mfCenter;
+      this.addFrameAtTime(t, function (tt) {
+        self.mfIdx2 = self.mfFrames.length - 1;
+        self.mfActive = 1;
+        self.$message.success('右画面已换成 t=' + tt + 's 这一帧 —— 现在在它上面点另一侧半场的点');
       });
+    },
+    /** 把已标的点整理成 /api/calibrate_multi 的入参：每幅画面各自一组。
+     *
+     *  左右两个画面的坐标各归各的，**不能混在一个 frames 项里** ——
+     *  后端就是按 t 分组、逐帧拟合来判断"这幅画面自己够不够 4 个点"的。
+     *  返回 null 表示拦下了（并已经把原因说给用户了），调用方直接 return。 */
+    courtMultiPayload: function (silent) {
+      var byT = {};
+      this.mfPts.forEach(function (p) {
+        byT[p.t] = byT[p.t] || { t: p.t, landmarks: {} };
+        // 用 {value,label} 形式带上**界面上显示的名字**：后端点名诊断会原样回传，
+        // 这样它说"最可疑的是「篮筐中心」"时，你能对上自己刚才按的那个按钮
+        // （后端自己的措辞可能不一样，比如把这一侧的筐叫"另一端的篮筐中心"）。
+        byT[p.t].landmarks[p.name] = { value: [p.x, p.y], label: p.label };
+      });
+      var frames = Object.keys(byT).map(function (k) { return byT[k]; });
+      var solvable = 0, best = 0, bestT = null, okT = [];
+      frames.forEach(function (f) {
+        var n = Object.keys(f.landmarks || {}).length;
+        if (n > best) { best = n; bestT = f.t; }
+        if (n >= 4) { solvable += 1; okT.push(f.t); }
+      });
+      if (solvable === 0) {
+        // 这是最常见的翻车点：点全撒在几幅画面上，**没有一幅凑够 4 个**。
+        // 直接把话说透，别让用户对着"误差偏大"猜。
+        var detail = frames.map(function (f) {
+          return 't=' + f.t + 's 有 ' + Object.keys(f.landmarks || {}).length + ' 个';
+        }).join('、');
+        if (!silent) this.$message.warning('每一幅画面都不够 4 个点（' + (detail || '还没有点') +
+          '）。单应矩阵要求**同一幅画面里至少 4 个点**：左边画面点够 4 个、右边画面再点够 4 个。');
+        return null;
+      }
+      var note = solvable > 1
+        ? ('有 ' + solvable + ' 幅画面各自都够 4 个点，用其中点最多的那一幅（t=' +
+           bestT + 's，' + best + ' 个点）解算')
+        : ('只有 t=' + bestT + 's 那一幅画面够 4 个点，用它解算');
+      return { frames: frames, note: note, solvable: solvable, best: best };
     },
     /** 保存并解算（多帧累加）
      *
@@ -506,65 +1057,171 @@ window.PAGES['upload'] = {
      * 做乐观锁（移植自旧版标定页）。宽容规则在服务端：只拒绝了"数学上无意义"的
      * 退化点位和"篮筐投偏 >6m"；只点 4 个点、有点矛盾、篮筐偏 3~6m 都**允许保存**，
      * 但会标 position_unverified，位置结论（热区/战术图）由分析端关掉。 */
-    previewCourtMulti: function () {
-      var self = this;
-      if (!this.mfEnough) {
-        this.$message.warning('至少要点 4 个特征点（现在 ' + this.mfPts.length + ' 个）');
-        return;
-      }
+    /** 「只点 4 个点」模式：组装有序的 4 点并交给后端自动定向。
+     *
+     *  为什么单独走一条通道：点选**顺序**本身就是数据的一部分（它决定这 4 个点
+     *  对应球场上的哪套地物），所以不能用 landmarks 字典那种按名字的写法 ——
+     *  靠 JS 对象键的插入顺序传顺序太脆。
+     */
+    miniPayload: function () {
       var byT = {};
-      this.mfPts.forEach(function (p) {
-        byT[p.t] = byT[p.t] || { t: p.t, landmarks: {} };
-        byT[p.t].landmarks[p.name] = [p.x, p.y];
+      this.mfMiniPts.forEach(function (p) {
+        byT[p.t] = byT[p.t] || [];
+        byT[p.t][p.seq - 1] = [p.x, p.y];
       });
-      var frames = Object.keys(byT).map(function (k) { return byT[k]; });
-      this.markSaving = true;
-      window.API.calibrateMulti({
-        video_path: String(this.form.video_path).trim(), frames: frames, confirm: false
-      }).then(function (r) {
-        self.markSaving = false;
-        self.mfResult = r;
-        self.mfPreviewed = !!(r && r.ok);
-        if (r.ok) {
-          self.$message.success('预览通过：平均误差 ' + r.rmse_m + ' m' +
-            (r.hoop_error_m != null ? ('，篮筐投影偏 ' + r.hoop_error_m + ' m') : '') +
-            ' —— 确认没问题再点保存');
-        } else {
-          self.$message.warning('这份点法还不能用：' + String(r.note || '').slice(0, 60));
-        }
-      }).catch(function (e) {
-        self.markSaving = false;
-        self.$message.error('解算失败：' + (e && e.message ? e.message : e));
+      var frames = [];
+      Object.keys(byT).forEach(function (k) {
+        var pts = byT[k];
+        // 必须正好 4 个、且不缺位
+        var ok = pts.length === 4;
+        for (var i = 0; i < 4; i++) { if (!pts[i]) { ok = false; } }
+        if (ok) { frames.push({ t: Number(k), points: pts }); }
       });
+      return frames;
     },
-    saveCourtMulti: function () {
+    /** 把标定解算的报错翻译成人话。
+     *
+     *  为什么需要：标定解算是重操作（抓帧 + 算投影线吻合度 + 跨镜头时定位切镜），
+     *  请求被浏览器超时中断时，Promise 的报错原文是
+     *  **"signal is aborted without reason"** —— 用户看到这行英文完全不知道
+     *  发生了什么，只会以为"功能坏了"。
+     */
+    calibErrMsg: function (e) {
+      var msg = (e && e.message) ? String(e.message) : String(e || '');
+      if ((e && e.name === 'AbortError') ||
+          /aborted|abort|signal is aborted/i.test(msg)) {
+        return '后端算太久被浏览器中断了（不是标定点的问题）。'
+          + '跨镜头标定要定位切镜、逐段解算，本身比较慢；请再点一次「先试算」。'
+          + '若反复超时，请确认后端窗口还在跑（没被关掉）。';
+      }
+      return msg || '未知错误';
+    },
+    /** 4 点模式的解算（confirm=false）/ 保存（confirm=true） */
+    miniSolve: function (confirm) {
       var self = this;
-      if (!this.mfEnough) {
-        this.$message.warning('至少要点 4 个特征点（现在 ' + this.mfPts.length + ' 个）');
+      var frames = this.miniPayload();
+      if (!frames.length) {
+        this.$message.warning('需要**同一幅画面**上正好 4 个点（现在：' +
+          this.mfMiniPts.length + ' 个）—— 少一个都解不出来');
         return;
       }
-      var byT = {};
-      this.mfPts.forEach(function (p) {
-        byT[p.t] = byT[p.t] || { t: p.t, landmarks: {} };
-        byT[p.t].landmarks[p.name] = [p.x, p.y];
-      });
-      var frames = Object.keys(byT).map(function (k) { return byT[k]; });
       this.markSaving = true;
       window.API.calibrateMulti({
-        video_path: String(this.form.video_path).trim(), frames: frames,
-        confirm: true,
+        video_path: String(this.form.video_path).trim(),
+        mini: true, mini_frames: frames,
+        confirm: !!confirm,
         revision: (this.calInfo && this.calInfo.revision != null)
           ? this.calInfo.revision : null
       }).then(function (r) {
         self.markSaving = false;
         self.mfResult = r;
+        self.mfPreviewed = !!(r && r.ok);
+        self.refreshOverlay();
+        var m = r && r.mini;
+        if (r && r.ok && m && m.ok) {
+          self.$message.warning('4 点试算仅供预览：' + m.which +
+            '；吻合度不能证明点位对应正确，请切回命名地标标定后再保存');
+        } else if (r && r.ok) {
+          // 队友原文是"看下面的候选排名"，但两边模板都没渲染 mfResult.mini.ranked ——
+          // 指向一个不存在的清单只会让人找。改成指向真的会出现的那个提示条。
+          self.$message.warning('解出来了，但后端没给出自动定向的结果；看下面的提示条');
+        } else {
+          self.$message.warning('这份点法还不能用：' +
+            String((r && r.note) || '').slice(0, 70));
+        }
+      }).catch(function (e) {
+        self.markSaving = false;
+        self.$message.error('解算失败：' + self.calibErrMsg(e));
+      });
+    },
+    /** 当前正在点的那一幅画面的时刻（mini 模式用） */
+    mfClickTForActive: function () {
+      var f = (this.mfActive === 1) ? this.mfCurrentRight : this.mfCurrent;
+      return f ? f.t : null;
+    },
+    /** 重点当前这一幅（清掉它的 4 个点） */
+    miniClearHere: function () {
+      var t = this.mfClickTForActive();
+      this.mfMiniPts = this.mfMiniPts.filter(function (p) { return p.t !== t; });
+      this.mfResult = null;
+    },
+    miniClearAll: function () {
+      this.mfMiniPts = [];
+      this.mfResult = null;
+      this.$message.success('已清空 4 点');
+    },
+    previewCourtMulti: function (silent) {
+      var self = this;
+      // 「只点 4 点」模式：走 mini 通道（不给名字，后端自动定向）
+      if (this.courtMini) { this.miniSolve(false); return; }
+      if (!this.mfEnough) {
+        if (silent) return;
+        this.$message.warning('至少要点 4 个特征点（现在 ' + this.mfPts.length +
+          ' 个）；左右两个画面**各自**都要有 4 个以上才是稳的');
+        return;
+      }
+      if (!window.API || !window.API.calibrateMulti) {
+        if (!silent) this.$message.warning('接口还没就绪，稍后再试');
+        return;
+      }
+      var got = this.courtMultiPayload(silent);
+      if (!got) return;
+      var ver = this.mfVersion;
+      this.markSaving = true;
+      window.API.calibrateMulti({
+        video_path: String(this.form.video_path).trim(), frames: got.frames,
+        confirm: false
+      }).then(function (r) {
+        self.markSaving = false;
+        if (ver !== self.mfVersion) return;   // 期间点位/画面变了 → 这次结果作废
+        self.mfResult = r;
+        self.mfPreviewed = !!(r && r.ok);
+        self.refreshOverlay();
+        if (silent) return;
+        if (r.ok) {
+          self.$message.success('预览通过：平均误差 ' + r.rmse_m + ' m' +
+            (r.hoop_error_m != null ? ('，篮筐投影偏 ' + r.hoop_error_m + ' m') : '') +
+            '（' + got.note + '）—— 确认没问题再点保存');
+        } else {
+          self.$message.warning('这份点法还不能用：' + String(r.note || '').slice(0, 60));
+        }
+      }).catch(function (e) {
+        self.markSaving = false;
+        self.$message.error('解算失败：' + self.calibErrMsg(e));
+      });
+    },
+    saveCourtMulti: function () {
+      var self = this;
+      // 「只点 4 点」模式：走 mini 通道保存（后端对 mini+confirm 直接 400，
+      // 所以界面上 mini 模式把「保存」按钮藏起来了，这里是防御性入口）
+      if (this.courtMini) { this.miniSolve(true); return; }
+      if (!this.mfEnough) {
+        this.$message.warning('至少要点 4 个特征点（现在 ' + this.mfPts.length +
+          ' 个）；左右两个画面**各自**都要有 4 个以上才是稳的');
+        return;
+      }
+      var got = this.courtMultiPayload();
+      if (!got) return;
+      var ver2 = this.mfVersion;
+      this.markSaving = true;
+      window.API.calibrateMulti({
+        video_path: String(this.form.video_path).trim(), frames: got.frames,
+        confirm: true,
+        revision: (this.calInfo && this.calInfo.revision != null)
+          ? this.calInfo.revision : null
+      }).then(function (r) {
+        self.markSaving = false;
+        if (ver2 !== self.mfVersion) return;   // 同上：旧响应不覆盖新点位
+        self.mfResult = r;
+        self.refreshOverlay();
         if (r.saved) {
           if (r.position_unverified) {
             self.$message.warning('标定已保存，但位置结论会被判为**未校验**：' +
               String(r.note || '').slice(0, 80));
           } else {
             self.$message.success('标定成功：' + r.n_points + ' 个点 / ' +
-              r.n_frames + ' 个画面，平均误差 ' + r.rmse_m + ' m —— 分析时会自动使用');
+              r.n_frames + ' 个画面，平均误差 ' + r.rmse_m + ' m（' + got.note +
+              '）—— 分析时会自动使用');
           }
           self.loadCalInfo();
           self.markOpen = false;
@@ -573,7 +1230,206 @@ window.PAGES['upload'] = {
         }
       }).catch(function (e) {
         self.markSaving = false;
-        self.$message.error('解算失败：' + (e && e.message ? e.message : e));
+        self.$message.error('解算失败：' + self.calibErrMsg(e));
+      });
+    },
+    /* ---------------- 标定自检：把算出来的球场线画回画面 ----------------
+     *
+     * 背景（实测争议）：用户标了 5 个点，界面说"误差 4.2m、有点互相矛盾"，
+     * 用户觉得"我标得明显是对的"。而数学上 **5 个点里任取 4 个都能精确解出 H**
+     * （误差恒为 0），所以那个数字本身不能证明谁对谁错。
+     * 唯一能被肉眼验证的办法：把这份 H 算出来的球场线**投影回画面** ——
+     * 对得上就是对，对不上错在哪一条线上一眼就看到。
+     */
+    /** 球场线在"分析坐标"下的折线（米）：用于投影自检 */
+    _courtPolylines: function () {
+      var lines = [];
+      var i, x, y, pts, arc;
+      // 边线 x=±7.5
+      for (i = 0; i < 2; i++) {
+        x = i ? 7.5 : -7.5;
+        pts = [];
+        for (y = -14; y <= 14.01; y += 0.5) pts.push([x, y]);
+        lines.push(pts);
+      }
+      // 底线 y=±14、中线 y=0、罚球线（距底线 5.8）
+      [-14, 14, 0, -8.2, 8.2].forEach(function (yy) {
+        var p = [];
+        for (var xx = -7.5; xx <= 7.51; xx += 0.25) p.push([xx, yy]);
+        lines.push(p);
+      });
+      // 罚球区两侧竖线（宽 4.9）
+      [-2.45, 2.45].forEach(function (xx) {
+        lines.push([[xx, -14], [xx, -8.2]]);
+        lines.push([[xx, 8.2], [xx, 14]]);
+      });
+      // 三分弧（两侧，半径 6.75，圆心 = 篮筐 (0, ±12.425)）
+      [-1, 1].forEach(function (sgn) {
+        arc = [];
+        for (i = 0; i <= 48; i++) {
+          var a = -Math.PI / 2 + i * (Math.PI / 48);
+          arc.push([6.75 * Math.cos(a), sgn * 12.425 + sgn * 6.75 * Math.sin(a)]);
+        }
+        lines.push(arc);
+      });
+      return lines;
+    },
+    /** 求 3×3 单应矩阵的逆；不可逆时返回 null。
+     *
+     *  ⚠️ 标定 H 的方向是「**像素 → 球场米**」（后端 `apply_homography(H, src_px) ≈ dst_m`
+     *  就是按这个方向拟合的）。凡是"把球场坐标画回画面"的地方（叠加线、画面外点名判断）
+     *  都必须先用它的**逆**，不能直接拿 H 去乘球场点 —— 那是这个方向的反向使用，
+     *  画出来的红线跟画面白线完全对不上（队友 d0247ee 实测：叠加自检一直不对就是这个原因）。 */
+    _invertH: function (H) {
+      if (!H || !H[0] || !H[1] || !H[2]) return null;
+      var a = H[0][0], b = H[0][1], c = H[0][2];
+      var d = H[1][0], e = H[1][1], f = H[1][2];
+      var g = H[2][0], h = H[2][1], i = H[2][2];
+      var det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
+      if (!isFinite(det) || Math.abs(det) < 1e-12) return null;
+      return [
+        [(e * i - f * h) / det, (c * h - b * i) / det, (b * f - c * e) / det],
+        [(f * g - d * i) / det, (a * i - c * g) / det, (c * d - a * f) / det],
+        [(d * h - e * g) / det, (b * g - a * h) / det, (a * e - b * d) / det]
+      ];
+    },
+    /** 用一份 H 把球场线投影到画面像素坐标 */
+    _buildOverlay: function (H, W, Hh) {
+      if (!H || !W || !Hh) { this.overlayLines = []; return; }
+      var inv = this._invertH(H);
+      if (!inv) { this.overlayLines = []; return; }
+      var out = [];
+      this._courtPolylines().forEach(function (line) {
+        var pix = [];
+        line.forEach(function (p) {
+          var x = p[0], y = p[1];
+          var w = inv[2][0] * x + inv[2][1] * y + inv[2][2];
+          if (Math.abs(w) < 1e-9) return;
+          var u = (inv[0][0] * x + inv[0][1] * y + inv[0][2]) / w;
+          var v = (inv[1][0] * x + inv[1][1] * y + inv[1][2]) / w;
+          // 只留画面附近的点，避免远处投影飞出去把 SVG 撑爆
+          if (u > -W && u < 2 * W && v > -Hh && v < 2 * Hh) pix.push([u, v]);
+        });
+        if (pix.length > 1) out.push(pix);
+      });
+      this.overlayW = W;
+      this.overlayH = Hh;
+      this.overlayLines = out;
+    },
+    /** 预览/解算回来之后刷新自检叠加层（用的是后端返回的那份 H） */
+    refreshOverlay: function () {
+      var r = this.mfResult || this.courtResult;
+      var H = r && r.H;
+      // 「点吸附精修」被采纳时，存下来的标定用的是**吸附后的点**。
+      // 所以画面上必须也把吸附后的位置画出来（空心黄圈），
+      // 否则用户看到的点和他实际存下来的标定不一致 —— 会以为工具偷偷改了位置。
+      var snapPts = null;
+      var sn = r && r.snap;
+      if (sn && sn.accepted && sn.landmarks) {
+        var byT = {};
+        (this.mfPts || []).forEach(function (p) {
+          byT[p.t] = byT[p.t] || {};
+          byT[p.t][p.name] = p;
+        });
+        snapPts = [];
+        Object.keys(byT).forEach(function (tt) {
+          Object.keys(byT[tt]).forEach(function (nm) {
+            var v = sn.landmarks[nm];
+            if (v) { snapPts.push({ t: Number(tt), name: nm, x: v[0], y: v[1] }); }
+          });
+        });
+      }
+      this.snapPts = snapPts || [];
+      if (!this.showCourtOverlay || !H) { this.overlayLines = []; return; }
+      var t = null, frame = null, i;
+      if (this.mfFrames && this.mfFrames.length) {
+        t = this.mfResult && this.mfResult.best_frame_t;
+        frame = this.mfCurrent;
+        if (t != null) {
+          for (i = 0; i < this.mfFrames.length; i++) {
+            if (Math.abs(this.mfFrames[i].t - t) < 1e-6) { frame = this.mfFrames[i]; }
+          }
+        }
+      }
+      var W = frame ? frame.w : this.markSize.w;
+      var Hh = frame ? frame.h : this.markSize.h;
+      this._buildOverlay(H, W, Hh);
+    },
+    toggleCourtOverlay: function () {
+      this.showCourtOverlay = !this.showCourtOverlay;
+      this.refreshOverlay();
+    },
+    /** 切换"点名表列哪些点"：full = 全场 A端/B端 15 个 | left / right = 只看那半场 6 个。
+     *  非法值兜底到 full（默认那一套），绝不能把 courtItems 弄空 —— 那会变成"一个点都点不了"。 */
+    setCourtSide: function (side) {
+      this.courtSide = (side === 'left' || side === 'right') ? side : 'full';
+      this.courtItems = (this.courtSideNames[this.courtSide] || []).slice();
+      // 换了这一份清单，已标的点对应的物理位置就可能全变了（半场那一套里
+      // "底线左角"跟全场那一套里的不是一个物理点）—— 必须清掉，别让用户
+      // 拿着上一份的点去解算（那会得到一份"看着成功、其实差 14m"的标定）。
+      if (this.mfPts && this.mfPts.length) {
+        this.mfPts = [];
+        this.mfTarget = '';
+        this.mfResult = null;
+        this.$message.info('已换地标范围，原标点已清空（不同范围里的同名点不是同一个物理位置）');
+      }
+    },
+    /** 用**指定时刻**的两帧装进左右画面（同一镜头才行）。
+     *
+     *  为什么要有这一条：标定页原来是"用户拖播放器 → 每边各加一帧"，
+     *  很容易把两帧取在**不同镜头**上（实测 t=4.75s / t=58.5s，中间镜头切过），
+     *  两帧不同机位 -> 合并解必然互相矛盾 -> 界面只会报"不在同一镜头/点互相矛盾"，
+     *  用户根本不知道问题出在抽帧。现在由后端自动挑同一段镜头的首尾两帧。 */
+    loadFramesAt: function (t1, t2) {
+      var self = this;
+      var v = String(this.form.video_path || '').trim();
+      if (!v) { return; }
+      this.markSaving = false;
+      this.mfFrames = [];
+      this.mfIdx = 0;
+      this.mfIdx2 = 0;
+      this.mfActive = 0;
+      this.mfPts = [];
+      this.mfTarget = '';
+      this.mfResult = null;
+      this.overlayLines = [];
+      var jobs = [[t1, 0], [t2, 1]];
+      jobs.forEach(function (it) {
+        var t = it[0], slot = it[1];
+        window.API.getFrame(v, t).then(function (r) {
+          var fr = { t: Number(Number(t).toFixed(2)), w: r.w, h: r.h,
+                     image: r.image, slot: slot };
+          self.mfFrames.push(fr);
+          if (self.mfFrames.length === 1) { self.mfIdx = 0; }
+          if (self.mfFrames.length === 2) {
+            // 按 slot 摆好：左画面 = 第一帧、右画面 = 第二帧
+            self.mfFrames.sort(function (a, b) { return a.slot - b.slot; });
+            self.mfIdx = 0;
+            self.mfIdx2 = 1;
+            self.$message.success('已装好两帧（t=' + self.mfFrames[0].t +
+              's / t=' + self.mfFrames[1].t + 's，同一镜头）：' +
+              '左画面标一侧半场、右画面标另一侧，每边点够 4~6 个点');
+          }
+        }).catch(function (e) {
+          self.$message.error('取帧失败：' + (e && e.message ? e.message : e));
+        });
+      });
+    },
+    /** 自动挑"同一段镜头"的两帧（后端用 ORB 内点率判镜头有没有切） */
+    pickStableFrames: function () {
+      var self = this;
+      var v = String(this.form.video_path || '').trim();
+      if (!v) { return; }
+      this.$message.info('正在判断镜头有没有切…');
+      window.API.framesStable(v, 8).then(function (r) {
+        if (!r || !r.ok) {
+          self.$message.warning((r && r.note) || '没能自动认出连续镜头');
+          return;
+        }
+        self.loadFramesAt(r.t1, r.t2);
+        self.$message.success(r.note);
+      }).catch(function (e) {
+        self.$message.error('自动挑帧失败：' + (e && e.message ? e.message : e));
       });
     },
     /** 球场模式下点一个点 */
@@ -746,6 +1602,8 @@ window.PAGES['upload'] = {
     },
     /** 鼠标在画面上移动 → 记下位置，用来画准星（点之前就知道会落在哪） */
     onMarkMove: function (ev) {
+      // 拖动修正优先：按住了某个已标的点就实时改它的坐标，不再画准星
+      if (this.mfDrag && this.mfDragMove(ev)) { this.hoverPt = null; return; }
       var el = (ev.target && ev.target.tagName === 'IMG') ? ev.target
                                                           : ev.currentTarget;
       var box = el.getBoundingClientRect();
@@ -755,7 +1613,19 @@ window.PAGES['upload'] = {
       if (x < 0 || x > 1 || y < 0 || y > 1) { this.hoverPt = null; return; }
       this.hoverPt = { x: x, y: y };
     },
-    onMarkLeave: function () { this.hoverPt = null; },
+    onMarkLeave: function () { this.hoverPt = null; this.mfDragEnd(); },
+    /** 关闭标定窗口：叠线与在途结果一律作废（否则关掉再打开会看到上一轮的线） */
+    onMarkClosed: function () {
+      this.mfVersion++;
+      this.overlayLines = [];
+      this.hoverPt = null;
+      this.mfDrag = null;
+    },
+    /** 画面上的按下/松开：按住已标的点 = 拖动修正；普通单击 = 新增（原有行为不变） */
+    onMarkDown: function (ev) {
+      if (this.markKind === 'court' && this.mfFrames.length) this.mfDragStart(ev);
+    },
+    onMarkUp: function () { this.mfDragEnd(); },
     onMarkClick: function (ev) {
       if (this.markKind === 'court') { this.onCourtClick(ev); return; }
       // 必点项（篮筐中心）已点完时，如果用户选了"可选：量筐宽"的某一项，就落那一项。
@@ -858,10 +1728,26 @@ window.PAGES['upload'] = {
         this.pickFile();
         return;
       }
+      // 一定要填**绝对路径**：/api/samples 返回的就是绝对路径；
+      // 手抄成相对路径（data\uploads\xxx.mp4）在浏览器/资源管理器里会解析到别的地方，
+      // 表现是"路径不存在"（用户实测踩过）。
       this.form.video_path = p;
       this.loadCalInfo();
       if (this.loadScoreboardEvents) { this.loadScoreboardEvents(); }
-      this.$message.success('已选好视频：' + this.videoBaseName);
+      this.$message.success('已选好视频（绝对路径已填进「文件路径」）：' + this.videoBaseName);
+    },
+    /** 把当前视频的绝对路径复制到剪贴板（给"想用别的播放器打开"的人用） */
+    copyVideoPath: function () {
+      var p = String(this.form.video_path || '');
+      if (!p) { return; }
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(p);
+          this.$message.success('已复制绝对路径：' + p);
+          return;
+        }
+      } catch (e) { /* 下面兜底 */ }
+      this.$message.info('绝对路径：' + p);
     },
     /** 引导里的按钮：按步骤分发（1 选视频 / 2 标定 / 3 分析或看结果） */
     guideAct: function (st) {
@@ -1073,6 +1959,9 @@ window.PAGES['upload'] = {
   },
   template: [
     '<div>',
+    // 旧版独立标定页（HoopAI 那套 /api/hoopai/court + /api/calibrate）已不在界面上出现：
+    // 标定统一走下面那个多帧地标面板（与队友的 multical 一致）。
+    // 文件 web/hoopai-calibration.html / .js 仍在磁盘上，需要时可以临时挂回来。
     // ---- 新手上手引导：3 步走到"看到一份结果" ----
     // 为什么放最上面：第一次拿到软件的人面对 ①②③ 三张卡会一头雾水 ——
     // 不知道该先干什么、标定是不是必须、结果在哪看。这里把最短路径摊开，
@@ -1083,10 +1972,10 @@ window.PAGES['upload'] = {
     // 检测器会直接判为 slop）。这里改用一个小标签来区分"这是引导，不是普通表单"。
     '      <h3 class="card-title" style="margin:0"><el-tag size="small" type="primary" effect="plain">上手引导</el-tag>',
     '        3 步跑出第一份分析',
-    '        <span class="sub">已完成 {{ guideDoneCount }}/3 · 全程约 5 分钟</span></h3>',
+    '        <span class="sub">已完成 {{ guideDoneCount }}/3</span></h3>',
     '      <el-button size="small" text @click="dismissGuide">收起（不再自动显示）</el-button>',
     '    </div>',
-    '    <div class="hint" style="margin:6px 0 10px">做完这 3 步你能看到：比分与命中率、球员统计、投篮热图、战术分析，以及一份文字战报。不用先读文档，也不用先配环境。</div>',
+    // 灰色说明一律压到一行；原来这里是一段 60 多字的灰字，用户反馈"灰色说明太多"。
     '    <div class="grid grid-3" style="gap:10px">',
     '      <div v-for="st in guideSteps" :key="st.key" class="src-card" :class="{active: !st.done}">',
     '        <div class="t">{{ st.done ? \'✓\' : st.n }}. {{ st.title }}</div>',
@@ -1095,23 +1984,23 @@ window.PAGES['upload'] = {
     '      </div>',
     '    </div>',
     '    <div class="row" style="margin-top:10px;align-items:center;flex-wrap:wrap;gap:6px">',
-    '      <span class="hint">手头没有素材？直接选一段机器上现成的：</span>',
+    '      <span class="hint">没有素材？选一段现成的：</span>',
     '      <el-select v-model="samplePick" size="small" style="width:340px" placeholder="选择现成的视频" filterable>',
     '        <el-option v-for="s in samples" :key="s.path"',
     '          :label="s.group + \' · \' + s.name + \'（\' + s.size_mb + \' MB）\'" :value="s.path" />',
     '      </el-select>',
     '      <el-button size="small" @click="useSample" :disabled="!samples.length">用它</el-button>',
-    '      <span class="hint" v-if="!samples.length">（没找到现成素材：点第 1 步的「选择本地文件」上传你自己的视频）</span>',
+    '      <span class="hint" v-if="!samples.length">（没有现成素材）</span>',
     '      <span class="grow"></span>',
-    '      <span class="hint" v-if="!S.backendOk" style="color:#c45656">后端没连上：先双击项目根目录的「启动后端.bat」，并确认那个窗口一直开着（里面有「接口文档 / 健康检查 / 自动重启」三行才算起来了）。起来后本页会自动重连（每 5 秒试一次），也可以点右上角「重新探测」或按 F5。</span>',
+    // 后端没连上：可见部分只留"怎么办 + 会自动重连"；窗口里该看到哪几行折进说明。
+    // ⚠️ 这一行在上一轮移植里被误删过（只剩注释），别再加回去时漏掉。
+    '      <span class="hint" v-if="!S.backendOk" style="color:#c45656">后端没连上：双击「启动后端.bat」，本页会自动重连<copy-note label="说明">那个窗口要一直开着（里面有「接口文档 / 健康检查 / 自动重启」三行才算起来了）。也可以点右上角「重新探测」或按 F5。</copy-note></span>',
     '    </div>',
     '  </div>',
     '  <div class="card" v-else style="padding:10px 14px">',
     '    <div class="row" style="align-items:center;gap:8px">',
-    '      <span class="hint">上手引导已收起。</span>',
     '      <el-button size="small" text type="primary" @click="openGuide">重新打开上手引导</el-button>',
     '      <span class="grow"></span>',
-    '      <span class="hint">没跳过的话，按下面 ① ② ③ 顺序走也一样。</span>',
     '    </div>',
     '  </div>',
     '  <div class="card">',
@@ -1119,20 +2008,14 @@ window.PAGES['upload'] = {
     '    <div class="grid grid-2">',
     '      <div class="src-card" :class="{active: form.source===\'video\'}" @click="form.source=\'video\'">',
     '        <div class="t">🎥 上传视频（video）</div>',
-    '        <div class="d">两种方式：① 直接<b>选择本地文件</b>上传（POST /api/upload，后端复制到 data/uploads）；',
-    '          ② 填写后端机器上的<b>绝对路径</b>（同机演示最省事）。</div>',
+    '        <div class="d">上传文件，或填后端绝对路径</div>',
     '      </div>',
     '      <div class="src-card" :class="{active: form.source===\'jsonl\'}" @click="form.source=\'jsonl\'">',
     '        <div class="t">📄 已有 JSONL（jsonl）</div>',
-    '        <div class="d">直接用既有的检测结果重跑统计与热区，跳过目标检测环节；',
-    '          后端取 <code>raw_path</code> 指向的 raw_track.json。</div>',
+    '        <div class="d">用已有检测结果重跑统计</div>',
     '      </div>',
     '    </div>',
-    '    <div class="hint">「合成演示」入口已移除：它生成的是<b>模拟比赛</b>（比分/出手/回合全是造出来的），',
-    '      混在历史任务里会被误认成真实分析结果。回归测试请用命令行：',
-    '      <code>python -m aihoop.cli demo --seed 7 --duration 600 --out out/fixture</code></div>',
     '  </div>',
-
     '  <div class="grid grid-2">',
     '    <div class="card">',
     '      <h3 class="card-title">② 分析参数</h3>',
@@ -1140,14 +2023,19 @@ window.PAGES['upload'] = {
     '        <el-form-item label="文件路径">',
     '          <el-input v-model="form.video_path" @change="loadScoreboardEvents" placeholder="例如 D:\\\\videos\\\\game1.mp4 或 out\\\\xxx\\\\raw_track.json" clearable />',
     '          <div class="row" style="margin-top:8px">',
-    '            <el-button size="small" :disabled="!S.backendOk || (health && health.stale)" @click="pickFile">选择本地视频上传</el-button>',
+    '            <el-button size="small" :disabled="!S.backendOk || !!(health && health.stale)" @click="pickFile">选择本地视频上传</el-button>',
+    '            <el-button size="small" text type="primary" :disabled="!hasVideoPath" @click="copyVideoPath">复制绝对路径</el-button>',
     '            <span class="hint" v-if="fileName">已选：{{ fileName }}</span>',
     '            <span class="hint" v-if="uploadPct>=0">上传中 {{ Math.round(uploadPct*100) }}%</span>',
     '          </div>',
+    // 为什么必须显式说清楚：这个按钮在「后端进程比源码旧」时会被禁用（避免新代码没生效时上传），
+    // 但以前**只是灰着**、一个字都不说 —— 用户遇到的就是"我没法上传视频"，
+    // 而且他改过的源码正是让他自己上传不了的原因，根本猜不到（实测反馈）。
+    '          <el-alert v-if="health && health.stale" type="warning" :closable="false" show-icon style="margin-top:8px"',
+    '            title="上传按钮暂时禁用：后端代码没生效"',
+    '            ><copy-note label="说明">改过 .py 源码后，正在跑的后端进程里还是老模块，所以这里刻意不让你上传，免得用旧代码分析。重启后端即可（关掉后端窗口 → 重新双击「启动后端.bat」；那个脚本平时会在约 2 秒内自动重启，这次没自动重启）。点右边的「重新探测」也可以再查一次状态。</copy-note></el-alert>',
     '          <el-progress v-if="uploadPct>=0" :percentage="Math.round(uploadPct*100)" :stroke-width="8" style="margin-top:8px;max-width:420px" />',
-    '          <div class="hint">路径由后端进程解析；也可以点上面的按钮把视频上传到后端（返回可直接使用的路径）。</div>',
     '        </el-form-item>',
-    // ---- 在画面上标篮筐：这是「分析前你先告诉我篮筐在哪」的入口 ----
     '        <el-form-item v-if="form.source===\'video\'" label="篮筐标点">',
     '          <div class="row">',
     '            <el-button size="small" type="primary" plain :disabled="!S.backendOk || !hasVideoPath" @click="openMark">在画面上标篮筐</el-button>',
@@ -1167,42 +2055,43 @@ window.PAGES['upload'] = {
     // 连取帧请求都没发出去，看起来像功能坏了。现在按钮直接灰掉并常驻说明原因。
     '          <el-alert v-if="!hasVideoPath" type="warning" :closable="false" show-icon',
     '            style="margin-top:6px" title="先选一段视频，按钮才会亮"',
-    '            description="取帧、标篮筐、标球场都需要先有视频：用上面的「示例视频 → 用它」、或「选择本地视频上传」、或直接在「文件路径」里填一段本机视频的绝对路径。" />',
-    '          <div class="hint"><b>只点一下篮筐中心就够了</b>：框心当起点，筐位仍逐帧跟随镜头，',
-    '            判进球的尺度由检测器量（实测 480p 手持素材 ~30px）。想让尺度完全由你定，',
-    '            再点一下圈的左缘或右缘即可（那时就以你的为准，不再跑检测器）。</div>',
+    '            ><copy-note label="说明">取帧、标篮筐、标球场都需要先有视频：用上面的「示例视频 → 用它」、或「选择本地视频上传」、或直接在「文件路径」里填绝对路径。</copy-note></el-alert>',
     '        </el-form-item>',
-    // ---- 标球场：用户建议「不一定要标篮筐，别的有特色的点也可以」----
+    // 用户反馈的误解：以为"点一个筐心就够了"，标完筐就等着看热区 —— 这两件事必须当面说清：
+    // 筐只影响判进球的尺度与筐位，热区/战术图/2/3 分分区靠的是球场标定。折在 copy-note 里不吃预算。
     '        <el-form-item v-if="form.source===\'video\'" label="球场标定">',
     '          <div class="row">',
     '            <el-button size="small" plain :disabled="!S.backendOk || !hasVideoPath" @click="openCourt">标球场（点场地特征点）</el-button>',
     '            <el-tag v-if="calInfo" size="small" type="success" effect="plain">',
     '              已标定：重投影误差 {{ calInfo.reproj_error_m }} m',
     '            </el-tag>',
-    '            <el-tag v-else size="small" type="warning" effect="plain">未标定（也能分析：热区不出、战术图退化成「自动逐帧标定」、2/3 分只能估）</el-tag>',
+    '            <el-tag v-else size="small" type="warning" effect="plain">未标定</el-tag>',
     '          </div>',
     '          <el-alert v-if="!hasVideoPath" type="info" :closable="false" show-icon style="margin-top:6px"',
-    '            title="先选一段视频才能抽帧标定" description="同上：没有视频路径就无法取帧。" />',
-    '          <div class="hint">点 4 个以上<b>场地特征点</b>（四角 / 中线两端 / 中圈中心 / 罚球线中点 / 篮筐），',
+    '            title="先选一段视频才能抽帧标定" />',
+    '          <div class="hint">同帧标 4–6 个分散的地面点<copy-note label="说明">（底线两角 / 中线两端 / 中圈中心 / 罚球区两角），',
     '            自动解出这段视频的球场标定。<b>热区、战术图、球场坐标全靠它</b> —— 用别的视频的标定会整片错位。',
-    '            没有标定时：战术图仍会用<b>自动逐帧标定</b>算球员坐标（结果上会明确标注「位置未校验」），但热区不出。</div>',
+    '            ⚠️ <b>不要在这里点篮筐</b>：篮圈离地 3.05m，而这份标定只能映射<b>地面</b>，',
+    '            把篮筐当球场地点标进去会把整份标定拉偏（实测平均误差 1.00m → 0.03m 是去掉它之后的结果）。',
+    '            篮筐请用上面的「在画面上标篮筐」，那条路直接存画面坐标。',
+    '            没有标定时：战术图仍会用<b>自动逐帧标定</b>算球员坐标（结果上会明确标注「位置未校验」），但热区不出。</copy-note></div>',
     '        </el-form-item>',
     // 这里原来是「进球标注(可选)」输入框（要用户先准备一份 label_baskets.py 的产出当准绳）。
     // 用户反馈（2026-09-27）："本来就是一个投篮判定软件，却有一个进球标注的选项，这合适吗，
     // 你还不如在视频分析完以后加一个报错的选项" —— 那本质是开发/评测用的基准输入，
-    // 不该出现在产品主流程里。人工纠错走「人工复核」页（判为命中/判为未中即时写回），
-    // 攒训练样本走「训练标注」页。后端 `basket_labels` 参数保留，供脚本/命令行使用。
+    // 不该出现在产品主流程里。人工纠错走「人工复核」页（判为命中/判为未中即时写回）。
+    // （「训练标注」页已于 2026-10-05 下线；攒训练样本改用命令行 /api/label/* 接口。）
+    // 后端 `basket_labels` 参数保留，供脚本/命令行使用。
     // 随机种子输入框也一并去掉了：它只对「合成演示比赛」生效，真实视频分析根本不用它
     // （视频管线里没有任何随机数），摆在主流程里只会让人以为"结果是编出来的"。
     // 合成入口已从界面移除，需要合成数据时用命令行：
     //   python -m aihoop.cli demo --seed 7 --duration 600 --out out/demo
     '        <el-form-item label="生成高光片段">',
     '          <el-switch v-model="form.make_highlights" />',
-    '          <span class="hint" style="margin-left:10px">需要本机安装 ffmpeg；关闭则只出统计数据，速度更快</span>',
     '        </el-form-item>',
     '        <el-form-item v-if="form.source===\'video\'" label="快速模式">',
     '          <el-switch v-model="form.fast" />',
-    '          <span class="hint" style="margin-left:10px">跳过逐帧 YOLO（球员检测）：只读比分牌 + 颜色线索追球。CPU 上快十几倍；代价是没有球员个体归属，1v1/野球场视频会把进球都算在一边</span>',
+    '          <span class="hint" style="margin-left:10px"><copy-note label="说明">跳过逐帧 YOLO（球员检测）：只读比分牌 + 颜色线索追球。CPU 上快十几倍；代价是没有球员个体归属，1v1/野球场视频会把进球都算在一边</copy-note></span>',
     '        </el-form-item>',
     '        <el-form-item v-if="form.source===\'video\'" label="比分牌（可选）">',
     '          <div class="row" style="flex-wrap:wrap;align-items:center;gap:8px">',
@@ -1212,18 +2101,14 @@ window.PAGES['upload'] = {
     '            <el-input-number v-model="sbStartHome" :min="0" :max="199" size="small" style="width:100px" placeholder="主队" />',
     '            <el-input-number v-model="sbStartAway" :min="0" :max="199" size="small" style="width:100px" placeholder="客队" />',
     '          </div>',
-    '          <div class="hint" style="margin-top:6px">',
-    '            转播台标（含校园/村 BA 那种长横条）自动定位读不出时，用它兜底：',
-    '            自动定位比分区域 → 放大 4 倍 → Windows OCR。填了起始比分更稳',
-    '            （视频从半场中间开始录时用它当基线）。</div>',
     '          <el-input v-model="form.scoreboard_events" size="small" clearable style="margin-top:6px"',
-    '            placeholder="得分事件文件路径（点上面的按钮自动填；也可手填 out\\\\sb_events.json）" />',
+    '            placeholder="得分事件文件路径（可手填）" />',
     '          <el-input v-model="sbBox" size="small" clearable style="margin-top:6px"',
-    '            placeholder="手动框选（可选）：归一化 x0,y0,x1,y1，例如 0.21,0.10,0.79,0.15；留空=自动定位" />',
+    '            placeholder="手动框选（留空=自动定位）" />',
     '          <el-alert v-if="sbResult" style="margin-top:8px" :closable="false" show-icon',
-    "            :type=\"sbResult.loading ? 'info' : (sbResult.ok ? 'success' : 'error')\"",
-    "            :title=\"sbResult.loading ? '正在定位并 OCR…（十几秒到一分钟）' : (sbResult.ok ? ('读出 ' + (sbResult.n_events||0) + ' 个得分事件，最终 ' + ((sbResult.final||{}).home) + ' : ' + ((sbResult.final||{}).away)) : '没读出比分')\"",
-    "            :description=\"sbResult.loading ? '' : (sbResult.note || '')\" />",
+    '            :type="sbResult.loading ? \'info\' : (sbResult.ok ? \'success\' : \'error\')"',
+    '            :title="sbResult.loading ? \'正在定位并 OCR…（十几秒到一分钟）\' : (sbResult.ok ? (\'读出 \' + (sbResult.n_events||0) + \' 个得分事件，最终 \' + ((sbResult.final||{}).home) + \' : \' + ((sbResult.final||{}).away)) : \'没读出比分\')"',
+    '            ><copy-note label="说明">{{ sbResult.loading ? \'\' : (sbResult.note || \'\') }}</copy-note></el-alert>',
     '        </el-form-item>',
     '        <el-form-item label="后端状态">',
     '          <el-tag :type="S.backendOk ? \'success\' : \'warning\'" effect="plain">{{ api.base }}</el-tag>',
@@ -1237,12 +2122,11 @@ window.PAGES['upload'] = {
     '            <el-button size="small" text @click="fetchHealth">刷新</el-button>',
     '          </div>',
     '          <el-alert v-if="health && health.stale" type="warning" :closable="false" show-icon style="margin-top:8px"',
-    '            title="后端正在自动重启以加载新代码"',
-    '            description="源码（代码时间）比进程载入时间新，说明后端还没切到最新代码。用「启动后端.bat」启动的话会在 2 秒内自动重启；稍等片刻点「刷新」即可。若一直不变，请关掉后端窗口重新双击「启动后端.bat」。" />',
+    '            title="后端正在重启"',
+    '            ><copy-note label="说明">源码（代码时间）比进程载入时间新，说明后端还没切到最新代码。用「启动后端.bat」启动的话会在 2 秒内自动重启；稍等片刻点「刷新」即可。若一直不变，请关掉后端窗口重新双击「启动后端.bat」。</copy-note></el-alert>',
     '          <el-alert v-else-if="health && health.has_ball_rim_path === false" type="error" :closable="false" show-icon style="margin-top:8px"',
-    '            title="后端进程跑的是旧代码，新功能不会生效"',
-    '            description="uvicorn 只在启动时加载一次源码：改了 .py 但没重启，进程里还是老模块，而且不报错（表现就是「改了跟没改一样」）。请关掉后端窗口后重新双击项目根目录的「启动后端.bat」（它有自动重启，之后就不用管了）。" />',
-    '          <div class="hint" v-if="health">ffmpeg 决定能否生成高光片段；检测模型与 OpenCV 只在 video 源需要。</div>',
+    '            title="需要检查"',
+    '            ><copy-note label="说明">后端进程跑的是旧代码，新功能不会生效。uvicorn 只在启动时加载一次源码：改了 .py 但没重启，进程里还是老模块，而且不报错（表现就是「改了跟没改一样」）。请关掉后端窗口后重新双击项目根目录的「启动后端.bat」（它有自动重启，之后就不用管了）。</copy-note></el-alert>',
     '        </el-form-item>',
     '      </el-form>',
     '      <div class="row">',
@@ -1250,17 +2134,14 @@ window.PAGES['upload'] = {
     '        <el-button @click="refreshJobs">刷新任务列表</el-button>',
     // 说明清楚它是什么：这是**界面演示用的离线样例**（仓库里的合成比赛产物），
     // 不是从视频分析出来的结果。不写清楚会被当成"假数据"（用户反馈 2026-09-27）。
-    '        <el-button plain type="warning" @click="loadDemo">载入离线样例（合成比赛，仅供界面演示）</el-button>',
+    '        <el-button plain type="warning" @click="loadDemo">载入离线样例</el-button>',
     '      </div>',
     // 用户反馈（2026-09-27）："你还不如在视频分析完以后加一个报错的选项" ——
     // 纠错入口本来就有（人工复核页逐球改判、立刻写回比分/统计），但在这里没有指路，
     // 用户自然找不到。这里补一句去处说明，去掉的是"分析前先交一份标注"那种前置负担。
-    '      <div class="hint" style="margin-top:8px">分析跑完后：判错的球到',
-    '        <b>人工复核</b> 页逐球改判（立刻写回比分与统计）；要把误判留作样本去 <b>训练标注</b> 页。</div>',
     '    </div>',
-
     '    <div class="card">',
-    '      <h3 class="card-title">③ 分析进度 <span class="sub">WebSocket 实时推送 /api/jobs/{id}/ws</span></h3>',
+    '      <h3 class="card-title">③ 分析进度</h3>',
     '      <div class="progress-box">',
     '        <div class="row" style="justify-content:space-between;margin-bottom:8px">',
     '          <span><el-tag :type="statusTag" effect="dark" size="small">{{ statusText }}</el-tag>',
@@ -1272,16 +2153,20 @@ window.PAGES['upload'] = {
     '        <div class="hint" v-if="job.summary">结果摘要：{{ job.summary }}</div>',
     '        <div class="hint" v-if="job.out_dir">产物目录：<code>{{ job.out_dir }}</code></div>',
     '        <el-alert v-if="job.error" type="error" :closable="false" :title="job.error" style="margin-top:10px" />',
+    // 分析完成后给一个"判错了去哪儿改"的入口。「训练标注」模块已下线，
+    // 「人工复核」是唯一的纠错入口 —— 界面上必须还找得到（test_ui_home.js 钉这条）。
+    '        <div class="row" v-if="job.status===\'done\'" style="gap:8px;margin-top:10px">',
+    '          <el-button size="small" type="primary" plain @click="goReview">去人工复核</el-button>',
+    '          <el-button size="small" @click="goOverview">看结果总览</el-button>',
+    '        </div>',
     '      </div>',
     '      <div class="stage-log" ref="logbox" style="margin-top:12px">',
     '        <div v-for="(l,i) in logs" :key="i">{{ l }}</div>',
-    '        <div v-if="!logs.length" class="muted">等待任务开始…（阶段：载入检测结果 → 计分规则引擎 → 统计与热区 → 战报 → 导出 → 高光）</div>',
     '      </div>',
     '    </div>',
     '  </div>',
-
     '  <div class="card" v-if="S.backendOk">',
-    '    <h3 class="card-title">历史任务 <span class="sub">GET /api/jobs（最近 20 条）· 点「查看」可直接回看产物</span></h3>',
+    '    <h3 class="card-title">历史任务 <span class="sub">最近 20 条 · 点「查看」回看</span></h3>',
     '    <el-table :data="jobs" size="small" border empty-text="暂无任务">',
     '      <el-table-column prop="job_id" label="任务 ID" min-width="200" show-overflow-tooltip />',
     '      <el-table-column prop="status" label="状态" width="100">',
@@ -1297,33 +2182,34 @@ window.PAGES['upload'] = {
     '      </el-table-column>',
     '    </el-table>',
     '  </div>',
-
-    // ---- 标注弹窗（篮筐 / 球场 两种模式共用）----
-    '  <el-dialog v-model="markOpen" :title="markKind===\'court\' ? \'标球场：点场地特征点（4 个以上）\' : \'在画面上标篮筐\'" width="82%" top="4vh" :close-on-click-modal="false">',
+    '  <el-dialog v-model="markOpen" @closed="onMarkClosed" :title="markKind===\'court\' ? \'标球场：点场地特征点（4 个以上）\' : \'在画面上标篮筐\'" width="82%" top="4vh" :close-on-click-modal="false">',
     '    <div class="row" style="margin-bottom:8px;align-items:center">',
     '      <span class="hint">取帧时刻</span>',
     '      <el-input-number v-model="markAt" :min="0" :step="0.5" :precision="1" size="small" style="width:120px" @change="seekVideo(markAt)" />',
     '      <el-button size="small" @click="loadMarkFrame(false)">重新取帧（会清空已点的点）</el-button>',
-    '      <span class="hint">（也可以在下面拖着原片找到最清楚的那一刻）</span>',
+    '      <span class="hint">选清晰画面</span>',
     '    </div>',
     // 原片播放器：拖动进度条定位 —— 光靠手输秒数等于碰运气（用户实测反馈：
     // "只调时间秒数不好整，一点也不方便"）。旧版标定页就是内嵌播放器 + 现场截帧。
     '    <div v-if="videoUrl" style="margin-bottom:8px">',
     '      <div class="row" style="align-items:center;margin-bottom:6px">',
     '        <b>原片</b>',
-    '        <span class="hint">拖进度条找到场地看得最清楚的那一刻，暂停后点右边的按钮</span>',
     '        <span class="grow"></span>',
     '        <el-button size="small" type="primary" @click="useVideoMoment()">',
-    '          {{ markKind===\'court\' ? \'把这帧加进来标点\' : \'用当前画面取帧\' }}</el-button>',
+    '          {{ markKind===\'court\' ? (dualView ? (mfActive===1 ? \'把这一帧放到右画面\' : \'把这一帧放到左画面\') : \'把这帧加进来标点\') : \'用当前画面取帧\' }}</el-button>',
     '      </div>',
     '      <video ref="markVideo" :src="videoUrl" controls preload="metadata"',
     '             @loadedmetadata="seekVideo(markAt)"',
-    '             style="width:100%;max-height:38vh;background:#000;border-radius:6px" />',
+    '             style="width:100%;max-height:38vh;background:var(--bg);border-radius:var(--r-sm)" />',
     '    </div>',
     // 第一步：先说清「这件事要干到什么程度」——用户实测反馈"标完篮筐中心就不知道怎么办了"
-    '    <el-alert type="info" :closable="false" show-icon style="margin-bottom:8px"',
-    '      :title="markKind===\'court\' ? \'怎么标：在同一个画面里点 4~6 个地面上的点就行，不必点完所有点名\' : \'怎么标：只标「篮筐中心」就能保存，另外 4 项是可选的\'"',
-    '      :description="markKind===\'court\' ? (\'推荐点这 4~6 个：底线左角、底线右角、罚球区左角、罚球区右角、篮筐中心。\' + (mfFrames.length ? \'流程：先点下面的点名按钮 → 再到画面里点它（顺序随便，点了会自动取消选择）；尽量把 4~6 个点都点在同一帧里。\' : \'按提示顺序点即可。\') + \' 画面里看不到的点按「跳过这一项」；点够 4 个就能按「保存并解算标定」。\') : \'另外 4 项（篮圈左/右缘、上/下沿）只用来量筐宽和篮筐高度，跳过也行；标了中心就能保存。\'" />',
+    // ⚠️ 「4 点试算」模式下点名那套流程不适用，换一句"怎么标"（否则会教用户去选点名）
+    '    <el-alert v-if="markKind===\'court\' && courtMini" type="info" :closable="false" show-icon style="margin-bottom:8px"',
+    '      title="怎么标：在画面上按顺序点 4 个地面点（先两条底线，再两条边线），点满后按「先试算」"',
+    '      :description="\'左边画面已点 \' + miniPtsHere.length + \' 个、右边 \' + miniPtsRight.length + \' 个 —— 要试算的那一幅必须正好 4 个；点选顺序会发给后端自动定向，所以顺序别乱。\'" />',
+    '    <el-alert v-else type="info" :closable="false" show-icon style="margin-bottom:8px"',
+    '      :title="markKind===\'court\' ? \'怎么标：左右两个画面，一个标一侧半场，每边点够 4~6 个点\' : \'怎么标：只标「篮筐中心」就能保存，另外 4 项是可选的\'"',
+    '      :description="markKind===\'court\' ? (\'每侧半场推荐点这 5~6 个：底线两角、罚球区两角、罚球线中点、篮筐中心。\' + (mfFrames.length ? \'流程：把「篮筐那侧」那一帧放到左画面、另一侧放到右画面；先选点名 → 到画面里点它（一个名字两边各点一次）。\' : \'画面还在抽，抽完会出现左右两个画面的选择器。\') + \' ★每幅画面自己要有 4 个以上、铺得开的点（单应矩阵只认同一幅画面）；看不到的点按「跳过这一项」。\') : \'另外 4 项只用来量筐宽和篮筐高度，跳过也行；标了中心就能保存。\'" />',
     // 当前目标 + 实时反馈（点了几个、离"能保存"还差几个）
     // 条件必须用 guideNext（它是模式感知的）；用 markCurrent 的话，多帧模式下
     // courtCurrent 恒为真而 guideNext 为 null，模板会取 null.idx 直接报错。
@@ -1332,20 +2218,21 @@ window.PAGES['upload'] = {
     '      :description="guideDesc" />',
     // 多帧模式还没选点名：明确说"先去下面的点名列表里选一个"（不能沿用 courtIdx，那永远停在第一个点名）。
     // 方位词必须对：这条 alert 在**点名按钮上方**，按钮在它下面。
-    '    <el-alert v-else-if="markKind===\'court\'" type="info" :closable="false" show-icon style="margin-bottom:8px"',
-    '      title="下一步：在下面的点名里点一个（推荐先点底线两角、罚球区两角、篮筐中心），再到画面里点它"',
+    // 「4 点试算」模式下不需要选点名 → 不显示（否则会教用户去点没用的名字）
+    '    <el-alert v-else-if="markKind===\'court\' && !courtMini" type="info" :closable="false" show-icon style="margin-bottom:8px"',
+    '      title="下一步：在下面的点名里点一个（推荐先点底线两角、罚球区两角、篮筐中心），再到画面里点它；同一个名字可以在左右两个画面各点一次"',
     '      :description="guideDesc" />',
-    '    <el-alert v-else type="success" :closable="false" show-icon style="margin-bottom:8px"',
+    '    <el-alert v-else-if="markKind!==\'court\'" type="success" :closable="false" show-icon style="margin-bottom:8px"',
     '      title="篮筐中心已标好 —— 可以直接保存（点多一下就是一步）"',
     '      :description="markHoop && markHoop.measured',
     '        ? (\'中心 \' + Math.round(markHoop.cx*markSize.w) + \',\' + Math.round(markHoop.cy*markSize.h)',
     '           + \'，半径 \' + Math.round(markHoop.rx*markSize.w) + \'×\' + Math.round(markHoop.ry*markSize.h) + \' 像素（你量的）\')',
     '        : (\'中心 \' + Math.round((markHoop?markHoop.cx:0)*markSize.w) + \',\' + Math.round((markHoop?markHoop.cy:0)*markSize.h)',
     '           + \'。没量筐宽也没关系：半径会由检测器量；想让判进球的尺度由你定，就再点一下「篮圈左缘」或「右缘」（可选）\')" />',
-    // 球场模式下点不够 4 个的提示
-    '    <el-alert v-if="markKind===\'court\' && guideCount < 4" type="warning" :closable="false" show-icon style="margin-bottom:8px"',
+    // 球场模式下点不够 4 个的提示（4 点试算的点不在 mfPts 里，这条在这儿是假警报）
+    '    <el-alert v-if="markKind===\'court\' && !courtMini && guideCount < 4" type="warning" :closable="false" show-icon style="margin-bottom:8px"',
     '      title="至少要 4 个点才能解出标定"',
-    '      :description="\'现在只有 \' + guideCount + \' 个，还差 \' + (4 - guideCount) + \' 个。若画面里看不清的点按「跳过这一项」，但最终仍要有 4 个以上。\'" />',
+    '      :description="\'现在两边合计 \' + guideCount + \' 个。\' + (mfDualSplit ? (\'左画面 \' + mfLeftCov.n + \' 个、右画面 \' + mfRightCov.n + \' 个 —— 每边各自要有 4 个以上。\') : \'\') + \'画面里看不清的点按「跳过这一项」。\'" />',
     // 标定失败时的原因（重投影误差偏大 / 点位退化 / 解释不了画面里的真篮筐）
     '    <el-alert v-if="courtResult && !courtResult.usable" type="error" :closable="false" show-icon style="margin-bottom:8px"',
     "      :title=\"'标定结果不可用' + (courtResult.rmse_m != null ? ('（重投影误差 ' + courtResult.rmse_m + ' m）') : '')\"",
@@ -1354,54 +2241,167 @@ window.PAGES['upload'] = {
     '    <el-alert v-if="markKind===\'court\' && mfResult" :type="mfResult.ok ? (mfResult.position_unverified ? \'warning\' : \'success\') : \'error\'"',
     '      :closable="false" show-icon style="margin-bottom:8px"',
     '      :title="(mfResult.ok ? (mfResult.position_unverified ? \'标定已保存，但位置结论未校验\' : \'标定可用\') : \'这份点法还不能用\') + (mfResult.rmse_m != null ? (\'（平均误差 \' + mfResult.rmse_m + \' m\' + (mfResult.hoop_error_m != null ? (\'；篮筐投影偏 \' + mfResult.hoop_error_m + \' m\') : \'\') + \'）\') : \'\')"',
-    '      :description="String(mfResult.note || \'\').slice(0, 200)" />',
-    // 逐点误差：哪个点错了要能一眼看到（用户点的是像素，就按像素/米并排显示）
+    // 后端的多机位告警（`_multical_note`）在"哪一段不可信 + 去看叠加自检"后面还有一大段
+    // 解释 —— 直接整段摆出来就是一条长句。做法：框里只留前面那段读数，全文折进「说明」。
+    '      >{{ String(mfResult.note || \'\').slice(0, 200) }}',
+    '      <copy-note v-if="String(mfResult.note || \'\').length > 200" label="说明">{{ mfResult.note }}</copy-note></el-alert>',
+    // 逐点责任诊断：直接点名"哪个点跟其余对不上"。
+    // 为什么必须有：以前只说"有 N 个点互相矛盾"，不说是哪个 —— 用户只能反复重标，
+    // 最后怀疑软件本身（实测原话："我标点就说表的不对，你这个标定的代码真的准确吗"）。
+    '    <el-alert v-if="markKind===\'court\' && mfResult && mfResult.point_diagnosis" type="warning" :closable="false" show-icon style="margin-bottom:6px"',
+    '      title="逐点体检：这些点里哪个跟其余对不上"',
+    '      :description="mfResult.point_diagnosis.note" />',
+    '    <div v-if="markKind===\'court\' && mfResult && mfResult.point_diagnosis" class="row" style="flex-wrap:wrap;margin-bottom:6px">',
+    '      <el-tag v-for="(r,i) in mfResult.point_diagnosis.rows" :key="\'pd\'+i" size="small" effect="plain" style="margin:2px"',
+    '        :type="r.excused_err_m != null && r.excused_err_m > 3 ? \'danger\' : \'info\'">',
+    '        {{ r.label }}：排除它后偏 {{ r.excused_err_m != null ? r.excused_err_m : \'?\' }} m（其余点平均 {{ r.others_mean_err_m != null ? r.others_mean_err_m : \'?\' }} m）</el-tag>',
+    '    </div>',
     '    <div v-if="markKind===\'court\' && mfResult && (mfResult.worst || []).length" style="margin-bottom:8px">',
     '      <span class="hint">误差最大的几个点：</span>',
     '      <el-tag v-for="(w,i) in mfResult.worst" :key="\'w\'+i" size="small" type="warning" effect="plain" style="margin:2px">',
     '        {{ w.label }} @{{ w.t }}s → {{ w.err_m }} m（像素 {{ w.px[0] }},{{ w.px[1] }}）</el-tag>',
     '    </div>',
+    // 标定自检叠加层：把这份 H 算出来的球场线投影回画面。
+    // 这是唯一能让人**肉眼**判断标定对错的证据 —— 因为 5 个点里任取 4 个都能
+    // 精确解出 H（误差恒为 0），单看那个数字谁也说不清（实测争议点）。
+    '    <div v-if="markKind===\'court\' && mfResult && mfResult.H" class="row" style="align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">',
+    '      <el-switch :model-value="showCourtOverlay" active-text="叠加球场线自检" @change="toggleCourtOverlay" />',
+    '    </div>',
+    // 把"通过校验"的客观读数摆出来。为什么必须显式给数字：
+    // 分析端有一道硬门槛（投影线与画面白线的吻合度 ratio ≥1.25），
+    // 达不到就**不生成战术图/热图**。以前界面只说"标定可用"，用户存下去才发现
+    // 战术图是空的，完全对不上账（实测踩到：AI 自己标的点 ratio 只有 0.32）。
+    '    <el-alert v-if="markKind===\'court\' && mfResult && mfResult.calibration_fit" :closable="false" show-icon style="margin-bottom:6px"',
+    '      :type="fitRatio >= 1.25 ? \'success\' : \'warning\'"',
+    '      :title="\'吻合度读数：\' + (mfResult.calibration_fit.ratio != null ? mfResult.calibration_fit.ratio : \'—\') + \'（门槛 1.25）\' + (fitRatio >= 1.25 ? \' —— 这份标定会被分析端接受，战术图/热图能出\' : \' —— 太低，分析端会拒收：战术图、热图、2/3 分区分都不会生成（只判进球）\')"',
+    '      description="低于 1.25 时，核对叠线并调整标点。" />',
+    // 「点吸附精修」的结果：采纳了没有（+ 后端给的原因）。
+    // 为什么必须显式区分"采纳/没采纳"：护栏拒绝时点集**根本没动**，
+    // 若只显示一个"已精修"的绿条，用户会以为点被改过（实测这机位就会被拒）。
+    '    <el-alert v-if="markKind===\'court\' && mfResult && mfResult.snap && mfResult.snap.note" :closable="false" show-icon style="margin-bottom:6px"',
+    '      :type="mfResult.snap.accepted ? \'success\' : \'info\'"',
+    '      :title="(mfResult.snap.accepted ? \'点吸附精修：已采纳（画面上的空心黄圈就是存下来的位置）—— \' : \'点吸附精修：没采纳（保留你自己标的点）—— \') + mfResult.snap.note">',
+    '      <copy-note label="说明">工具会试着把你标的点吸附到画面里的球场线上（位移上限 12 像素），只有在结果几何上仍像球场时才采纳；被拒不是出错 —— 机位太正对球场时单应矩阵本身就病态，点挪几个像素就能让吻合度虚高，那种解一律不用。</copy-note></el-alert>',
+    // 多机位：**哪几段不可信**逐段摆出来。
+    // 为什么必须有：多机位每一段各解一份 H，坏的那一段以前被"取最好的一段"盖住，
+    // 界面照样说"标定可用" —— 用户看到的是"战术图过了一分钟就乱码"（实测）。
+    // 上面的吻合度读数已经是**最差那一段**的值；这里说清坏在哪一段时间、坏成什么样。
+    // 详细怎么看（开叠加层、红线压不压在白线上）折进「说明」，不占页面篇幅。
+    '    <div v-if="markKind===\'court\' && mfResult && weakSegs.length" class="row" style="flex-wrap:wrap;align-items:center;margin-bottom:6px">',
+    '      <span class="hint">这些时间段不可信：<copy-note label="说明">多机位标定里每一段时间各自解一份 H（不同机位/不同镜头各一份），只要有一段不可信，这份标定的**位置类结论**（投篮热区、战术图、球场坐标）就不可信 —— 那段视频里的球员坐标会整体偏掉。怎么看：打开上面的「叠加球场线自检」，红色虚线压不到画面里的白线/绿区上，就说明这一段对不上。怎么修：对着不可信的那段时间重新抽帧、把那一段的点重标一遍（每一段各自要有 4 个以上、铺得开的点）。</copy-note></span>',
+    '      <el-tag v-for="(s,i) in weakSegs" :key="\'ws\'+i" size="small" type="danger" effect="plain" style="margin:2px">',
+    '        {{ s.from }}–{{ s.to }}s：{{ s.why }}（吻合度 {{ s.ratio }} · 误差 {{ s.rmse_m }} m）</el-tag>',
+    '    </div>',
     // 外层盒子宽度 = min(100%, 画面宽)；图片 width:100% 撑满它。
     // 这样"图片显示尺寸"和"定位容器尺寸"严格相等，绿圈才会落在鼠标点上。
     // ---- 球场模式：画面切换 + 特征点选择（多画面累加）----
     '    <div v-if="markKind===\'court\' && mfFrames.length" style="margin-bottom:8px">',
-    '      <div class="row" style="align-items:center;margin-bottom:6px">',
-    '        <b>画面 {{ mfIdx+1 }}/{{ mfFrames.length }}</b>',
-    '        <span class="hint">t={{ mfCurrent ? mfCurrent.t : 0 }}s</span>',
-    '        <el-button size="small" @click="mfPrev" :disabled="mfIdx<=0">上一张画面</el-button>',
-    '        <el-button size="small" @click="mfNext" :disabled="mfIdx>=mfFrames.length-1">下一张画面</el-button>',
-    '        <span class="grow"></span>',
-    '        <el-tag size="small" :type="mfEnough?\'success\':\'info\'" effect="plain">已标 {{ mfPts.length }} 个点（本帧 {{ mfPtsHere.length }} 个）</el-tag>',
+    // 一句总纲：这件事现在是「左右两个画面各自标一个半场」
+    '      <div class="row" style="align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap">',
+    '        <el-switch :model-value="dualView" active-text="左右两个画面" inactive-text="一张一张切" @change="setDualView" />',
+    '        <span class="hint">两幅画面分别标点</span>',
     '      </div>',
-    '      <div class="row" style="align-items:center;margin-bottom:6px">',
+    // ---- 单画面：老的「一张一张切」----
+    '      <template v-if="!dualView">',
+    '        <div class="row" style="align-items:center;margin-bottom:6px">',
+    '          <b>画面 {{ mfIdx+1 }}/{{ mfFrames.length }}</b>',
+    '          <span class="hint">t={{ mfCurrent ? mfCurrent.t : 0 }}s</span>',
+    '          <el-button size="small" @click="mfPrev" :disabled="mfIdx<=0">上一张画面</el-button>',
+    '          <el-button size="small" @click="mfNext" :disabled="mfIdx>=mfFrames.length-1">下一张画面</el-button>',
+    '          <span class="grow"></span>',
+    '          <el-tag size="small" :type="mfEnough?\'success\':\'info\'" effect="plain">已标 {{ mfPts.length }} 个点（本画面 {{ mfPtsHere.length }} 个）</el-tag>',
+    '        </div>',
+    '      </template>',
+    // ---- 左右两个画面：各选一幅、各自点各自的点 ----
+    '      <template v-else>',
+    '        <div class="row" style="align-items:stretch;gap:8px;margin-bottom:6px;flex-wrap:wrap">',
+    '          <div class="mf-panel-head" :class="{on: mfActive===0}" @click="setMfActive(0)">',
+    '            <div class="row" style="align-items:center;gap:6px">',
+    '              <b>左画面</b>',
+    '              <el-tag size="small" :type="mfLeftCov.enough ? \'success\' : \'warning\'" effect="plain">',
+    '                {{ mfLeftCov.n }} 个点{{ mfLeftCov.enough ? \'\' : \'（不够 4 个）\' }}</el-tag>',
+    '            </div>',
+    '            <div class="hint" style="margin-top:4px">这一幅是左半场{{ mfDualSplit ? \'\' : \'（目前跟右画面是同一幅）\' }}</div>',
+    '            <div class="row" style="align-items:center;gap:4px;margin-top:4px">',
+    '              <span class="hint">换这一幅：</span>',
+    '              <el-select :model-value="mfIdx" size="small" style="width:150px" @change="setLeftFrame">',
+    '                <el-option v-for="(f,i) in mfFrames" :key="\'L\'+i" :value="i"',
+    '                  :label="\'第\' + (i+1) + \'幅 t=\' + f.t + \'s（\' + (mfFrameCov[i] ? mfFrameCov[i].n : 0) + \'点）\'" />',
+    '              </el-select>',
+    '            </div>',
+    '          </div>',
+    '          <div class="mf-panel-head" :class="{on: mfActive===1}" @click="setMfActive(1)">',
+    '            <div class="row" style="align-items:center;gap:6px">',
+    '              <b>右画面</b>',
+    '              <el-tag size="small" :type="mfRightCov.enough ? \'success\' : \'warning\'" effect="plain">',
+    '                {{ mfRightCov.n }} 个点{{ mfRightCov.enough ? \'\' : \'（不够 4 个）\' }}</el-tag>',
+    '            </div>',
+    '            <div class="hint" style="margin-top:4px">右半场</div>',
+    '            <div class="row" style="align-items:center;gap:4px;margin-top:4px">',
+    '              <span class="hint">换这一幅：</span>',
+    '              <el-select :model-value="mfIdx2" size="small" style="width:150px" @change="setRightFrame">',
+    '                <el-option v-for="(f,i) in mfFrames" :key="\'R\'+i" :value="i"',
+    '                  :label="\'第\' + (i+1) + \'幅 t=\' + f.t + \'s（\' + (mfFrameCov[i] ? mfFrameCov[i].n : 0) + \'点）\'" />',
+    '              </el-select>',
+    '              <el-button size="small" @click="addRightFrame">把原片当前这帧放到右画面</el-button>',
+    '            </div>',
+    '          </div>',
+    '        </div>',
+    '        <div class="hint" style="margin-bottom:6px">',
+    '          <span :style="{color: mfActive===0 ? \'#409eff\' : \'#909399\'}">现在点在<b>左画面</b>上</span>',
+    '          /',
+    '          <span :style="{color: mfActive===1 ? \'#409eff\' : \'#909399\'}">点在<b>右画面</b>上</span>',
+    '          —— 直接在画面里点一下就会切过去；两边合计已标 {{ mfPts.length }} 个点',
+    '          <span v-if="!mfDualSplit">｜ 现在两边还是同一幅画面：把右侧原片拖到「看另一侧半场」的那一刻，再按「把原片当前这帧放到右画面」</span>',
+    '        </div>',
+    '      </template>',
+    '      <div class="row" style="align-items:center;margin-bottom:6px;flex-wrap:wrap">',
     '        <span class="hint">在</span>',
     '        <el-input-number v-model="mfCenter" :min="0" :step="1" :precision="1" size="small" style="width:110px" />',
     '        <span class="hint">秒附近抽</span>',
     '        <el-input-number v-model="mfSpan" :min="0.5" :max="30" :step="0.5" size="small" style="width:100px" />',
     '        <span class="hint">秒内的帧</span>',
     '        <el-button size="small" @click="mfResample">按这个时刻重抽</el-button>',
-    '        <span class="hint">（几帧要在**同一镜头**里，标点才能叠加）</span>',
+    '        <span class="hint"></span>',
     '      </div>',
-    '      <div class="hint" style="margin-bottom:6px">① 先点下面一个特征点 → ② 再在画面里点它的位置。'
-    + '★ 关键：<b>尽量在同一个画面里一次点够 5~6 个点</b>，再切画面 —— '
-    + '单应矩阵要求同一帧至少 4 个点，分散在多个画面里会解不准（实测把 6 个点标在 3 个画面上，误差 4.6m）。'
-    + '画面里看不清的点按「跳过这一个」。点要<b>铺开</b>：优先场地四角，其次中圈/罚球区角，别都挤在一条线上。</div>',
-    '      <div class="row" style="align-items:center;gap:10px;margin-bottom:6px">',
-    '        <el-switch v-model="autoMode" active-text="自动识别（不用选名字）" />',
-    '        <span class="hint">我看的是：</span>',
-    '        <el-select v-model="autoHalf" size="small" style="width:190px" :disabled="!autoMode">',
-    '          <el-option label="远端半场 + 中圈" value="far" />',
-    '          <el-option label="近端半场 + 中圈" value="near" />',
-    '          <el-option label="两端都能看到" value="full" />',
-    '        </el-select>',
-    '        <el-button v-if="autoMode" size="small" type="primary" @click="solveAutoCalib">自动解算标定</el-button>',
+    // 「只点 4 个点」试算：不给点命名，按点选顺序记 4 个，后端穷举地物组合自动定向。
+    // 只用于预览 —— 4 个点恰好确定一个单应矩阵，**没有冗余点能验证"这 4 个点配对的是
+    // 哪几条球场线"**，所以吻合度再高也不能当正式标定（保存按钮在这个模式下隐藏）。
+    '      <div class="row" style="align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">',
+    '        <el-switch :model-value="courtMini" active-text="4 点试算（仅预览）" @change="setCourtMini" />',
+    '        <span class="hint">不给点命名，只按点选顺序记；结果只用于预览，不能当正式标定。</span>',
     '      </div>',
-    '      <el-alert v-if="autoResult" :closable="false" show-icon',
-    "        :type=\"autoResult.loading ? 'info' : (autoResult.ok ? 'success' : 'error')\"",
-    "        :title=\"autoResult.loading ? '正在识别…（几秒钟）' : (autoResult.ok ? ('识别成功：' + autoResult.named + '，误差 ' + autoResult.rmse_m + ' m') : '自动识别没成功')\"",
-    "        :description=\"autoResult.loading ? '' : (autoResult.note || '')\" style=\"margin-bottom:8px\" />",
+    '      <el-alert v-if="courtMini" type="info" :closable="false" show-icon style="margin-bottom:6px"',
+    '        title="4 点模式不给点命名，按点选顺序记；正式标定请切回命名地标">',
+    '        <copy-note label="说明">4 个点恰好确定一个单应矩阵，没有多余的点可以验证它们配对的是哪几条球场线；白线吻合度在转播画面上可能误判，所以试算只当预览参考 —— 切回命名地标点 4 个以上，核对投影线后再保存。</copy-note></el-alert>',
+    // 4 点的槽位：按点选顺序显示 1~4，点满 4 个才允许试算
+    '      <div v-if="courtMini" class="row" style="align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">',
+    '        <span class="hint">这一幅已点：</span>',
+    '        <el-tag v-for="n in 4" :key="\'mq\'+n" size="small"',
+    '          :type="miniPtsActive.length >= n ? \'success\' : \'info\'" effect="plain">',
+    '          {{ n }}. {{ miniPtsActive[n-1] ? (\'(\' + miniPtsActive[n-1].x.toFixed(3) + \', \' + miniPtsActive[n-1].y.toFixed(3) + \')\') : \'未点\' }}',
+    '        </el-tag>',
+    '        <el-button size="small" @click="miniClearHere" :disabled="!miniPtsActive.length">重点这一幅</el-button>',
+    '        <el-button size="small" @click="miniClearAll" :disabled="!mfMiniPts.length">全清</el-button>',
+    '      </div>',
+    // 四点试算的结果只展示为预览，不把白线评分包装成"已验证"
+    '      <el-alert v-if="courtMini && mfResult && mfResult.mini" :closable="false" show-icon style="margin-bottom:6px"',
+    '        type="warning"',
+    '        :title="mfResult.mini.ok ? (\'仅供预览：\' + mfResult.mini.which + \'；吻合度 \' + mfResult.mini.ratio + \' 不能确认地标对应\') : (\'试算没成：\' + (mfResult.mini.note || \'\'))">',
+    '        <copy-note label="说明">打开上面的「叠加球场线自检」肉眼核对投影线与画面白线；正式结果请关闭 4 点模式，用命名地标再标一遍。</copy-note></el-alert>',
+    // 「点名表列哪些点」选一次：默认全场 A端/B端 15 个地标（同一个物理地标在两幅
+    // 画面里同名），也能临时只列某一侧半场的 6 个点（机位只拍得到半场时更清爽）。
+    '      <div class="row" style="align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">',
+    '        <span class="hint">地标范围：</span>',
+    '        <el-radio-group :model-value="courtSide" size="small" @change="setCourtSide">',
+    '          <el-radio-button label="full">全场（A端/B端）</el-radio-button>',
+    '          <el-radio-button label="left">只看左半场</el-radio-button>',
+    '          <el-radio-button label="right">只看右半场</el-radio-button>',
+    '        </el-radio-group>',
+    '        <el-button size="small" @click="pickStableFrames">自动挑同一镜头的两帧</el-button>',
+    '      </div>',
     // 球场的点名列表（篮筐模式没有这一排：中心是唯一必点项）
-    '      <div v-if="!autoMode" class="row" style="flex-wrap:wrap">',
+    '      <div class="row" style="flex-wrap:wrap">',
     '        <el-button v-for="it in courtItems" :key="it.name" size="small"',
     '          :type="mfTarget===it.name ? \'primary\' : (mfDone[it.name] ? \'success\' : \'default\')"',
     '          :plain="mfTarget!==it.name" @click="mfPick(it)">',
@@ -1409,8 +2409,6 @@ window.PAGES['upload'] = {
     '      </div>',
     // 篮筐模式的可选步骤：想自己量半径的人点这里，不点就交给检测器（默认路径）
     '      <div v-if="markKind===\'hoop\'" class="row" style="flex-wrap:wrap;margin-top:2px">',
-    '        <span class="hint">可选：想让判进球的横向尺度由你定，就再点一下圈的一侧边缘',
-    '          （只点中心也完全可以）</span>',
     '        <el-button v-for="it in markItemsOptional" :key="it.name" size="small"',
     '          :type="hoopOptTarget===it.name ? \'primary\' : (hoopOptDone[it.name] ? \'success\' : \'default\')"',
     '          :plain="hoopOptTarget!==it.name"',
@@ -1419,14 +2417,32 @@ window.PAGES['upload'] = {
     '        <span class="hint" v-if="hoopOptTarget">现在去画面里点：{{ hoopOptTarget }}</span>',
     '      </div>',
     '      <div class="hint" v-if="mfTarget" style="margin-top:6px;color:#409eff">',
-    '        现在去画面里点：{{ mfTarget }}（点了之后自动取消选择，可再选下一个）</div>',
+    '        现在去画面里点：<b>{{ mfTarget }}</b> —— 顺序随便，选中的那一个高亮；',
+    '        同一个名字可以在两幅画面里各点一次（各自独立记录）</div>',
       // 点完之后**必须留下"下一步"**：原来 mfTarget 一被清空，上一句就消失了，
       // 屏幕上只剩一排点名按钮 —— 用户就卡在"标完篮筐中心不知道怎么办"（实测反馈）。
       '      <div class="hint" v-else style="margin-top:6px;color:#409eff">',
-      '        下一步：从上面选一个点名，再到画面里点它 —— 已点 {{ mfPts.length }} 个{{ mfEnough ? \'（够了，可以直接保存；想更准就继续点）\' : \'，还差 \' + (4 - mfPts.length) + \' 个才能保存\' }}。画面里看不到的点按「跳过这一项」。</div>',
+      '        下一步：选一个点名 → 到画面里点它。现在：',
+      '        左画面 {{ mfLeftCov.n }} 个{{ mfLeftCov.enough ? \'（够了）\' : \'（还差 \' + (4 - mfLeftCov.n) + \' 个）\' }}、',
+      '        右画面 {{ mfRightCov.n }} 个{{ mfRightCov.enough ? \'（够了）\' : \'（还差 \' + (4 - mfRightCov.n) + \' 个）\' }}。',
+      '        标完后点「保存并解算标定」。</div>',
+    // 每幅画面各自的覆盖度：哪一边还差、点是不是挤在一条线上，一眼看到
+    '      <div class="row" style="flex-wrap:wrap;align-items:center;margin-top:6px">',
+    '        <span class="hint">每幅画面的覆盖度：</span>',
+    '        <el-tag v-for="(f,i) in mfFrameCov" :key="\'cov\'+i" size="small" style="margin:2px"',
+    '          :type="f.enough ? (f.spread ? \'success\' : \'warning\') : \'info\'" effect="plain"',
+    '          :title="f.enough ? (f.spread ? \'这幅画面自己就能解算\' : \'点数够了，但点挤在一条线上 —— 再往别处点一下\') : \'这幅画面还差 \' + (4 - f.n) + \' 个点（别的画面的点补不上）\'">',
+    '          第{{ f.idx+1 }}幅 t={{ f.t }}s · {{ f.n }}点{{ f.enough ? (f.spread ? \' ✓可解\' : \' ⚠太集中\') : \' ✗不够\' }}</el-tag>',
+    '      </div>',
+    // 画面外点名提示：解出一份 H 之后就能算出"每个特征点会落在画面哪里"。
+    // 有些点名（比如另一侧的底线角）在这台机位的画面里**根本看不见**，
+    // 用户硬点也只能是猜 —— 实测踩过（用户把"底线右角"点成了罚球区右角）。
+    '      <el-alert v-if="offFrameNames.length" type="warning" :closable="false" show-icon style="margin-top:6px"',
+    '        :title="\'有 \' + offFrameNames.length + \' 个点，在你这两幅画面里**根本看不见**：\' + offFrameNames.join(\'、\')"',
+    '        description="这份标定是拿它们猜出来的，所以误差偏大。做法：重标时跳过这些点（按「跳过这一项」），改点画面里能看见的（底线两角、罚球区两角、三分弧顶、中圈中心）。也可以打开上面的「叠加球场线自检」看红色虚线对不对得上画面里的白线。" />',
     '      <el-alert v-if="mfResult && !mfResult.ok" type="error" :closable="false" show-icon style="margin-top:8px"',
-    '        :title="mfResult.note ? mfResult.note : (\'标定误差偏大（平均 \' + mfResult.rmse_m + \' m）\')"',
-    '        :description="\'最离群的几个点：\' + mfResult.worst.map(function(d){return (d.label || d.name || \'?\') + \'(t=\' + d.t + \'s, \' + d.err_m + \'m)\'}).join(\'，\')" />',
+    '        :title="mfResult.note ? String(mfResult.note).slice(0, 120) : (\'标定误差偏大（平均 \' + mfResult.rmse_m + \' m）\')"',
+    '        :description="\'最离群的几个点：\' + (mfResult.worst || []).map(function(d){return (d.label || d.name || \'?\') + \'(t=\' + d.t + \'s, \' + d.err_m + \'m)\'}).join(\'，\')" />',
     // 客观体检读数：点位退化 / 与画面里的真篮筐对不上。
     // 单看"重投影误差"是不够的 —— 点位几乎共线时误差必然是 0.00m 左右。
     '      <div v-if="mfResult && mfResult.degeneracy" class="hint" style="margin-top:6px">',
@@ -1447,55 +2463,182 @@ window.PAGES['upload'] = {
     '      </div>',
     '      <el-alert v-else-if="mfResult && mfResult.ok" type="success" :closable="false" show-icon style="margin-top:8px"',
     '        :title="\'标定成功：平均误差 \' + mfResult.rmse_m + \' m\'"',
-    '        description="已保存为这段视频的标定，分析时会自动使用。" />',
+    '        ><copy-note label="说明">已保存为这段视频的标定，分析时会自动使用。</copy-note></el-alert>',
     '    </div>',
     // 画面（球场模式用抽帧图，篮筐模式用取帧图）
-    '    <div style="position:relative;display:inline-block;width:100%;max-width:1100px;cursor:crosshair" @click="onMarkClick" @mousemove="onMarkMove" @mouseleave="onMarkLeave">',
-    '      <img v-if="markKind===\'court\' && mfCurrent" :src="mfCurrent.image" style="width:100%;height:auto;display:block;border-radius:6px" />',
-    '      <img v-else-if="markKind!==\'court\' && markImg" :src="markImg" style="width:100%;height:auto;display:block;border-radius:6px" />',
-    '      <div v-else class="muted" style="padding:40px">正在抽画面…</div>',
-    // 已点的标记（两种模式都画 activePts —— 之前只用 markPts，
-    // 球场模式下点了一个点都不显示，用户以为没点上去）
-    '      <svg v-if="frameW && frameH" :viewBox="\'0 0 \' + frameW + \' \' + frameH"',
-    '           preserveAspectRatio="none"',
-    '           style="position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none">',
-    '        <g v-if="hoverPt">',
-    '          <line :x1="hoverPt.x*frameW - 22" :y1="hoverPt.y*frameH" :x2="hoverPt.x*frameW + 22" :y2="hoverPt.y*frameH" stroke="#f59e0b" :stroke-width="Math.max(1.5, frameW*0.0022)" />',
-    '          <line :x1="hoverPt.x*frameW" :y1="hoverPt.y*frameH - 22" :x2="hoverPt.x*frameW" :y2="hoverPt.y*frameH + 22" stroke="#f59e0b" :stroke-width="Math.max(1.5, frameW*0.0022)" />',
-    '        </g>',
-    '        <template v-for="(p,i) in activePts" :key="i">',
-    '          <circle :cx="p.x * frameW" :cy="p.y * frameH" :r="Math.max(10, frameW*0.012)"',
-    '                  fill="rgba(34,197,94,.35)" stroke="#22c55e" :stroke-width="Math.max(2, frameW*0.003)" />',
-    '          <text :x="p.x * frameW + Math.max(12, frameW*0.014)" :y="p.y * frameH"',
-    '                fill="#22c55e" :font-size="Math.max(16, frameW*0.022)"',
-    '                style="paint-order:stroke;stroke:#000;stroke-width:3px">{{ i + 1 }}. {{ p.label }}</text>',
-    '        </template>',
-    '      </svg>',
-    // 篮圈示意（只在篮筐模式）
-    '      <div v-if="markKind===\'hoop\' && markHoop" style="position:absolute;pointer-events:none;border:2px dashed #ef4444;border-radius:50%"',
-    '           :style="{left:((markHoop.cx-markHoop.rx)*100)+\'%\',top:((markHoop.cy-markHoop.ry)*100)+\'%\',width:(markHoop.rx*200)+\'%\',height:(markHoop.ry*200)+\'%\'}"></div>',
+    // 两个画面模式下：左画面 + 右画面并排。**每张图各自记自己那一半场地的点** ——
+    // 这就是用户要的"分两个画面点，一个画面点左半场、一个画面点右半场"。
+    '    <div :class="markKind===\'court\' && mfDualSplit ? \'mf-panels\' : \'\'">',
+    // 篮筐模式必须有自己的「取帧图」面板。这里以前只给球场模式画了图（下面那个
+    // markKind==='court' 的 div），篮筐模式就只剩上面那个原片播放器 ——
+    // 用户实际看到的就是"点进去有视频，但没有下面截帧，我没法点篮筐"（2026-10-05 实测）。
+    // 取帧接口一直是好的（GET /api/frame 200），图早就存在 markImg 里，只是从来没人渲染它。
+    '      <div v-if="markKind!==\'court\'" class="mf-panel-wrap"',
+    '           style="position:relative;width:100%;max-width:1100px;cursor:crosshair"',
+    '           @click="onMarkClick" @mousemove="onMarkMove" @mouseleave="onMarkLeave">',
+    '        <img v-if="markImg" :src="markImg" style="width:100%;height:auto;display:block;border-radius:var(--r-sm)" />',
+    '        <div v-else class="muted" style="padding:40px">正在取帧…（若一直停在这里说明这次取帧失败，请看页面右下角提示）</div>',
+    // 准星 + 已点标记画在同一坐标系里（frameW/frameH 取自这次取帧的真实像素尺寸，
+    // 不是猜的默认值）—— 不然"我点在哪"和"系统记在哪"会看起来错位。
+    '        <svg v-if="markImg && frameW && frameH" :viewBox="\'0 0 \' + frameW + \' \' + frameH"',
+    '             preserveAspectRatio="none"',
+    '             style="position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none">',
+    '          <g v-if="hoverPt">',
+    '            <line :x1="hoverPt.x*frameW - 22" :y1="hoverPt.y*frameH" :x2="hoverPt.x*frameW + 22" :y2="hoverPt.y*frameH" stroke="#f59e0b" :stroke-width="Math.max(1.5, frameW*0.0022)" />',
+    '            <line :x1="hoverPt.x*frameW" :y1="hoverPt.y*frameH - 22" :x2="hoverPt.x*frameW" :y2="hoverPt.y*frameH + 22" stroke="#f59e0b" :stroke-width="Math.max(1.5, frameW*0.0022)" />',
+    '          </g>',
+    '          <template v-for="(p,i) in activePts" :key="\'h\'+i">',
+    '            <circle :cx="p.x * frameW" :cy="p.y * frameH" :r="Math.max(10, frameW*0.012)"',
+    '                    fill="rgba(34,197,94,.35)" stroke="#22c55e" :stroke-width="Math.max(2, frameW*0.003)" />',
+    '            <text :x="p.x * frameW + Math.max(12, frameW*0.014)" :y="p.y * frameH"',
+    '                  fill="#22c55e" :font-size="Math.max(16, frameW*0.022)"',
+    '                  style="paint-order:stroke;stroke:#000;stroke-width:3px">{{ p.label }}</text>',
+    '          </template>',
+    '        </svg>',
+    // 篮圈示意：原来这段只在球场模式的那个面板里（那个面板篮筐模式根本不渲染），
+    // 等于形状画了但永远看不见 —— 现在跟着篮筐模式的面板走。
+    '        <div v-if="markHoop" style="position:absolute;pointer-events:none;border:2px dashed #ef4444;border-radius:var(--r-pill)"',
+    '             :style="{left:((markHoop.cx-markHoop.rx)*100)+\'%\',top:((markHoop.cy-markHoop.ry)*100)+\'%\',width:(markHoop.rx*200)+\'%\',height:(markHoop.ry*200)+\'%\'}"></div>',
+    '      </div>',
+    '      <div v-if="markKind===\'court\'" class="mf-panel-wrap"',
+    '           :class="{ on: !mfDualSplit || mfActive===0 }" data-side="0"',
+    '           style="position:relative;width:100%;max-width:1100px;cursor:crosshair"',
+    '           @click="onMarkClick" @mousemove="onMarkMove" @mouseleave="onMarkLeave"',
+    '           @mousedown="onMarkDown" @mouseup="onMarkUp">',
+    '        <img v-if="mfCurrent" :src="mfCurrent.image" style="width:100%;height:auto;display:block;border-radius:var(--r-sm)" />',
+    '        <div v-else class="muted" style="padding:40px">正在抽画面…</div>',
+    '        <div v-if="mfDualSplit" class="mf-badge">左画面{{ mfActive===0 ? \'（正在点这里）\' : \'\' }}</div>',
+    // 已点的标记（两种模式都画：篮筐模式画 markPts/activePts；
+    // 球场模式**左画面画 mfPtsHere、右画面画 mfPtsRight** ——
+    // 以前两边都用 activePts（=只认左帧），于是右画面的点会让左画面"看起来消失"）
+    '        <svg v-if="frameW && frameH" :viewBox="\'0 0 \' + frameW + \' \' + frameH"',
+    '             preserveAspectRatio="none"',
+    '             style="position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none">',
+    '          <g v-if="hoverPt && (markKind!==\'court\' || !mfDualSplit || mfActive===0)">',
+    '            <line :x1="hoverPt.x*frameW - 22" :y1="hoverPt.y*frameH" :x2="hoverPt.x*frameW + 22" :y2="hoverPt.y*frameH" stroke="#f59e0b" :stroke-width="Math.max(1.5, frameW*0.0022)" />',
+    '            <line :x1="hoverPt.x*frameW" :y1="hoverPt.y*frameH - 22" :x2="hoverPt.x*frameW" :y2="hoverPt.y*frameH + 22" stroke="#f59e0b" :stroke-width="Math.max(1.5, frameW*0.0022)" />',
+    '          </g>',
+    '          <template v-for="(p,i) in mfPtsHere" :key="i">',
+    '            <circle :cx="p.x * frameW" :cy="p.y * frameH" :r="Math.max(10, frameW*0.012)"',
+    '                    fill="rgba(34,197,94,.35)" stroke="#22c55e" :stroke-width="Math.max(2, frameW*0.003)" />',
+    '            <text :x="p.x * frameW + Math.max(12, frameW*0.014)" :y="p.y * frameH"',
+    '                  fill="#22c55e" :font-size="Math.max(16, frameW*0.022)"',
+    '                  style="paint-order:stroke;stroke:#000;stroke-width:3px">{{ i + 1 }}. {{ p.label }}</text>',
+    '          </template>',
+    // 「只点 4 个点」模式：把点选顺序画出来（编号 1..4），用户才能确认顺序对不对。
+    // 用**绿色**（和点名模式一致）—— 用户已经习惯"绿圈=我点上了"，换成别的颜色
+    // 会被当成"没点上"（实测反馈："为什么点完点之后没有绿圈提示了"）。
+    '          <template v-for="(p,i) in miniPtsHere" :key="\'M\'+i">',
+    '            <circle :cx="p.x * frameW" :cy="p.y * frameH" :r="Math.max(11, frameW*0.013)"',
+    '                    fill="rgba(34,197,94,.35)" stroke="#22c55e" :stroke-width="Math.max(2, frameW*0.0035)" />',
+    '            <text :x="p.x * frameW + Math.max(13, frameW*0.015)" :y="p.y * frameH"',
+    '                  fill="#22c55e" :font-size="Math.max(18, frameW*0.024)"',
+    '                  style="paint-order:stroke;stroke:#000;stroke-width:3px">{{ p.seq }}</text>',
+    '          </template>',
+    // 精修被采纳时，把"吸附后"的点也画出来（空心黄圈）——存下来的标定用的是它
+    '          <template v-for="(p,i) in snapPtsHere" :key="\'S\'+i">',
+    '            <circle :cx="p.x * frameW" :cy="p.y * frameH" :r="Math.max(11, frameW*0.013)"',
+    '                    fill="none" stroke="#f59e0b" :stroke-width="Math.max(2, frameW*0.0035)"',
+    '                    stroke-dasharray="4 3" />',
+    '          </template>',
+    // 标定自检：把这份 H 算出来的球场线画回画面（对不上就是对不上，一眼可见）
+    '          <template v-if="showCourtOverlay">',
+    '            <polyline v-for="(ln,li) in overlayLines" :key="\'ov\'+li"',
+    '              :points="ln.map(function(q){return q[0].toFixed(0)+\',\'+q[1].toFixed(0)}).join(\' \')"',
+    '              fill="none" stroke="#f5222d" :stroke-width="Math.max(2, frameW*0.0035)"',
+    '              stroke-dasharray="10 6" opacity="0.95" />',
+    '          </template>',
+    '        </svg>',
+    // 这里原来还有一段「篮圈示意（只在篮筐模式）」的 div，但它在
+    // `v-if="markKind==='court'"` 的面板里 —— 篮筐模式下这个面板根本不渲染，
+    // 那段代码永远执行不到。已删掉，篮圈示意现在真的画在篮筐模式的面板上（见上）。
+    '      </div>',
+    // 右画面：自己的坐标系、自己的点（另一侧半场）
+    '      <div v-if="markKind===\'court\' && mfDualSplit" class="mf-panel-wrap"',
+    '           :class="{ on: mfActive===1 }" data-side="1"',
+    '           style="position:relative;width:100%;max-width:1100px;cursor:crosshair"',
+    '           @click="onMarkClick" @mousemove="onMarkMove" @mouseleave="onMarkLeave"',
+    '           @mousedown="onMarkDown" @mouseup="onMarkUp">',
+    '        <img v-if="mfCurrentRight" :src="mfCurrentRight.image" style="width:100%;height:auto;display:block;border-radius:var(--r-sm)" />',
+    '        <div v-if="mfDualSplit" class="mf-badge">右画面{{ mfActive===1 ? \'（正在点这里）\' : \'\' }}</div>',
+    '        <svg v-if="frameW && frameH" :viewBox="\'0 0 \' + frameW + \' \' + frameH"',
+    '             preserveAspectRatio="none"',
+    '             style="position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none">',
+    '          <template v-for="(p,i) in mfPtsRight" :key="\'R\'+i">',
+    '            <circle :cx="p.x * frameW" :cy="p.y * frameH" :r="Math.max(10, frameW*0.012)"',
+    '                    fill="rgba(34,197,94,.35)" stroke="#22c55e" :stroke-width="Math.max(2, frameW*0.003)" />',
+    '            <text :x="p.x * frameW + Math.max(12, frameW*0.014)" :y="p.y * frameH"',
+    '                  fill="#22c55e" :font-size="Math.max(16, frameW*0.022)"',
+    '                  style="paint-order:stroke;stroke:#000;stroke-width:3px">{{ i + 1 }}. {{ p.label }}</text>',
+    '          </template>',
+    '          <template v-for="(p,i) in snapPtsRight" :key="\'SR\'+i">',
+    '            <circle :cx="p.x * frameW" :cy="p.y * frameH" :r="Math.max(11, frameW*0.013)"',
+    '                    fill="none" stroke="#f59e0b" :stroke-width="Math.max(2, frameW*0.0035)"',
+    '                    stroke-dasharray="4 3" />',
+    '          </template>',
+    '          <template v-for="(p,i) in miniPtsRight" :key="\'MR\'+i">',
+    '            <circle :cx="p.x * frameW" :cy="p.y * frameH" :r="Math.max(11, frameW*0.013)"',
+    '                    fill="rgba(34,197,94,.35)" stroke="#22c55e" :stroke-width="Math.max(2, frameW*0.0035)" />',
+    '            <text :x="p.x * frameW + Math.max(13, frameW*0.015)" :y="p.y * frameH"',
+    '                  fill="#22c55e" :font-size="Math.max(18, frameW*0.024)"',
+    '                  style="paint-order:stroke;stroke:#000;stroke-width:3px">{{ p.seq }}</text>',
+    '          </template>',
+    '          <template v-if="showCourtOverlay">',
+    '            <polyline v-for="(ln,li) in overlayLines" :key="\'ovr\'+li"',
+    '              :points="ln.map(function(q){return q[0].toFixed(0)+\',\'+q[1].toFixed(0)}).join(\' \')"',
+    '              fill="none" stroke="#f5222d" :stroke-width="Math.max(2, frameW*0.0035)"',
+    '              stroke-dasharray="10 6" opacity="0.95" />',
+    '          </template>',
+    '        </svg>',
+    '      </div>',
     '    </div>',
-    // 已点清单（文字版，双重反馈）
-    '    <div v-if="activePts.length" class="row" style="margin-top:8px;flex-wrap:wrap">',
+    // 已点清单（文字版，双重反馈）：球场模式按"哪一幅画面"分开列 ——
+    // 左右两个画面的坐标不通用，混成一列会让人以为它们在同一套坐标里。
+    '    <div v-if="markKind===\'court\' && mfPts.length" style="margin-top:8px">',
+    '      <div class="hint">左画面（t={{ mfLeftCov.t }}s）：</div>',
+    '      <div class="row" style="flex-wrap:wrap">',
+    '        <el-tag v-for="(p,i) in mfFramePts(0)" :key="\'lp\'+i" size="small" type="success" effect="plain" style="margin:2px">',
+    '          {{ i + 1 }}. {{ p.label }}</el-tag>',
+    '        <span v-if="!mfFramePts(0).length" class="hint">（还没点）</span>',
+    '      </div>',
+    '      <template v-if="mfDualSplit">',
+    '        <div class="hint" style="margin-top:6px">右画面（t={{ mfRightCov.t }}s）：</div>',
+    '        <div class="row" style="flex-wrap:wrap">',
+    '          <el-tag v-for="(p,i) in mfFramePts(1)" :key="\'rp\'+i" size="small" type="success" effect="plain" style="margin:2px">',
+    '            {{ i + 1 }}. {{ p.label }}</el-tag>',
+    '          <span v-if="!mfFramePts(1).length" class="hint">（还没点）</span>',
+    '        </div>',
+    '      </template>',
+    '    </div>',
+    '    <div v-else-if="markKind!==\'court\' && activePts.length" class="row" style="margin-top:8px;flex-wrap:wrap">',
     '      <el-tag v-for="(p,i) in activePts" :key="\'t\'+i" size="small" type="success" effect="plain" style="margin:2px">',
     '        {{ i + 1 }}. {{ p.label }} ({{ Math.round(p.x*frameW) }},{{ Math.round(p.y*frameH) }})</el-tag>',
     '    </div>',
     '    <template #footer>',
-    '      <el-button v-if="markKind===\'court\'" size="small" @click="mfUndo" :disabled="!mfPts.length">撤销上一个点</el-button>',
+    '      <el-button v-if="markKind===\'court\'" size="small" @click="mfUndo"',
+    '        :disabled="courtMini ? !miniPtsActive.length : !mfPts.length">撤销上一个点</el-button>',
     '      <el-button v-else size="small" @click="markUndo" :disabled="!activePts.length">撤销上一个</el-button>',
     // 跳过：**两种模式都要有**。以前球场的"跳过这一项"被 v-if 排除了，
     // 而球场点名里有"另一端的篮筐中心（若只有一个篮筐可见就别选它）"这类
     // 画面里根本不存在的点 —— 用户于是卡住：不点前进不了、点也点不出来。
     '      <el-button size="small" @click="markSkip" :disabled="markDone">跳过这一项</el-button>',
-    '      <el-button size="small" @click="markKind===\'court\' ? mfClear() : clearMarks()" :disabled="!activePts.length">清空</el-button>',
+    // 清空：两个画面模式下「清空」只清当前这一个画面（另一边辛苦标的点不该被连坐），
+    // 要全清就用后面那个「全部清空」。
+    '      <el-button size="small" @click="markKind===\'court\' ? mfClear() : clearMarks()" :disabled="markKind===\'court\' ? !mfActivePtsCount : !activePts.length">',
+    '        {{ markKind===\'court\' && mfDualSplit ? \'清空这个画面\' : \'清空\' }}</el-button>',
+    '      <el-button v-if="markKind===\'court\' && mfDualSplit" size="small" @click="mfClearAll" :disabled="!mfPts.length">全部清空</el-button>',
     '      <el-button size="small" @click="markOpen=false">取消</el-button>',
     // 预览（不落盘）：先看清逐点误差与合规性，再决定要不要保存（移植自旧版标定页）
+    // ⚠️ 「4 点试算」模式下必须改用 miniReady 判禁用：mfEnough 数的是**命名点**，
+    // 4 点模式下恒为 0 —— 直接沿用会让这个按钮永远是灰的、整个 4 点通道按不动。
     '      <el-button v-if="markKind===\'court\'" size="small" :loading="markSaving"',
-    '        :disabled="!(mfFrames.length ? mfEnough : courtEnough)" @click="previewCourtMulti()">先预览（不保存）</el-button>',
-    // 保存：篮筐模式标了中心就能存；球场模式按"当前是单帧还是多帧"分别判够没够 4 个点
-    // （以前一律看 mfEnough，单帧模式点了点也永远灰着，等于这条路走不通）
-    '      <el-button size="small" type="primary" :loading="markSaving"',
-    '        :disabled="markKind===\'court\' ? !(mfFrames.length ? mfEnough : courtEnough) : !markHoop"',
+    '        :disabled="courtMini ? !miniReady : !(mfFrames.length ? (mfEnough && solvableFrames.length) : courtEnough)" @click="previewCourtMulti()">',
+    '        {{ courtMini ? \'先试算（仅预览）\' : \'先预览（不保存）\' }}</el-button>',
+    // 保存：篮筐模式标了中心就能存；球场模式要求**至少有一幅画面自己够 4 个点**
+    // （以前只看总点数，于是"6 个点撒在 3 幅画面上"这种解不出来的点法也能点保存，
+    //  点下去只会拿到一句"误差偏大"，用户根本不知道该改什么）
+    '      <el-button v-if="markKind!==\'court\' || !courtMini" size="small" type="primary" :loading="markSaving"',
+    '        :disabled="markKind===\'court\' ? !(mfFrames.length ? (mfEnough && solvableFrames.length) : courtEnough) : !markHoop"',
     '        @click="markKind===\'court\' ? (mfFrames.length ? saveCourtMulti() : saveCourt()) : saveMarks()">',
     '        {{ markKind===\'court\' ? \'保存并解算标定\' : \'保存标点\' }}</el-button>',
     '    </template>',

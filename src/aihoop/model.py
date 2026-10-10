@@ -117,6 +117,7 @@ class Shot:
     clip_end: float = 0.0
     tags: list[str] = field(default_factory=list)
     evidence: str = ""
+    review_reason: str = ""
     crossing_t: Optional[float] = None
     review_t: Optional[float] = None  # suggested review instant; not a measured crossing
     decision_t: Optional[float] = None
@@ -158,6 +159,7 @@ class Shot:
         d["points"] = self.points
         d["score_points"] = self.score_points
         d["distance"] = None if not self.location_known else round(self.distance, 3)
+        d["shot_type"] = {1: "free_throw", 2: "two_point", 3: "three_point"}.get(self.value, "unknown")
         return d
 
 
@@ -183,10 +185,27 @@ class Player:
     player_id: str
     name: str
     team: str
-    jersey: Optional[int] = None
+    jersey: Optional[int | str] = None
+    short_label: Optional[str] = None
 
     def to_dict(self) -> dict:
         return asdict(self)
+
+
+def player_label(p: dict) -> str:
+    """Display jersey numbers without exposing detector track identifiers."""
+    import re
+    number=p.get('jersey')
+    if number is not None and re.fullmatch(r'[0-9]{1,2}',str(number)):
+        return str(number)+'号'
+    name=str(p.get('name') or '')
+    if name and name!=str(p.get('player_id',p.get('id',''))) and not re.fullmatch(r'T[0-9]+',name) and name!='UNASSIGNED':
+        if name != '号码待确认':
+            return name
+    short=str(p.get('short_label') or '')
+    if re.fullmatch(r'[AB][1-9][0-9]?',short):
+        return short
+    return '号码待确认'
 
 
 def write_jsonl(path: str, records: list) -> None:

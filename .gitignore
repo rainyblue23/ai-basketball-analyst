@@ -66,26 +66,70 @@ out/
 # 兜底检查拦不住）。要分享其中的看片材料请单独打包，别塞进仓库。
 _tmp/
 
+# ---- 协作交接与一次性诊断记录（本地保留，不发布）----
+/给GPT的说明_*.md
+/队友上手.md
+/docs/*_2026-*.md
+/docs/*_2026-*.csv
+/docs/视觉风格A/
+/Ultralytics/
+
+# 本机诊断、阈值扫描与一次性素材复核脚本（不属于部署运行时）
+/docs/部署方案.md
+/scripts/ab_*.py
+/scripts/center_lock_*.py
+/scripts/camera_pan_estimate.py
+/scripts/compare_*.py
+/scripts/diag_*.py
+/scripts/eval_*.py
+/scripts/explain_*.py
+/scripts/export_*patches.py
+/scripts/inspect_*.py
+/scripts/jsonl_to_json.py
+/scripts/legacy_trace_summary.py
+/scripts/make_*confirm_kit.py
+/scripts/make_ball_frames.py
+/scripts/make_basket_clip.py
+/scripts/make_bili_report.py
+/scripts/make_ground_points_sheet.py
+/scripts/make_timeline_overview.py
+/scripts/net_signature_eval.py
+/scripts/pose_*.py
+/scripts/probe_*.py
+/scripts/replay_*.py
+/scripts/scan_*candidates.py
+/scripts/synth_*.py
+/scripts/tune_*.py
+/scripts/verify_rim_trace_counters.py
+
 # ---- 模型权重（可重新训练 / 可从 Releases 下载）----
 *.pt
 *.pth
 *.onnx
 runs/
 weights/
+models/
 
 # ---- 第三方参考代码与压缩包（725MB，本机参考用，不入库）----
 third_party/
+
+# ---- 早期试验留下的依赖目录（约 150MB，已无任何代码引用；本机还可能因权限读不了，
+#      会让 git add 直接中断）----
+_pylibs/
 
 # ---- 大体积可执行文件（各人自己下载，README 有链接）----
 ffmpeg.exe
 ffprobe.exe
 yt-dlp.exe
+# 便携版 ffmpeg 装在这里（tools_fetch_ffmpeg.py 一键下载，约 200MB，不入库）
+tools/ffmpeg/
 
 # ---- 编辑器 / 系统 ----
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
+.env
 
 # ==========================================================================
 # 注意：下面这些是**故意提交**的，别误删规则
@@ -98,3 +142,12 @@ Thumbs.db
 # 来源素材（ShotTracker 等）没有 LICENSE，公开仓库里不该出现；
 # 内容本身仍留在本机，需要看的时候直接打开本地文件。
 eval/review_drafts/
+
+# Local authentication credentials and sessions
+data/accounts.json
+data/session_secret
+data/auth.sqlite*
+
+
+# Machine-local prepared example catalog
+/data/example_gallery.json

@@ -1,21 +1,41 @@
 /* ==========================================================================
-   AI 篮球分析软件 —— 全局样式
-   设计口径：深色顶栏 + 浅色内容区；卡片式信息分组；ECharts 用统一浅色主题。
+   哨响之后 —— 全局样式
+   设计口径：球场转播风：深蓝黑背景、字幕条比分、克制的橙色强调。
    ========================================================================== */
 :root {
-  --nav-h: 58px;
-  --dark: #16202c;
-  --dark-2: #1f2d3d;
-  --ink: #1f2937;
-  --ink-2: #4b5563;
-  --ink-3: #8b95a3;
-  --line: #e6eaf0;
-  --bg: #f4f6fa;
-  --card: #ffffff;
-  --home: #2f6fed;   /* 主队主题色 */
-  --away: #f2762e;   /* 客队主题色 */
-  --made: #22a06b;   /* 命中 */
-  --miss: #e5484d;   /* 未中 */
+  color-scheme: dark;
+  --nav-h: 56px;
+  --bg: #0B1017; --dark: #0B1017; --dark-2: #0B1017;
+  --card: #131A24; --card-2: #1A2330;
+  --line: rgba(255,255,255,.09);
+  --ink: #EAF0F7; --ink-2: #9DAEC2; --ink-3: #94A5BA;
+  --home: #3D8BFF; --away: #FF7A33; --made: #22C55E; --miss: #5A6879;
+  --court: #C8834B; --accent: #FF7A33;
+  --r-sm: 6px; --r-md: 10px; --r-lg: 14px; --r-pill: 999px;
+  --num: 'Bahnschrift', 'DIN Alternate', 'Oswald', 'Arial Narrow', Consolas, ui-monospace, monospace;
+  --sans: 'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans GB', system-ui, sans-serif;
+  --raise: inset 0 0 0 1px rgba(255,255,255,.07), 0 1px 2px rgba(0,0,0,.4);
+  --focus: 0 0 0 2px #0B1017, 0 0 0 4px var(--home);
+  --el-bg-color: #131A24; --el-bg-color-page: #0B1017; --el-bg-color-overlay: #1A2330;
+  --el-text-color-primary: #EAF0F7; --el-text-color-regular: #CDD7E4;
+  --el-text-color-secondary: #9DAEC2; --el-text-color-placeholder: #94A5BA;
+  --el-border-color: #354457; --el-border-color-light: #2B3748;
+  --el-border-color-lighter: #263140; --el-border-color-extra-light: #202C3B;
+  --el-fill-color: #243246; --el-fill-color-light: #1A2330;
+  --el-fill-color-lighter: #182230; --el-fill-color-extra-light: #16202C;
+  --el-fill-color-dark: #30415A; --el-fill-color-darker: #43536A; --el-fill-color-blank: #131A24;
+  --el-mask-color: rgba(11,16,23,.88); --el-mask-color-extra-light: rgba(11,16,23,.8);
+  --el-color-primary: #86B5FF; --el-color-primary-light-3: #9EC4FF;
+  --el-color-primary-light-5: #547CAE; --el-color-primary-light-7: #2D4361;
+  --el-color-primary-light-8: #243750; --el-color-primary-light-9: #1C2B40;
+  --el-color-primary-dark-2: #679DEB;
+  --el-color-success: #72DDA0; --el-color-success-light-9: #163428;
+  --el-color-warning: #CDD7E4; --el-color-warning-light-9: #293443;
+  --el-color-danger: #FFA0A5; --el-color-danger-light-9: #3A242E;
+  --el-color-info: #A8B7C9; --el-color-info-light-9: #243040;
+  --el-border-radius-base: var(--r-sm); --el-border-radius-small: var(--r-sm);
+  --el-border-radius-round: var(--r-pill); --el-border-radius-circle: var(--r-pill);
+  --el-font-family: var(--sans);
 }
 
 * { box-sizing: border-box; }
@@ -24,14 +44,14 @@ body {
   font-family: "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", system-ui, sans-serif;
   background: var(--bg);
   color: var(--ink);
-  font-size: 14px;
+  font-size: 13.5px;
   -webkit-font-smoothing: antialiased;
 }
 [v-cloak] { display: none; }
 a { text-decoration: none; color: inherit; }
 code {
-  background: #eef1f6; padding: 1px 5px; border-radius: 4px;
-  font-family: Consolas, Monaco, monospace; font-size: 12px; color: #35404f;
+  background: var(--card-2); padding: 1px 5px; border-radius: var(--r-sm);
+  font-family: Consolas, Monaco, monospace; font-size: 12px; color: var(--ink);
 }
 
 /* ---------------- 顶栏 ---------------- */
@@ -39,7 +59,7 @@ code {
   height: var(--nav-h); background: var(--dark); color: #e8eef6;
   display: flex; align-items: center; gap: 18px; padding: 0 16px;
   position: sticky; top: 0; z-index: 100;
-  box-shadow: 0 2px 10px rgba(15, 25, 40, .18);
+  border-bottom: 1px solid var(--line);
 }
 .brand { display: flex; align-items: center; gap: 10px; min-width: 210px; }
 .brand .logo { font-size: 22px; }
@@ -49,8 +69,8 @@ code {
 .topnav { display: flex; gap: 4px; flex: 1; overflow-x: auto; }
 .topnav-item {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 7px 12px; border-radius: 8px; color: #b9c6d6; font-size: 13px;
-  white-space: nowrap; transition: all .15s;
+  padding: 7px 12px; border-radius: var(--r-sm); color: #b9c6d6; font-size: 13px;
+  white-space: nowrap; transition: background-color .15s ease, color .15s ease, border-color .15s ease;
 }
 .topnav-item:hover { background: rgba(255, 255, 255, .07); color: #fff; }
 .topnav-item.active { background: var(--home); color: #fff; font-weight: 600; }
@@ -59,10 +79,10 @@ code {
 
 /* ---------------- 降级提示条 ---------------- */
 .degrade-bar {
-  background: #fff7e6; color: #8a5a00; border-bottom: 1px solid #ffe1a8;
+  background: var(--card-2); color: var(--ink-2); border-bottom: 1px solid var(--line);
   padding: 8px 16px; font-size: 12.5px; line-height: 1.7;
 }
-.degrade-bar code { background: #fff0d1; color: #7a4d00; }
+.degrade-bar code { background: var(--bg); color: var(--ink); }
 
 /* ---------------- 布局 ---------------- */
 .layout { display: flex; align-items: flex-start; gap: 0; }
@@ -77,16 +97,16 @@ code {
 }
 .side-item {
   display: flex; align-items: center; gap: 9px; padding: 9px 10px;
-  border-radius: 8px; color: #c2cfdd; font-size: 13.5px; margin-bottom: 2px;
-  transition: all .15s;
+  border-radius: var(--r-sm); color: #c2cfdd; font-size: 13.5px; margin-bottom: 2px;
+  transition: background-color .15s ease, color .15s ease, border-color .15s ease;
 }
 .side-item:hover { background: rgba(255, 255, 255, .07); color: #fff; }
-.side-item.active { background: rgba(47, 111, 237, .22); color: #fff; font-weight: 600;
-  box-shadow: inset 3px 0 0 var(--home); }
+.side-item.active { background: rgba(255,122,51,.10); color: #fff; font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--accent); }
 .side-item .ico { width: 16px; text-align: center; }
 .side-card {
   margin-top: 16px; background: rgba(255, 255, 255, .05);
-  border: 1px solid rgba(255, 255, 255, .08); border-radius: 10px; padding: 10px;
+  border: 1px solid rgba(255, 255, 255, .08); border-radius: var(--r-md); padding: 10px;
 }
 .side-card-title { color: #8fa0b6; font-size: 11px; margin-bottom: 8px; letter-spacing: .5px; }
 .side-card-score { display: flex; flex-direction: column; gap: 4px; }
@@ -98,9 +118,9 @@ code {
 
 /* ---------------- 通用卡片 / 栅格 ---------------- */
 .card {
-  background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+  background: var(--card); border: 0; border-radius: var(--r-lg);
   padding: 14px 16px; margin-bottom: 14px;
-  box-shadow: 0 1px 3px rgba(22, 32, 44, .05);
+  box-shadow: var(--raise);
 }
 .card-title {
   font-size: 14px; font-weight: 700; margin: 0 0 12px; color: var(--ink);
@@ -126,29 +146,29 @@ code {
 /* ---------------- 比分牌 ---------------- */
 .scoreboard {
   display: flex; align-items: stretch; gap: 12px;
-  background: linear-gradient(135deg, #1b2839, #25384f);
-  border-radius: 12px; padding: 16px 18px; color: #fff;
+  background: var(--card-2);
+  border-radius: var(--r-lg); padding: 16px 18px; color: #fff;
 }
 .scoreboard .team { flex: 1; text-align: center; }
 .scoreboard .team .nm { font-size: 14px; color: #a9bdd4; margin-bottom: 4px; }
-.scoreboard .team .pts { font-size: 44px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
-.scoreboard .team.home .pts { color: #7fb0ff; }
-.scoreboard .team.away .pts { color: #ffb37f; }
+.scoreboard .team .pts { font-size: 56px; font-weight: 700; font-family: var(--num); letter-spacing: -.02em; line-height: 1; font-variant-numeric: tabular-nums; }
+.scoreboard .team.home .pts { color: var(--home); }
+.scoreboard .team.away .pts { color: var(--away); }
 .scoreboard .team .meta { font-size: 12px; color: #9db0c6; margin-top: 8px; line-height: 1.7; }
 .scoreboard .mid { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-width: 110px; }
 .scoreboard .mid .vs { font-size: 12px; color: #8ea3ba; letter-spacing: 2px; }
-.scoreboard .mid .win { font-size: 12.5px; color: #ffd66b; font-weight: 600; }
+.scoreboard .mid .win { font-size: 12.5px; color: var(--ink); font-weight: 600; }
 
 /* 关键指标小卡 */
-.kpi { background: #f8fafc; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.kpi { background: var(--card-2); border: 1px solid var(--line); border-radius: var(--r-md); padding: 10px 12px; }
 .kpi .k { font-size: 12px; color: var(--ink-3); margin-bottom: 6px; }
-.kpi .v { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.kpi .v { font-size: 26px; font-weight: 600; font-family: var(--num); font-variant-numeric: tabular-nums; }
 .kpi .d { font-size: 11.5px; color: var(--ink-3); margin-top: 4px; }
 .kpi.home .v { color: var(--home); }
 .kpi.away .v { color: var(--away); }
 
 /* 命中率条（对比双方） */
-.pctbar { height: 8px; border-radius: 4px; background: #eef1f6; overflow: hidden; display: flex; }
+.pctbar { height: 10px; border-radius: var(--r-pill); background: var(--card-2); overflow: hidden; display: flex; }
 .pctbar i { display: block; height: 100%; }
 .pctbar .h { background: var(--home); }
 .pctbar .a { background: var(--away); }
@@ -157,22 +177,22 @@ code {
 .timeline { max-height: 430px; overflow-y: auto; padding-right: 4px; }
 .tl-row {
   display: grid; grid-template-columns: 52px 96px 1fr auto; gap: 8px;
-  align-items: center; padding: 7px 9px; border-radius: 8px; cursor: pointer;
+  align-items: center; padding: 7px 9px; border-radius: var(--r-sm); cursor: pointer;
   border: 1px solid transparent; font-size: 13px;
 }
-.tl-row:hover { background: #f4f7fc; }
-.tl-row.active { background: #eef4ff; border-color: #c7dbff; }
+.tl-row:hover { background: var(--card-2); }
+.tl-row.active { background: #1C2B40; border-color: #c7dbff; }
 .tl-row .t { color: var(--ink-3); font-family: Consolas, monospace; font-size: 12px; }
 .tl-row .pl { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tl-badge {
   display: inline-block; min-width: 34px; text-align: center; padding: 1px 6px;
-  border-radius: 5px; font-size: 11.5px; font-weight: 700; color: #fff;
+  border-radius: var(--r-sm); font-size: 11.5px; font-weight: 700; color: #fff;
 }
 .tl-badge.made { background: var(--made); color: #052719; }
 .tl-badge.miss { background: #c9ced6; color: #3a424e; }
-.tl-badge.h { background: var(--home); }
+.tl-badge.h { background: var(--home); color: #081321; }
 .tl-badge.a { background: var(--away); color: #1f2937; }
-.tl-badge.needs { background: #fff; border: 1px solid #f5a623; color: #8a5a00; }
+.tl-badge.needs { background: #1A2330; border: 1px solid #9DAEC2; color: #EAF0F7; }
 
 /* ---------------- 球场容器 ---------------- */
 .court-wrap { position: relative; width: 100%; }
@@ -180,9 +200,28 @@ code {
 .court-wrap .echarts-overlay { position: absolute; inset: 0; }
 .court-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
 .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--ink-2); margin-top: 8px; }
-.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: var(--r-pill); margin-right: 5px; vertical-align: middle; }
 .legend .ring { background: transparent; border: 2px solid var(--miss); }
 .legend .dot { background: var(--made); }
+
+/* ---------------- 标球场：左右两个画面（各标一个半场） ----------------
+   用户实测反馈："只能在一个画面里点，想点完所有点根本不显示" ——
+   一个镜头里只看得见半场。这里把场地分成左右两个画面并排，各自标各自的点。
+   当前要点的那个画面高亮（蓝框 + 亮底），另一个淡着，避免点错画面。 */
+.mf-panels { display: flex; gap: 12px; align-items: flex-start; width: 100%; }
+.mf-panels > .mf-panel-wrap { flex: 1 1 0; min-width: 0; max-width: 50%; }
+.mf-panel-wrap { border: 2px solid transparent; border-radius: var(--r-sm); }
+.mf-panel-wrap.on { border-color: #409eff; background: #1C2B40; }
+.mf-panel-head {
+  flex: 1 1 260px; min-width: 260px; padding: 8px 10px;
+  border: 1px solid var(--line); border-radius: var(--r-sm); cursor: pointer;
+}
+.mf-panel-head.on { border-color: #409eff; background: #1C2B40; }
+.mf-badge {
+  position: absolute; left: 8px; top: 8px; z-index: 3;
+  padding: 2px 8px; border-radius: var(--r-md); font-size: 12px;
+  background: rgba(0, 0, 0, .6); color: #fff;
+}
 
 /* ---------------- 复核页 ---------------- */
 .rev-row {
@@ -191,11 +230,11 @@ code {
   border-bottom: 1px solid var(--line);
 }
 .rev-row:last-child { border-bottom: none; }
-.rev-row:hover { background: #fafbfe; }
-.rev-head { font-size: 12px; color: var(--ink-3); background: #f8fafc; font-weight: 600; }
-.rev-thumb { width: 118px; height: 82px; border: 1px solid var(--line); border-radius: 8px; background: #fbfcfe; }
-.conf-bar { height: 6px; border-radius: 3px; background: #eef1f6; overflow: hidden; margin-top: 4px; }
-.conf-bar i { display: block; height: 100%; background: #f5a623; }
+.rev-row:hover { background: var(--card-2); }
+.rev-head { font-size: 12px; color: var(--ink-3); background: var(--card-2); font-weight: 600; }
+.rev-thumb { width: 118px; height: 82px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--card-2); }
+.conf-bar { height: 6px; border-radius: var(--r-sm); background: var(--card-2); overflow: hidden; margin-top: 4px; }
+.conf-bar i { display: block; height: 100%; background: #9DAEC2; }
 @media (max-width: 1100px) {
   .rev-row { grid-template-columns: 1fr; }
   .rev-thumb { width: 100%; height: 120px; }
@@ -203,50 +242,50 @@ code {
 
 /* ---------------- 高光 ---------------- */
 .clip-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
-.clip { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #fff; }
+.clip { border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; background: var(--card); }
 .clip .thumb {
   height: 132px; background: linear-gradient(135deg, #222f3f, #37475c); color: #cfe0f5;
   display: flex; align-items: center; justify-content: center; font-size: 30px; cursor: pointer;
   position: relative;
 }
 .clip .thumb .lab { position: absolute; right: 8px; bottom: 6px; font-size: 12px; color: #fff; }
-.clip video { width: 100%; display: block; background: #000; max-height: 260px; }
+.clip video { width: 100%; display: block; background: var(--bg); max-height: 260px; }
 .clip .body { padding: 10px 12px; }
 .clip .body .ttl { font-weight: 600; font-size: 13.5px; margin-bottom: 5px; }
 .clip .body .mt { font-size: 12px; color: var(--ink-3); line-height: 1.7; }
 
 /* ---------------- 战报 markdown ---------------- */
-.md { line-height: 1.85; font-size: 14px; color: #26303d; }
+.md { line-height: 1.85; font-size: 14px; color: var(--ink); }
 .md h1 { font-size: 21px; border-bottom: 2px solid #1f2d3d; padding-bottom: 8px; margin: 4px 0 16px; }
-.md h2 { font-size: 16.5px; margin: 22px 0 10px; padding-left: 10px; border-left: 4px solid var(--home); }
+.md h2 { font-size: 17.5px; margin: 22px 0 10px; padding-left: 10px; border-left: 3px solid var(--ink-2); }
 .md h3 { font-size: 14.5px; margin: 16px 0 8px; }
 .md table { border-collapse: collapse; width: 100%; margin: 10px 0 16px; font-size: 13px; }
 .md th, .md td { border: 1px solid var(--line); padding: 7px 10px; text-align: left; }
-.md th { background: #f6f8fb; font-weight: 600; }
-.md tr:nth-child(even) td { background: #fcfdff; }
+.md th { background: var(--card-2); font-weight: 600; }
+.md tr:nth-child(even) td { background: var(--card-2); }
 .md ul { padding-left: 22px; }
 .md li { margin: 4px 0; }
 .md hr { border: none; border-top: 1px dashed var(--line); margin: 18px 0; }
-.md strong { color: #101a26; }
+.md strong { color: var(--ink); }
 .md em { color: var(--ink-3); }
 
 /* ---------------- 上传页 ---------------- */
 .src-card {
-  border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; cursor: pointer;
-  transition: all .15s; background: #fff;
+  border: 1px solid var(--line); border-radius: var(--r-md); padding: 12px 14px; cursor: pointer;
+  transition: background-color .15s ease, color .15s ease, border-color .15s ease; background: var(--card);
 }
-.src-card:hover { border-color: #b9cdf0; background: #fafcff; }
-.src-card.active { border-color: var(--home); background: #f3f8ff; box-shadow: 0 0 0 2px rgba(47, 111, 237, .12); }
+.src-card:hover { border-color: #b9cdf0; background: var(--card-2); }
+.src-card.active { border-color: var(--home); background: #1C2B40; box-shadow: 0 0 0 2px rgba(47, 111, 237, .12); }
 .src-card .t { font-weight: 600; margin-bottom: 5px; display: flex; align-items: center; gap: 6px; }
 .src-card .d { font-size: 12px; color: var(--ink-3); line-height: 1.7; }
-.progress-box { background: #f8fafc; border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+.progress-box { background: var(--card-2); border: 1px solid var(--line); border-radius: var(--r-md); padding: 14px 16px; }
 .stage-log { font-family: Consolas, Monaco, monospace; font-size: 12px; color: var(--ink-2);
-  max-height: 190px; overflow-y: auto; background: #fff; border: 1px solid var(--line);
-  border-radius: 8px; padding: 8px 10px; line-height: 1.8; }
+  max-height: 190px; overflow-y: auto; background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--r-sm); padding: 8px 10px; line-height: 1.8; }
 
 /* Element Plus 微调：让表格更紧凑、卡片更贴合整体风格 */
 .el-table { font-size: 13px; }
-.el-card { border-radius: 12px; }
+.el-card { border-radius: var(--r-lg); }
 .el-descriptions__label { color: var(--ink-3) !important; }
 
 /* ==========================================================================
@@ -285,8 +324,8 @@ code {
 /* 阵型时间轴 */
 .bar-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
 .bar-label { flex: 0 0 108px; font-size: 12px; color: var(--ink-2); text-align: right; }
-.bar-track { flex: 1 1 auto; display: block; height: 18px; background: #f1f5f9;
-  border-radius: 6px; overflow: hidden; border: 1px solid var(--line); }
+.bar-track { flex: 1 1 auto; display: block; height: 18px; background: var(--card-2);
+  border-radius: var(--r-sm); overflow: hidden; border: 1px solid var(--line); }
 .bar-track svg.formation-bar { width: 100%; height: 100%; display: block; }
 
 .small { font-size: 12px; line-height: 1.8; }
@@ -295,10 +334,337 @@ code {
    用户反馈：打开网页先看到一大片空白、不知道点哪里。首页给"这是什么 + 从哪开始 + 有哪些模块"。
    卡片整块可点（<a>），hover 抬一下，避免看起来像纯文本。 */
 .home-card { display: block; text-decoration: none; color: inherit;
-  background: #f8fafc; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--card-2); border: 1px solid var(--line); border-radius: var(--r-md);
   padding: 12px 14px; transition: box-shadow .15s, transform .15s, border-color .15s; }
 .home-card:hover { border-color: var(--home); box-shadow: 0 3px 10px rgba(47, 111, 237, .12);
   transform: translateY(-1px); }
 .home-card-head { display: flex; align-items: center; gap: 8px; font-size: 14px; }
 .home-card-ico { font-size: 17px; line-height: 1; }
 .home-card-desc { color: var(--ink-3); font-size: 12px; line-height: 1.7; margin-top: 6px; }
+
+/* Progressive disclosure: same keyboard/click entry on every page. */
+.page-help { display:flex; justify-content:flex-end; gap:12px; margin:0 0 12px; }
+/* 「说明」入口。以前这里渲染的是 `{{ label }} <span>?</span>` —— 一屏里到处都是
+   一个小问号，用户反馈很丑（改掉了问号；label 也统一成两个字「说明」）。
+   现在只做一个低调的文字链接：虚线细下划线，鼠标移上去才变亮。 */
+.copy-note-trigger { display:inline; border:0; background:transparent; color:var(--ink-2); padding:0 2px; font:inherit; font-size:13px; cursor:pointer; text-align:left; text-decoration:underline dotted; text-decoration-color:var(--line); text-underline-offset:4px; }
+.copy-note-trigger:hover { color:var(--ink); text-decoration-style:solid; text-decoration-color:currentColor; }
+.copy-note-trigger:focus-visible { outline:2px solid #2f6fed; outline-offset:3px; border-radius: var(--r-sm); }
+.copy-note-body { color:var(--ink); font-size:14px; line-height:1.7; max-height:60vh; overflow:auto; overflow-wrap:anywhere; }
+.copy-note-body p { margin:0 0 12px; }
+.copy-note-panel { max-width:calc(100vw - 32px); }
+
+/* 转播主题：组件状态与布局，数据含义保持不变。 */
+body { font-family: var(--sans); font-variant-numeric: tabular-nums; }
+::selection { background: #3D8BFF; color: #081321; }
+html { scrollbar-color: #43536A var(--bg); }
+h1,h2,h3,.card-title { text-wrap: balance; }
+p,.hint,.md { text-wrap: pretty; }
+button,input,textarea,select { font: inherit; caret-color: var(--home); }
+:focus-visible { outline: 2px solid #86B5FF; outline-offset: 3px; }
+.topbar { gap: 16px; padding-inline: 24px; }
+.topbar::after { content: ''; position: absolute; inset: auto 0 0; height: 2px; opacity: .5; background: linear-gradient(90deg,transparent,var(--accent),transparent); pointer-events: none; }
+.brand .logo,.ico,.home-card-ico { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.brand .logo svg,.ico svg,.home-card-ico svg { width: 16px; height: 16px; }
+.brand .logo svg,.side-item.active svg { stroke-width: 2; }
+.sidebar { border-right: 1px solid var(--line); padding: 20px 12px; width: 208px; flex-basis: 208px; }
+.side-sec,.side-card-title,.side-card-meta { color: var(--ink-3); }
+.side-item { min-height: 44px; }
+.content { padding: 24px 28px 48px; }
+.card { padding: 20px; margin-bottom: 20px; }
+.card-title { font-size: 15px; margin-bottom: 16px; }
+.kpi { background: var(--card-2); border: 0; padding: 14px 16px; border-radius: var(--r-sm); }
+.scoreboard { position: relative; padding: 28px 24px 32px; border-block: 1px solid var(--line); border-radius: var(--r-sm); }
+.scoreboard .mid { padding-inline: 20px; border-inline: 1px solid var(--line); }
+.scoreboard .nm { font-weight: 600; }
+.scoreboard-share { position: absolute; inset: auto 0 0; display: flex; height: 4px; overflow: hidden; border-radius: var(--r-sm); }
+.scoreboard-share i { display: block; height: 100%; }
+.scoreboard-share .h { background: var(--home); }
+.scoreboard-share .a { background: var(--away); }
+.scoreboard-share.empty { background: #43536A; }
+.mono,.tl-row .t,.side-card-score span,.el-statistic__number { font-family: var(--num); font-variant-numeric: tabular-nums; }
+.tl-row { min-height: 44px; }
+.home-card { padding: 20px; background: var(--card-2); border: 0; box-shadow: var(--raise); }
+.home-card:hover { box-shadow: inset 0 0 0 1px #547CAE, 0 4px 12px rgba(0,0,0,.2); }
+.home-card-head { gap: 12px; }
+.src-card { background: var(--card-2); }
+.copy-note-trigger { min-height: 40px; min-width: 40px; padding-inline: 6px; }
+.el-button,.el-button--small,.el-input__wrapper,.el-select__wrapper,.el-radio-button__inner,.el-pagination button,.el-pager li { min-height: 40px; }
+.el-button,.el-pagination button,.el-pager li { min-width: 40px; }
+.el-checkbox,.el-radio { min-height: 40px; }
+.el-button--primary { --el-button-text-color: #081321; --el-button-hover-text-color: #081321; --el-button-active-text-color: #081321; }
+.el-table { --el-table-header-bg-color: #1A2330; --el-table-header-text-color: #9DAEC2; --el-table-row-hover-bg-color: #243246; }
+.el-tag { --el-tag-border-radius: var(--r-sm); }
+.el-dialog,.el-message-box,.el-popover { border-radius: var(--r-lg); }
+.el-dialog { max-width: calc(100vw - 32px); }
+.el-overlay-dialog { overflow-x: hidden; }
+.el-empty__description p { color: var(--ink-2); }
+.el-descriptions__content.el-descriptions__cell.is-bordered-content { background: var(--card); }
+.el-descriptions__label.el-descriptions__cell.is-bordered-label { background: var(--card-2); }
+.el-alert { --el-alert-bg-color: var(--card-2); color: var(--ink-2); }
+.el-loading-mask { background: rgba(11,16,23,.86); }
+.el-button,.home-card,.src-card { transition: background-color .15s ease, color .15s ease, border-color .15s ease, transform .15s ease; }
+.el-button:active:not(:disabled),.home-card:active,.src-card:active { transform: scale(.96); }
+#dsh-user-bar { position: static !important; background: transparent !important; border: 0 !important; box-shadow: none !important; padding: 0 !important; font: inherit !important; }
+#dsh-user { color: var(--ink-2) !important; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#dsh-user-bar a,#dsh-user-bar button { display: inline-flex; align-items: center; justify-content: center; color: var(--ink) !important; min-height: 40px; padding-inline: 10px; border-radius: var(--r-sm); }
+#dsh-user-bar a:hover,#dsh-user-bar button:hover { background: var(--card-2) !important; }
+.topbar-right { margin-left: auto; flex-wrap: wrap; }
+@media(max-width:1180px) {
+  .sidebar { display: flex; position: static; width: 100%; flex-basis: auto; min-height: 0; overflow-x: auto; gap: 6px; padding: 8px 16px; border-right: 0; border-bottom: 1px solid var(--line); }
+  .layout { display: block; }
+  .side-item { flex: 0 0 auto; white-space: nowrap; margin: 0; }
+  .side-sec,.side-card { display: none; }
+  .content { padding: 20px 16px 40px; }
+  .topbar { height: auto; min-height: var(--nav-h); flex-wrap: wrap; padding: 8px 16px; }
+  .topbar-right { gap: 6px; }
+}
+@media(max-width:640px) {
+  .brand { min-width: 0; }
+  .brand-text small { font-size: 10px; }
+  .topbar-right { width: 100%; margin-left: 0; }
+  .card { padding: 16px; }
+  .scoreboard { padding: 20px 8px 24px; gap: 6px; }
+  .scoreboard .mid { min-width: 70px; padding-inline: 8px; }
+  .scoreboard .team .pts { font-size: 44px; }
+  .scoreboard .team .meta { font-size: 11px; overflow-wrap: anywhere; }
+  .kpi-row { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .clip-grid { grid-template-columns: minmax(0,1fr); }
+  .tl-row { grid-template-columns: 44px 78px minmax(0,1fr); }
+  .tl-row > :last-child { grid-column: 2 / -1; }
+  .mf-panels { flex-direction: column; }
+  .mf-panels > .mf-panel-wrap { max-width: 100%; width: 100%; }
+}
+@media(prefers-reduced-motion:reduce) {
+  *,*::before,*::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+
+/* 浏览器检查收尾：保留一套账号操作，修正深底上的组件文字。 */
+#logout-button { display: none; }
+.el-tag--dark.el-tag--warning,.el-tag--dark.el-tag--info { --el-tag-bg-color: #293443; --el-tag-text-color: #EAF0F7; --el-tag-border-color: #43536A; }
+.el-radio-button__original-radio:checked + .el-radio-button__inner { color: #081321; }
+.el-radio-button__original-radio:focus-visible + .el-radio-button__inner { outline: 2px solid #86B5FF; outline-offset: 3px; }
+.el-button:focus-visible,.el-select__wrapper.is-focused,.el-input__wrapper.is-focus { outline: 2px solid #86B5FF; outline-offset: 3px; }
+.el-empty { --el-empty-fill-color-0: #1A2330; --el-empty-fill-color-1: #263140; --el-empty-fill-color-2: #30415A; --el-empty-fill-color-3: #354457; --el-empty-fill-color-4: #243246; --el-empty-fill-color-5: #293443; --el-empty-fill-color-6: #30415A; --el-empty-fill-color-7: #243246; --el-empty-fill-color-8: #1A2330; --el-empty-fill-color-9: #131A24; }
+.grid { row-gap: 14px; }
+.scoreboard .team,.scoreboard .mid { min-width: 0; }
+
+.account-bar { display: flex; align-items: center; gap: 8px; }
+
+/* 说明入口使用文字，不再追加问号图标。 */
+.copy-note-trigger { font-size:12px; text-decoration:underline; text-decoration-color:var(--line); text-underline-offset:4px; }
+.copy-note-trigger:hover { text-decoration-color:currentColor; }
+
+/* ==========================================================================
+   图片装饰（2026-10-05）
+   --------------------------------------------------------------------------
+   用户反馈"页面看着太单调"，加了几张篮球照片。三条原则：
+     1) 图片只做**背景层/陪衬**，不承担信息 —— 文字永远落在纯色块上，
+        所以不会出现"字压在照片上读不清"，换图也不会影响可读性；
+     2) 只用 **CC0 / 公有领域** 的图（无需署名义务），来源记录在 web/img/CREDITS.md；
+     3) 换图只改 web/img/ 下的文件名即可，样式不用动。
+   本机没有外网直连（走 127.0.0.1:7890 代理），图片是从 Openverse / Wikimedia 抓的。
+   ========================================================================== */
+
+/* 整页淡背景纹理：球场特写，压到 6%，只为了让深色页面不那么"平" */
+body::before {
+  content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background: url('./img/bg_court.jpg') center / cover no-repeat;
+  opacity: .06; filter: saturate(.5) blur(1.5px);
+}
+/* 顶部一层很淡的蓝光 */
+body::after {
+  content: ''; position: fixed; inset: 0 0 auto; height: 420px; z-index: -1; pointer-events: none;
+  background: radial-gradient(900px 380px at 18% 0%, rgba(61,139,255,.16), transparent 70%);
+}
+
+/* 顶栏 logo：实心篮球（原来只有线框，远看像个小圆点） */
+.brand .logo { width: 34px; height: 34px; border-radius: 50%; background: radial-gradient(circle at 30% 25%, #1e2a3a, #0d131c); box-shadow: inset 0 0 0 1px rgba(255,255,255,.08); }
+.brand .logo svg { width: 26px; height: 26px; }
+
+/* 侧边栏顶部的小标识（窄屏侧栏变成横排时隐藏） */
+.side-brand { display: flex; align-items: center; gap: 9px; padding: 0 4px 12px; margin-bottom: 8px; border-bottom: 1px solid var(--line); color: var(--ink); font-weight: 600; letter-spacing: .3px; font-size: 13px; }
+.side-brand svg { width: 22px; height: 22px; flex-shrink: 0; }
+.side-brand small { display: block; color: var(--ink-3); font-weight: 400; font-size: 11px; letter-spacing: 0; }
+
+/* 首页 hero：左文字 + 右球场照片；照片左缘用渐变融进卡片背景 */
+.home-hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 0; padding: 0; overflow: hidden; }
+.home-hero .hero-text { padding: 26px 28px; min-width: 0; }
+.home-hero .hero-art { position: relative; min-height: 250px; background: url('./img/hero_court.jpg') center / cover no-repeat; }
+.home-hero .hero-art::before { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, var(--card) 0%, rgba(19,26,36,.72) 26%, rgba(19,26,36,0) 68%); }
+.home-hero .hero-art::after { content: ''; position: absolute; inset: auto 0 0; height: 46%; background: linear-gradient(0deg, rgba(11,16,23,.5), transparent); }
+@media (max-width: 1020px) {
+  .home-hero { grid-template-columns: minmax(0, 1fr); }
+  .home-hero .hero-art { order: -1; min-height: 168px; }
+  .home-hero .hero-art::before { background: linear-gradient(0deg, var(--card) 2%, rgba(19,26,36,.35) 60%, rgba(19,26,36,0) 100%); }
+}
+@media (max-width: 1180px) { .side-brand { display: none; } }
+
+/* 空状态/说明用的小图（比纯文字好看，且不影响阅读） */
+.hoop-art { width: 100%; max-width: 420px; height: 150px; border-radius: var(--r-md); background: url('./img/hoop_dark.jpg') center 35% / cover no-repeat; box-shadow: inset 0 0 0 1px rgba(255,255,255,.06); }
+
+/* ==========================================================================
+   「这次为什么没有内容」+ 顶栏任务切换（2026-10-05）
+   --------------------------------------------------------------------------
+   起因（实测）：页面默认展示"最近一个 done 任务"；用户最近跑的是 8.1 秒的片段
+   （0 次出手、0 名球员、没标定），于是六个产出页全空，界面上既不解释原因、
+   也没有切换入口 —— 用户的原话是"上传视频分析根本就看不到"。
+   ========================================================================== */
+.empty-why {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  padding: 10px 24px; font-size: 13px; line-height: 1.7;
+  background: rgba(196, 86, 86, .12); border-bottom: 1px solid rgba(196, 86, 86, .35); color: #f0c9c9;
+}
+.empty-why b { color: #ffd7d7; flex-shrink: 0; }
+
+.job-picker { max-height: 60vh; overflow: auto; }
+.job-pick-row {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px;
+  border: 0; border-radius: var(--r-sm); background: transparent; color: var(--ink);
+  font: inherit; font-size: 13px; cursor: pointer; text-align: left;
+}
+.job-pick-row + .job-pick-row { margin-top: 2px; }
+.job-pick-row:hover { background: var(--card-2); }
+.job-pick-row.on { background: var(--card-2); box-shadow: inset 0 0 0 1px var(--line); }
+.job-pick-row b { font-family: var(--num); }
+.job-pick-meta { color: var(--ink-2); }
+.job-pick-now { margin-left: auto; color: var(--accent); font-size: 12px; }
+
+/* ==========================================================================
+   浅色模式（2026-10-05）
+   --------------------------------------------------------------------------
+   做法：**只把内容区翻成浅色**，顶栏与侧栏保持深色 —— 它们是"框架"，
+   深色在两种模式下都成立，也省得为它们再维护一套配色。
+   切换方式：<html data-theme="light">。开关在顶栏右上角（见 index.html），
+   选择存在 localStorage('aihoop-theme')，并在首屏前由内联脚本先应用（避免闪一下深色）。
+   新增颜色一律走变量：图表读 --chart-*，球场 SVG 读 --court-*。
+   ========================================================================== */
+
+/* 深色模式的图表/球场变量（默认值） */
+:root {
+  --chart-text: #9DAEC2; --chart-label: #EAF0F7;
+  --chart-split: #2B3748; --chart-tip-bg: #1A2330; --chart-tip-border: #43536A;
+  --chart-c4: #B6C5D8; --chart-c5: #7F9FBF; --chart-c6: #5BC8DF;
+  --court-floor: #18212D; --court-floor-2: #202E3D;
+  --court-line: #7F92A8; --court-line-hi: #B6C5D8; --court-text: #9DAEC2;
+  --court-label: #33414f; --court-label-halo: #ffffff;
+}
+
+html[data-theme="light"] {
+  color-scheme: light;
+  --bg: #F4F6FA;
+  --card: #FFFFFF; --card-2: #EFF3F8;
+  --line: rgba(16,28,45,.12);
+  --ink: #16202C; --ink-2: #4A5B6E; --ink-3: #6C7B8C;
+  --raise: inset 0 0 0 1px rgba(16,28,45,.06), 0 1px 2px rgba(16,28,45,.08);
+  --focus: 0 0 0 2px #fff, 0 0 0 4px var(--home);
+  --el-bg-color: #FFFFFF; --el-bg-color-page: #F4F6FA; --el-bg-color-overlay: #FFFFFF;
+  --el-text-color-primary: #16202C; --el-text-color-regular: #2C3A49;
+  --el-text-color-secondary: #5A6B7E; --el-text-color-placeholder: #8593A3;
+  --el-border-color: #C9D3DF; --el-border-color-light: #D8E0E9;
+  --el-border-color-lighter: #E2E8EF; --el-border-color-extra-light: #EDF1F6;
+  --el-fill-color: #E8EDF4; --el-fill-color-light: #EFF3F8;
+  --el-fill-color-lighter: #F4F7FA; --el-fill-color-extra-light: #F8FAFC;
+  --el-fill-color-dark: #DDE4EC; --el-fill-color-darker: #CFD8E2; --el-fill-color-blank: #FFFFFF;
+  --el-mask-color: rgba(255,255,255,.86); --el-mask-color-extra-light: rgba(255,255,255,.7);
+  --el-color-primary: #2F6FED; --el-color-primary-light-3: #5C8DF2;
+  --el-color-primary-light-5: #8FB2F6; --el-color-primary-light-7: #C2D5FA;
+  --el-color-primary-light-8: #D9E3FC; --el-color-primary-light-9: #EDF2FE;
+  --el-color-primary-dark-2: #2559C4;
+  --el-color-success: #16A34A; --el-color-success-light-9: #E8F8EE;
+  --el-color-warning: #B45309; --el-color-warning-light-9: #FDF3E6;
+  --el-color-danger: #DC2626; --el-color-danger-light-9: #FDECEC;
+  --el-color-info: #475569; --el-color-info-light-9: #EEF1F5;
+  /* 图表 */
+  --chart-text: #5A6B7E; --chart-label: #16202C;
+  --chart-split: #E2E8EF; --chart-tip-bg: #FFFFFF; --chart-tip-border: #D8E0E9;
+  --chart-c4: #9AA7B4; --chart-c5: #7D8B99; --chart-c6: #3AA6BF;
+  /* 球场：浅色地板 + 深色线条 */
+  --court-floor: #F3E7D8; --court-floor-2: #EADCC9;
+  --court-line: #A08E77; --court-line-hi: #6F6151; --court-text: #6C7B8C;
+  --court-label: #4A3B29; --court-label-halo: #FFFDF8;
+}
+
+/* 深色"框架"元素在浅色模式下继续保持深色 */
+html[data-theme="light"] .scoreboard { background: var(--dark-2); }
+html[data-theme="light"] body::before { opacity: .05; filter: saturate(.32) blur(2px); }
+html[data-theme="light"] body::after { background: radial-gradient(900px 380px at 18% 0%, rgba(47,111,237,.10), transparent 70%); }
+
+/* 顶栏/侧栏相关：它们底色仍是深色，文字必须继续用亮色（否则看不见） */
+html[data-theme="light"] #dsh-user { color: #9DAEC2 !important; }
+html[data-theme="light"] .side-brand { color: #EAF0F7; }
+html[data-theme="light"] .side-brand small { color: #93a3b8; }
+html[data-theme="light"] #dsh-user-bar a,
+html[data-theme="light"] #dsh-user-bar button { color: #EAF0F7 !important; }
+html[data-theme="light"] #dsh-user-bar a:hover,
+html[data-theme="light"] #dsh-user-bar button:hover { background: rgba(255,255,255,.08) !important; }
+html[data-theme="light"] .topbar-right .el-button { color: #CBD5E1; }
+html[data-theme="light"] .brand .logo { background: radial-gradient(circle at 30% 25%, #FFFFFF, #E3E9F1); box-shadow: inset 0 0 0 1px rgba(16,28,45,.10); }
+
+/* 少量写死颜色在浅色下要单独调 */
+html[data-theme="light"] .el-table { --el-table-header-bg-color: #EFF3F8; --el-table-header-text-color: #4A5B6E; --el-table-row-hover-bg-color: #F4F7FA; }
+html[data-theme="light"] .el-tag--dark.el-tag--warning,
+html[data-theme="light"] .el-tag--dark.el-tag--info { --el-tag-bg-color: #E8EDF4; --el-tag-text-color: #2C3A49; --el-tag-border-color: #C9D3DF; }
+html[data-theme="light"] .el-empty { --el-empty-fill-color-0: #EFF3F8; --el-empty-fill-color-1: #E4EAF1; --el-empty-fill-color-2: #D8E0E9; --el-empty-fill-color-3: #CFD8E2; --el-empty-fill-color-4: #E4EAF1; --el-empty-fill-color-5: #E8EDF4; --el-empty-fill-color-6: #D8E0E9; --el-empty-fill-color-7: #E4EAF1; --el-empty-fill-color-8: #EFF3F8; --el-empty-fill-color-9: #FFFFFF; }
+html[data-theme="light"] .tl-row.active { background: #E8F0FE; border-color: #7FA8F0; }
+html[data-theme="light"] .mf-panel-wrap.on,
+html[data-theme="light"] .mf-panel-head.on { background: #E8F0FE; }
+html[data-theme="light"] .src-card.active { background: #E8F0FE; }
+html[data-theme="light"] .tl-badge.needs { background: var(--card-2); border-color: #B8C4D2; color: #2C3A49; }
+html[data-theme="light"] .md h1 { border-bottom-color: #D8E0E9; }
+html[data-theme="light"] html { scrollbar-color: #C9D3DF var(--bg); }
+html[data-theme="light"] .empty-why { background: #FDECEC; border-bottom-color: #F0BDBD; color: #8A2C2C; }
+html[data-theme="light"] .empty-why b { color: #7A1F1F; }
+html[data-theme="light"] .scoreboard-share.empty { background: #C9D3DF; }
+html[data-theme="light"] .conf-bar i { background: #A8B4C2; }
+html[data-theme="light"] .clip .thumb { background: linear-gradient(135deg, #E4EAF1, #CFD8E2); color: #4A5B6E; }
+html[data-theme="light"] .el-button--primary { --el-button-text-color: #FFFFFF; --el-button-hover-text-color: #FFFFFF; --el-button-active-text-color: #FFFFFF; }
+
+/* 球场 SVG（court.js 生成的字符串）用类名取色。
+   为什么不用 `fill="var(--x)"`：CSS 变量在 SVG **表现属性**里不生效（Chrome 实测），
+   必须在样式表（或 style 属性）里才认 —— 所以那边只写类名，颜色全在这里给。 */
+.ct-floor { fill: var(--court-floor); }
+.ct-floor2 { fill: var(--court-floor-2); }
+.ct-line { stroke: var(--court-line); }
+.ct-line-hi { stroke: var(--court-line-hi); }
+.ct-text { fill: var(--court-text); }
+.ct-label { fill: var(--court-label); }
+.ct-halo { stroke: var(--court-label-halo); }
+
+
+
+
+.replay-stage { position:relative; isolation:isolate; }
+.detection-overlay { position:absolute; inset:0; pointer-events:none; }
+.detection-boxes { display:block; width:100%; height:100%; overflow:hidden; }
+.detection-boxes rect,.ball-tail { fill:none; stroke-width:2; vector-effect:non-scaling-stroke; }
+.detection-boxes text { font:600 16px var(--sans); paint-order:stroke; stroke:#0B1017; stroke-width:3px; stroke-linejoin:round; }
+.player-box rect { stroke:#48E28C; } .player-box text { fill:#48E28C; }
+.ball-box rect,.ball-tail { stroke:#FFD34E; } .ball-box text { fill:#FFD34E; }
+.rim-box rect { stroke:#61DAF5; } .rim-box text { fill:#61DAF5; }
+.ball-tail { opacity:.7; stroke-linecap:round; stroke-linejoin:round; }
+.detection-controls { position:absolute; top:12px; right:12px; pointer-events:auto; }
+.detection-controls .el-button { background:#131A24; }
+.detection-options { display:flex; flex-direction:column; gap:4px; }
+.detection-options small { color:var(--ink-2); }
+.detection-status { position:absolute; top:12px; left:12px; padding:6px 10px; background:#131A24; color:var(--ink-2); border-radius:var(--r-sm); font-size:12px; }
+
+.replay-stage:fullscreen { width:100vw; height:100vh; background:#000; }
+.replay-stage:fullscreen video { width:100%; height:100%; max-height:none !important; object-fit:contain; }
+.detection-controls { display:flex; gap:8px; }
+
+.player-box { pointer-events:visiblePainted; cursor:pointer; }
+.player-box rect { fill:transparent; }
+.player-box.dimmed { opacity:.25; }
+.player-box.selected rect,.player-box:focus-visible rect { stroke:#A9FFC8; stroke-width:3; }
+.player-box:focus-visible { outline:none; }
+.replay-tools { margin-top:12px; }
+.replay-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.replay-rate { width:130px; }
+.replay-clock { margin-left:auto; font-variant-numeric:tabular-nums; color:var(--ink-2); }
+.replay-events { display:flex; gap:8px; overflow-x:auto; padding:12px 0 4px; }
+.replay-events .el-button { margin:0; flex-shrink:0; gap:8px; }
+.replay-events .el-button>span { display:flex; gap:8px; align-items:center; }
+.replay-events .active { border-color:var(--home); background:var(--card-2); }
+.event-result { font-size:12px; } .event-result.made { color:#48E28C; } .event-result.unknown { color:var(--ink-2); } .event-result.miss { color:var(--ink-2); }
+html[data-theme="light"] .event-result.made { color:#146C40; }

@@ -174,7 +174,16 @@ class IntegrationTests(unittest.TestCase):
                 run.return_value.poll.return_value=0
                 run.return_value.returncode=0
                 serve.main(['8019','--no-reload'])
-                self.assertIn('custom-libs',run.call_args.kwargs['env']['PYTHONPATH'].split(os.pathsep))
+                # 断言目标：**起服务的那次** Popen 必须把自定义 PYTHONPATH 传下去。
+                # 为什么不能只看 run.call_args（最后一次）：重启脚本现在还会为"端口被占"
+                # 起 netstat / taskkill 辅助进程（队友新增的端口清理），最后一次调用常常是它们，
+                # 于是按命令行认出服务进程那一次来断言 —— 语义没变（PYTHONPATH 必须透传），
+                # 而且更严格：连"有没有真的起服务"一起查了。
+                spawns=[c for c in run.call_args_list
+                        if 'aihoop.cli' in ' '.join(map(str,c.args))]
+                self.assertTrue(spawns,'没有找到启动服务子进程的 Popen 调用')
+                self.assertIn('custom-libs',
+                              spawns[-1].kwargs['env']['PYTHONPATH'].split(os.pathsep))
 
     def test_auto_locator_requires_score_semantics(self):
         import numpy as np

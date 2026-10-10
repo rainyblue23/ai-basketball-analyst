@@ -554,7 +554,7 @@ def cmd_serve(args) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="aihoop", description="AI 篮球分析软件 · 命令行")
+        prog="aihoop", description="哨响之后 · 命令行")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     d = sub.add_parser("demo", help="合成一场比赛并跑完整管线（零依赖）")

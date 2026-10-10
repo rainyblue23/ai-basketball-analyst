@@ -357,6 +357,7 @@ class LegacyShotStream:
         self.events=[]; self.frames=[]; self.rim_seen=0; self.real_seen=0
         self.track_segment=0; self.transitions=[]; self.first_confirmed=None
         self.center_rejected_frames=0
+        self.low_rim_history=[]
 
     def tracked_state(self, t):
         r=self.engine.rim
@@ -374,6 +375,11 @@ class LegacyShotStream:
     def reset(self, frame, t):
         # 切镜结束已有候选并清空身份，禁止跨镜头拼接穿筐。
         previous=self.tracked_state(t)
+        self.low_rim_history=[]
+        if self.config["detect"].get("hint_first_scene_only", False):
+            self.hint=None
+            self.manual_hoop=None
+            self.center_lock_width=None
         closed=self.engine.finalize(frame,t)
         self.events.extend(closed)
         self.transitions.append(dict(frame=frame,t=t,reason='cut',previous=previous,
@@ -381,15 +387,25 @@ class LegacyShotStream:
         self.engine=ScoreEngine(self.config,self.fps)
         self.last_ball=None; self.last_frame=-999; self.vx=self.vy=0.
 
-    def update(self, frame, t, detections, persons=(), cut=False):
+    def update(self, frame, t, detections, persons=(), cut=False, image=None):
         if cut:self.reset(frame,t)
         d=self.config['detect'];s=self.config['score']
         gap=s['ball_max_gap_frames']
         if self.last_ball and frame-self.last_frame>max(gap,int(self.fps*s['ball_recent_s'])):
             self.last_ball=None; self.vx=self.vy=0.
-        balls=filter_by_size([b for b in detections if ('ball' in b.cls_name.lower() or
-            'basket' in b.cls_name.lower()) and b.conf>=d['ball_conf']],self.width,
-            d['ball_min_w_ratio'],d['ball_max_w_ratio'])
+        from ..screen_graphics import matches
+        raw_balls=[b for b in detections if ('ball' in b.cls_name.lower() or
+            'basket' in b.cls_name.lower()) and b.conf>=d['ball_conf']]
+        # Cap the minimum at the 960px reference scale: HD must not discard
+        # a 12px live ball just because the frame is 1920px wide.
+        lo=d['ball_min_w_ratio']*min(self.width,960)
+        ball_audit=[];balls=[]
+        for candidate in raw_balls:
+            reason='eligible'
+            if not lo<=candidate.w<=d['ball_max_w_ratio']*self.width:reason='size_rejected'
+            elif matches(image,candidate.xyxy,d.get('screen_graphics')):reason='screen_graphic'
+            else:balls.append(candidate)
+            ball_audit.append(dict(**pack(candidate),selection_reason=reason))
         ball=pick_best(balls,(self.last_ball.cx,self.last_ball.cy) if self.last_ball else None)
         if ball and self.last_ball:
             delta=max(1,frame-self.last_frame)
@@ -418,6 +434,31 @@ class LegacyShotStream:
         for r in rims:
             if r.conf<d['rim_min_conf']:candidate_by_id[id(r)]['selection_reason']='low_confidence'
             elif (r.h>0 and r.w/r.h<d['rim_min_aspect']) or (self.hint and not self.engine.rim.initialized and r.h<=0):candidate_by_id[id(r)]['selection_reason']='invalid_shape'
+
+        # A low-confidence rim needs consistent evidence in at least 2 of 3
+        # nearby sampled frames. Never accumulate across a cut or a long gap.
+        if d.get('rim_low_conf_guard', True) and d['rim_min_conf'] < .35:
+            self.low_rim_history=[(f,tt,rr) for f,tt,rr in self.low_rim_history
+                                  if frame-f<=2 and 0<=t-tt<=.3]
+            eligible=[]; current=[]
+            state=self.tracked_state(t)
+            for r in rims:
+                if r.conf<d['rim_min_conf'] or r.h<=0 or r.w/r.h<d['rim_min_aspect']:
+                    continue
+                if r.conf>=.35:
+                    eligible.append(r);continue
+                if state and state['fresh'] and (not .5*state['w']<=r.w<=2*state['w'] or
+                        math.hypot(r.cx-state['cx'],r.cy-state['cy'])>max(60,2*state['w'])):
+                    candidate_by_id[id(r)]['selection_reason']='low_conf_geometry'
+                    continue
+                current.append(r)
+                agrees=any(.5*old.w<=r.w<=2*old.w and
+                    math.hypot(r.cx-old.cx,r.cy-old.cy)<=max(15,.5*old.w)
+                    for f,tt,rs in self.low_rim_history for old in rs)
+                if agrees:eligible.append(r)
+                else:candidate_by_id[id(r)]['selection_reason']='low_conf_pending'
+            self.low_rim_history.append((frame,t,current))
+            rims=eligible
 
         # 中心提示仅用于初次选筐，不把无尺寸的点变成静态篮筐。
         if self.hint and not self.engine.rim.initialized:
@@ -448,7 +489,7 @@ class LegacyShotStream:
         previous=self.tracked_state(t)
         row=dict(frame=frame,t=t,ball=pack(ball),rim=pack(rim),persons=[pack(p) for p in persons],cut=cut,
                  rim_candidates=candidates,selected_rim_source=selected_source,
-                 ball_candidates=[pack(b) for b in balls])
+                 ball_candidates=ball_audit)
         new_events=self.engine.update(frame,t,ball,rim,list(persons))
         reason=self.engine.rim.last_update_reason
         if reason in ('initialized','reacquired_near','reacquired_far'):

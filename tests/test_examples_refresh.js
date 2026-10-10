@@ -1,0 +1,7 @@
+const assert=require('assert'),fs=require('fs'),vm=require('vm');
+const writes=[];let active='example_one',requested=[];
+const app={use(){return this;},component(){return this;},mount(){return this;}};
+const c={window:{COMPONENTS:{},API:{probe:()=>Promise.resolve(true),listJobs:()=>{throw Error('刷新样例不应改选最近任务');},game:id=>{requested.push(id);return Promise.resolve({timeline:[{type:'shot',result:'unknown',made:null,t:3}],score:{home:0,away:0}});},players:()=>Promise.resolve([]),shotchart:()=>Promise.resolve({}),report:()=>Promise.resolve({}),highlights:()=>Promise.resolve({clips:[]})}},sessionStorage:{getItem:()=>active,setItem:(k,v)=>{active=v;},removeItem:()=>{active=null;}},Vue:{reactive:target=>new Proxy(target,{set(t,k,v){writes.push(k);t[k]=v;return true;}}),createApp:()=>app},ElementPlus:{},ElementPlusLocaleZhCn:{},location:{hash:'#/review'},document:{documentElement:{getAttribute:()=>null}}};
+vm.runInNewContext(fs.readFileSync('web/data.js','utf8'),c);
+vm.runInNewContext(fs.readFileSync('web/app.js','utf8'),c);
+(async()=>{await c.window.APP_BOOTSTRAP();assert.deepEqual(requested,['example_one']);assert.equal(c.window.STORE.jobId,'example_one');assert.equal(c.window.STORE.game.timeline.length,1);assert.equal(c.window.STORE.demoMode,false);assert(writes.includes('game'));assert(writes.includes('backendOk'));await c.window.APP_LOAD_JOB('own_job');assert.equal(active,null);console.log('Example refresh keeps selected snapshot; ordinary job clears sample selection; data writes are reactive');})().catch(e=>{console.error(e);process.exitCode=1;});

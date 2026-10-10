@@ -32,6 +32,14 @@ window.PAGES['shotchart'] = {
     };
   },
   computed: {
+    hiddenUnknownLocations: function () {
+      var self=this;
+      return ((this.game||{}).timeline||[]).filter(function(e){
+        return window.D.isUnknown(e) && !e.location_unknown && !(e.tags||[]).includes('location_unknown') &&
+          Number.isFinite(e.x) && Number.isFinite(e.y) &&
+          (self.team==='all'||e.team===self.team) && (!self.playerFilter||e.player_id===self.playerFilter);
+      }).length;
+    },
     game: function () { return this.S.game; },
     sc: function () { return this.S.shotchart || { all: { points: [], zones: [], grid: [] } }; },
     /**
@@ -60,6 +68,24 @@ window.PAGES['shotchart'] = {
       if (m.court_outputs_unverified) {
         lines.push('另外提醒：热区用的是**你手动标的**球场标定，'
           + '自动校验没通过 —— 位置可能有偏差。');
+      }
+      // 多机位：只要有一段不可信，位置类结论（热区/战术图）就不能采信 —— 逐段说出来。
+      // 为什么必须说：后端返回的吻合度取的是**最差那一段**，只说一个总数，
+      // 用户不知道坏在哪个时间段（实测：段1 吻合度 0.34、半个视频的坐标是错的，
+      // 界面照样说"标定可用"）。这里列出不可信的那几段，并给出唯一的自查办法。
+      var weak = m.calibration_weak_segments;
+      if (Array.isArray(weak) && weak.length) {
+        lines.push('另外：这份多机位标定里有 ' + weak.length + ' 段不可信 —— '
+          + weak.map(function (s) {
+              var a = (s && s.t_start != null) ? Number(s.t_start).toFixed(1) : '?';
+              var b = (s && s.t_end != null) ? Number(s.t_end).toFixed(1) : '?';
+              return a + '~' + b + 's' + (s && s.why ? '：' + s.why : '');
+            }).join('；')
+          + '。那些时段的球场坐标整体是错的，热区/战术图不要采信；'
+          + '去「上传与分析」打开「叠加球场线自检」，红色虚线压不到画面白线上的那一段就要重标。');
+      } else if (m.calibration_position_unverified) {
+        lines.push('另外：这份标定的位置结论被标为**未校验**'
+          + '（自动逐帧标定，或多机位里有不可信的段）—— 位置类结论只能当参考。');
       }
       var ve = m.visual_error || (m.hoopsight && m.hoopsight.reason);
       if (ve) { lines.push('为什么没出手：' + String(ve).slice(0, 160)); }
@@ -139,8 +165,8 @@ window.PAGES['shotchart'] = {
       });
       return [
         { label: '罚球', att: v[1].att, made: v[1].made, color: '#8b5cf6' },
-        { label: '两分球', att: v[2].att, made: v[2].made, color: '#2f6fed' },
-        { label: '三分球', att: v[3].att, made: v[3].made, color: '#f2762e' }
+        { label: '两分球', att: v[2].att, made: v[2].made, color: '#3D8BFF' },
+        { label: '三分球', att: v[3].att, made: v[3].made, color: '#FF7A33' }
       ];
     },
 
@@ -178,7 +204,7 @@ window.PAGES['shotchart'] = {
         series: [
           { name: '出手数', type: 'bar', barMaxWidth: 26, itemStyle: { color: '#cfd8e6', borderRadius: [3, 3, 0, 0] }, data: bands.map(function (b) { return b.att; }) },
           { name: '命中数', type: 'bar', barMaxWidth: 26, itemStyle: { color: '#22a06b', borderRadius: [3, 3, 0, 0] }, data: bands.map(function (b) { return b.made; }) },
-          { name: '命中率', type: 'line', yAxisIndex: 1, smooth: true, symbolSize: 6, lineStyle: { color: '#f2762e', width: 2.4 }, itemStyle: { color: '#f2762e' }, data: bands.map(function (b) { return b.att ? +(b.made / b.att).toFixed(3) : 0; }) }
+          { name: '命中率', type: 'line', yAxisIndex: 1, smooth: true, symbolSize: 6, lineStyle: { color: '#FF7A33', width: 2.4 }, itemStyle: { color: '#FF7A33' }, data: bands.map(function (b) { return b.att ? +(b.made / b.att).toFixed(3) : 0; }) }
         ]
       };
     },
@@ -188,7 +214,7 @@ window.PAGES['shotchart'] = {
       var opts = [{ value: '', label: '全部球员' }];
       (this.S.players || []).forEach(function (p) {
         if (self.team !== 'all' && p.team !== self.team) return;
-        opts.push({ value: p.player_id, label: p.name });
+        opts.push({ value: p.player_id, label: window.D.playerLabel(p) });
       });
       return opts;
     },
@@ -232,31 +258,48 @@ window.PAGES['shotchart'] = {
     // 分区热力只定义在半场（分区口径基于到篮筐距离），选分区时自动回到半场视图
     layer: function (v) { if (v === 'zones') this.view = 'half'; }
   },
+  mounted: function () {
+    var self = this;
+    // 进页就按**当前任务**重拉一次热区（队友 d0247ee）。
+    // 为什么：state 里那份 shotchart 是共享的，直接打开 #/shotchart 时它可能还是
+    // 上一个任务/演示数据的 —— 表现就是"第一次进来看到的是别人那场的热区"。
+    Promise.resolve().then(function () {
+      return window.APP_WAIT_READY ? window.APP_WAIT_READY() : null;
+    }).then(function () {
+      var id = self.S.jobId;
+      if (!self.S.backendOk || !id) return null;
+      return window.API.shotchart(id).then(function (chart) {
+        // 请求期间任务可能又被换了：只在还是同一个任务时写回。
+        if (self.S.jobId === id && chart) self.S.shotchart = chart;
+      });
+    }).catch(function () {});
+  },
   template: [
     '<div>',
-    // 标定不适用 → 后端不出热区。这里必须明说原因，不能只给空图。
+    '  <calibration-gaps :game="game" />',
+    '  <p v-if="hiddenUnknownLocations" class="hint">另有 {{ hiddenUnknownLocations }} 次待确认</p>',
     '  <div class="card" v-if="unavailable">',
     '    <h3 class="card-title">投篮热区 <span class="sub">不适用</span></h3>',
     '    <el-alert type="warning" :closable="false" show-icon',
-    '      title="这段视频没有可用的球场标定，无法生成投篮热区"',
-    '      :description="unavailableReason + \'\\n\\n\' +',
+    '      title="缺少球场标定"',
+    '      ><copy-note label="说明">这段视频没有可用的球场标定，无法生成投篮热区。{{ unavailableReason + \'\\n\\n\' +',
+    '        emptyWhy + \'\\n\\n\' +',
     '        \'（宁可不画，也不画错的：球场坐标整片错位时，热区图看起来正常但全是垃圾。\' +',
-    '        \'要出热区请先用 calibrate 对这段视频做球场标定。）\'" />',
+    '        \'要出热区请先用 calibrate 对这段视频做球场标定。）\' }}</copy-note></el-alert>',
     '  </div>',
     '  <div class="card" v-else-if="!points.length">',
-    '    <h3 class="card-title">投篮热区 <span class="sub">标定可用，但本片段没有出手</span></h3>',
+    '    <h3 class="card-title">投篮热区 <span class="sub"><copy-note label="标定说明">暂无出手点</copy-note></span></h3>',
     '    <el-alert type="info" :closable="false" show-icon',
-    '      title="球场标定是好的，但这次分析**一次出手都没检测到**，所以热区是空的"',
-    '      :description="emptyWhy" />',
+    '      title="缺少球场标定"',
+    '      >暂无符合条件的出手点 <copy-note label="说明">{{ emptyWhy }}</copy-note></el-alert>',
     '  </div>',
     '  <div class="card" v-else-if="!points.length && !(S.game)">',
     '    <el-empty description="暂无投篮数据" />',
     '  </div>',
-
     '  <template v-else>',
     '    <!-- 工具栏 -->',
     '    <div class="card">',
-    '      <h3 class="card-title">投篮热区 <span class="sub">数据来源：GET /api/games/{{ S.jobId }}/shotchart（shotchart.json）· 坐标口径与后端 zone_of / shot_chart 完全一致</span>',
+    '      <h3 class="card-title">投篮热区 <span class="sub"><copy-note label="说明">数据来源：GET /api/games/{{ S.jobId }}/shotchart（shotchart.json）· 坐标口径与后端 zone_of / shot_chart 完全一致</copy-note></span>',
     '        <span class="grow"></span>',
     '        <el-tag size="small" type="info" effect="plain">{{ teamLabel }}</el-tag>',
     '        <el-tag size="small" effect="plain">出手 {{ summary.att }} · 命中 {{ summary.made }} · {{ pct(summary.pct) }}</el-tag>',
@@ -277,8 +320,8 @@ window.PAGES['shotchart'] = {
     '          <el-radio-button label="grid">网格热力</el-radio-button>',
     '        </el-radio-group>',
     '        <el-radio-group v-model="view" size="small">',
-    '          <el-radio-button label="half">半场（镜像）</el-radio-button>',
-    '          <el-radio-button label="full" :disabled="layer===\'zones\'">全场（原始）</el-radio-button>',
+    '          <el-radio-button label="half">半场</el-radio-button>',
+    '          <el-radio-button label="full" :disabled="layer===\'zones\'">全场</el-radio-button>',
     '        </el-radio-group>',
     '        <template v-if="layer===\'grid\'">',
     '          <el-select v-model="metric" size="small" style="width:120px">',
@@ -289,31 +332,25 @@ window.PAGES['shotchart'] = {
     '        <el-checkbox v-if="layer===\'shots\'" v-model="useHeat">叠加密度云</el-checkbox>',
     '        <el-button size="small" text @click="reset">重置</el-button>',
     '      </div>',
-
     '      <div class="grid grid-court">',
     '        <div>',
     '          <!-- 球场 + 图层（court.js 手工绘制标准 FIBA 半场） -->',
     '          <court-view :view="view" :layer="layer" :points="points" :zones="zones"',
     '                      :grid="grid" :bin="binSize" :metric="metric" :use-heat="useHeat" />',
     '          <div class="legend">',
-    '            <span><i class="dot"></i>命中（实心绿）</span>',
-    '            <span><i class="ring"></i>未中（空心红）</span>',
+    '            <span><i class="dot"></i>命中</span>',
+    '            <span><i class="ring"></i>未中</span>',
     '            <span>外圈描边 = 三分出手</span>',
     '            <span v-if="layer===\'zones\'">分区色 = 该区命中率（冷蓝→热红）</span>',
     '            <span v-if="layer===\'grid\' && metric===\'pct\'">网格色 = 该格命中率</span>',
     '            <span v-if="layer===\'grid\' && metric===\'att\'">网格色 = 该格出手量</span>',
     '          </div>',
-    '          <div class="hint" style="margin-top:8px">',
-    '            球场几何（FIBA 2014+）：三分弧半径 <b>6.75m</b>、底角三分直线距边线 <b>0.90m</b>（横向 |x| ≥ 6.60）、',
-    '            罚球区 <b>4.90m × 5.80m</b>、罚球圈半径 <b>1.80m</b>、合理冲撞区半径 <b>1.25m</b>、篮筐距底线 <b>1.575m</b>。',
-    '          </div>',
     '        </div>',
-
     '        <div>',
     '          <!-- 结论卡片：高效区 / 低效区 -->',
     '          <div class="grid grid-2" style="gap:10px">',
     '            <div class="kpi" v-if="bestZone">',
-    '              <div class="k">最高效区域（每次出手得分）</div>',
+    '              <div class="k">最高效区域</div>',
     '              <div class="v" style="color:#22a06b">{{ bestZone.pps }}</div>',
     '              <div class="d">{{ bestZone.zone }} · {{ bestZone.made }}/{{ bestZone.att }} · {{ pct(bestZone.pct) }}</div>',
     '            </div>',
@@ -323,9 +360,7 @@ window.PAGES['shotchart'] = {
     '              <div class="d">{{ worstZone.zone }} · {{ worstZone.made }}/{{ worstZone.att }} · {{ pct(worstZone.pct) }}</div>',
     '            </div>',
     '          </div>',
-    '          <div class="hint" style="margin:10px 0">仅统计出手 ≥ {{ minAtt }} 次的区域；',
-    '            <b>每次出手得分（PPS）</b>比命中率更能反映效率 —— 这是热区分析的核心口径。</div>',
-
+    '          <div class="hint" style="margin:10px 0">仅统计出手 ≥ {{ minAtt }} 次的区域<copy-note label="说明"><b>每次出手得分（PPS）</b>比命中率更能反映效率 —— 这是热区分析的核心口径。</copy-note></div>',
     '          <el-table :data="zoneRows" size="small" border max-height="300" style="margin-top:6px">',
     '            <el-table-column prop="zone" label="分区" min-width="104" />',
     '            <el-table-column prop="att" label="出手" width="70" align="center" sortable />',
@@ -335,7 +370,6 @@ window.PAGES['shotchart'] = {
     '            </el-table-column>',
     '            <el-table-column prop="pps" label="每次出手得分" width="120" align="center" sortable />',
     '          </el-table>',
-
     '          <el-divider />',
     '          <!-- 出手构成 -->',
     '          <div class="row" style="gap:16px">',
@@ -345,23 +379,21 @@ window.PAGES['shotchart'] = {
     '              <div class="d">命中率 {{ b.att ? pct(b.made/b.att) : \'—\' }}</div>',
     '            </div>',
     '          </div>',
-    '          <div class="hint" style="margin-top:10px">',
+    '          <div class="hint" style="margin-top:10px"><span>',
     '            合计得分 <b>{{ summary.points }}</b> 分，每次出手 <b>{{ summary.pps }}</b> 分；',
     '            三分 {{ summary.tpm }}/{{ summary.tpa }}（{{ pct(summary.tpPct) }}）。',
-    '          </div>',
+    '          </span></div>',
     '        </div>',
     '      </div>',
     '    </div>',
-
     '    <!-- 距离带分布 -->',
     '    <div class="card">',
-    '      <h3 class="card-title">出手距离分布与命中率衰减 <span class="sub">按「到最近篮筐的距离」分桶（与后端 Shot.distance 口径一致）</span></h3>',
+    '      <h3 class="card-title">距离与命中率 </h3>',
     '      <echarts-box :option="distOption" height="300px" />',
     '    </div>',
-
     '    <!-- 分区命中率条形对比 -->',
     '    <div class="card">',
-    '      <h3 class="card-title">分区效率对比 <span class="sub">命中率（柱） + 每次出手得分（折线），按后端 zone_of 的 6 个中文分区</span></h3>',
+    '      <h3 class="card-title">分区效率 </h3>',
     '      <echarts-box :option="zoneOption" height="300px" />',
     '    </div>',
     '  </template>',
@@ -388,13 +420,13 @@ Object.defineProperty(window.PAGES['shotchart'].computed, 'zoneOption', {
       series: [
         {
           name: '命中率', type: 'bar', barMaxWidth: 34,
-          itemStyle: { borderRadius: [4, 4, 0, 0], color: '#2f6fed' },
+          itemStyle: { borderRadius: [4, 4, 0, 0], color: '#3D8BFF' },
           label: { show: true, position: 'top', formatter: function (p) { return Math.round(p.value * 100) + '%'; }, fontSize: 11 },
           data: rows.map(function (r) { return +(r.pct || 0).toFixed(3); })
         },
         {
           name: '每次出手得分', type: 'line', yAxisIndex: 1, smooth: true, symbolSize: 7,
-          lineStyle: { color: '#f2762e', width: 2.4 }, itemStyle: { color: '#f2762e' },
+          lineStyle: { color: '#FF7A33', width: 2.4 }, itemStyle: { color: '#FF7A33' },
           data: rows.map(function (r) { return r.pps; })
         }
       ]
