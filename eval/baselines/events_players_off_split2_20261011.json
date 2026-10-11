@@ -1,0 +1,711 @@
+{
+  "truth_sha256": "0e8e2e4be0c6a6c1f9d2e8ce1184cd447e210df950013d38f3ecea9821937e82",
+  "tolerance_s": 1.5,
+  "parameters": {
+    "detect_players": false,
+    "scoreboard": false,
+    "auto_sliding": false,
+    "profile": "standard",
+    "roi": false
+  },
+  "limits": [
+    "时段被精确重编码为CRF18，检测可能与原片有轻微差异",
+    "全自动结果，无人工回填",
+    "无球员检测，未评测出手人关联",
+    "不根据此结果自动改参数"
+  ],
+  "samples": [
+    {
+      "id": "s2_fixedcam_7shots",
+      "truth_shots": 7,
+      "engine_events": 7,
+      "confirmed_made": 3,
+      "matched": 7,
+      "missed": 0,
+      "extra": 0,
+      "matched_result_correct": 3,
+      "pairs": [
+        {
+          "truth_index": 0,
+          "event_index": 0,
+          "delta_s": 0.73
+        },
+        {
+          "truth_index": 1,
+          "event_index": 1,
+          "delta_s": 0.8300000000000001
+        },
+        {
+          "truth_index": 2,
+          "event_index": 2,
+          "delta_s": 1.0700000000000003
+        },
+        {
+          "truth_index": 3,
+          "event_index": 3,
+          "delta_s": 0.5
+        },
+        {
+          "truth_index": 4,
+          "event_index": 4,
+          "delta_s": 1.1300000000000008
+        },
+        {
+          "truth_index": 5,
+          "event_index": 5,
+          "delta_s": 0.5300000000000011
+        },
+        {
+          "truth_index": 6,
+          "event_index": 6,
+          "delta_s": 0.8299999999999983
+        }
+      ],
+      "truth": [
+        {
+          "release_s": 0.5,
+          "result": "missed",
+          "value": 2,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 4.0,
+          "result": "made",
+          "value": 2,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 7.0,
+          "result": "missed",
+          "value": 2,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 11.0,
+          "result": "missed",
+          "value": 2,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 14.0,
+          "result": "missed",
+          "value": 2,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 18.0,
+          "result": "made",
+          "value": 2,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 21.0,
+          "result": "made",
+          "value": 2,
+          "is_replay": false,
+          "note": ""
+        }
+      ],
+      "events": [
+        {
+          "release_s": 1.23,
+          "result": "unknown",
+          "decision_s": 3.0,
+          "crossing_s": null,
+          "evidence": "insufficient_evidence",
+          "points": 0,
+          "points_verified": false
+        },
+        {
+          "release_s": 4.83,
+          "result": "made",
+          "decision_s": 5.87,
+          "crossing_s": 5.7,
+          "evidence": "entered+descend+exit",
+          "points": 2,
+          "points_verified": true
+        },
+        {
+          "release_s": 8.07,
+          "result": "unknown",
+          "decision_s": 9.8,
+          "crossing_s": null,
+          "evidence": "insufficient_evidence",
+          "points": 0,
+          "points_verified": false
+        },
+        {
+          "release_s": 11.5,
+          "result": "unknown",
+          "decision_s": 13.33,
+          "crossing_s": null,
+          "evidence": "insufficient_evidence",
+          "points": 0,
+          "points_verified": false
+        },
+        {
+          "release_s": 15.13,
+          "result": "unknown",
+          "decision_s": 16.6,
+          "crossing_s": null,
+          "evidence": "insufficient_evidence",
+          "points": 0,
+          "points_verified": false
+        },
+        {
+          "release_s": 18.53,
+          "result": "made",
+          "decision_s": 19.53,
+          "crossing_s": 19.367,
+          "evidence": "entered+descend+exit",
+          "points": 2,
+          "points_verified": true
+        },
+        {
+          "release_s": 21.83,
+          "result": "made",
+          "decision_s": 22.63,
+          "crossing_s": 22.567,
+          "evidence": "entered+descend+exit",
+          "points": 2,
+          "points_verified": true
+        }
+      ]
+    },
+    {
+      "id": "s2_hs_game01",
+      "truth_shots": 14,
+      "engine_events": 16,
+      "confirmed_made": 3,
+      "matched": 10,
+      "missed": 4,
+      "extra": 6,
+      "matched_result_correct": 2,
+      "pairs": [
+        {
+          "truth_index": 0,
+          "event_index": 0,
+          "delta_s": 1.3399999999999999
+        },
+        {
+          "truth_index": 1,
+          "event_index": 1,
+          "delta_s": 0.5099999999999998
+        },
+        {
+          "truth_index": 2,
+          "event_index": 2,
+          "delta_s": 0.3100000000000005
+        },
+        {
+          "truth_index": 3,
+          "event_index": 3,
+          "delta_s": 0.22000000000000064
+        },
+        {
+          "truth_index": 4,
+          "event_index": 5,
+          "delta_s": 0.8400000000000034
+        },
+        {
+          "truth_index": 5,
+          "event_index": 6,
+          "delta_s": 0.7199999999999989
+        },
+        {
+          "truth_index": 6,
+          "event_index": 7,
+          "delta_s": 1.3599999999999994
+        },
+        {
+          "truth_index": 8,
+          "event_index": 8,
+          "delta_s": 0.3199999999999932
+        },
+        {
+          "truth_index": 10,
+          "event_index": 14,
+          "delta_s": 0.6800000000000068
+        },
+        {
+          "truth_index": 11,
+          "event_index": 15,
+          "delta_s": 0.960000000000008
+        }
+      ],
+      "truth": [
+        {
+          "release_s": 1.0,
+          "result": "missed",
+          "value": 2,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 9.5,
+          "result": "missed",
+          "value": 2,
+          "is_replay": false,
+          "note": "用户给的是 9–10s 区间，取中点"
+        },
+        {
+          "release_s": 12.0,
+          "result": "missed",
+          "value": 2,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 15.0,
+          "result": "made",
+          "value": 2,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 39.0,
+          "result": "missed",
+          "value": 3,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 85.0,
+          "result": "made",
+          "value": 2,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 96.0,
+          "result": "missed",
+          "value": 2,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 110.0,
+          "result": "missed",
+          "value": 3,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 121.0,
+          "result": "missed",
+          "value": 2,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 170.0,
+          "result": "missed",
+          "value": 3,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 184.0,
+          "result": "missed",
+          "value": 2,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 190.0,
+          "result": "made",
+          "value": 2,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 203.0,
+          "result": "missed",
+          "value": 2,
+          "is_replay": false,
+          "note": "分值为推断（上篮=2）"
+        },
+        {
+          "release_s": 231.0,
+          "result": "made",
+          "value": 1,
+          "is_replay": false,
+          "note": ""
+        }
+      ],
+      "events": [
+        {
+          "release_s": 2.34,
+          "result": "made",
+          "decision_s": 3.37,
+          "crossing_s": 3.17,
+          "evidence": "entered+descend+exit",
+          "points": 2,
+          "points_verified": true
+        },
+        {
+          "release_s": 10.01,
+          "result": "unknown",
+          "decision_s": 11.81,
+          "crossing_s": 11.278,
+          "evidence": "insufficient_evidence",
+          "points": 0,
+          "points_verified": false
+        },
+        {
+          "release_s": 12.31,
+          "result": "unknown",
+          "decision_s": 13.51,
+          "crossing_s": null,
+          "evidence": "insufficient_evidence",
+          "points": 0,
+          "points_verified": false
+        },
+        {
+          "release_s": 15.22,
+          "result": "missed",
+          "decision_s": 16.75,
+          "crossing_s": 16.517,
+          "evidence": "left_region_or_timeout",
+          "points": 0,
+          "points_verified": false
+        },
+        {
+          "release_s": 27.43,
+          "result": "unknown",
+          "decision_s": 29.83,
+          "crossing_s": null,
+          "evidence": "insufficient_evidence",
+          "points": 0,
+          "points_verified": false
+        },
+        {
+          "release_s": 39.84,
+          "result": "unknown",
+          "decision_s": 41.64,
+          "crossing_s": null,
+          "evidence": "insufficient_evidence",
+          "points": 0,
+          "points_verified": false
+        },
+        {
+          "release_s": 85.72,
+          "result": "made",
+          "decision_s": 86.52,
+          "crossing_s": 86.52,
+          "evidence": "entered+descend+exit",
+          "points": 2,
+          "points_verified": true
+        },
+        {
+          "release_s": 97.36,
+          "result": "unknown",
+          "decision_s": 98.53,
+          "crossing_s": null,
+          "evidence": "insufficient_evidence",
+          "points": 0,
+          "points_verified": false
+        },
+        {
+          "release_s": 121.32,
+          "result": "missed",
+          "decision_s": 123.56,
+          "crossing_s": 122.522,
+          "evidence": "left_region_or_timeout",
+          "points": 0,
+          "points_verified": false
+        },
+        {
+          "release_s": 149.25,
+          "result": "unknown",
+          "decision_s": 152.75,
+          "crossing_s": null,
+          "evidence": "insufficient_evidence",
+          "points": 0,
+          "points_verified": false
+        },
+        {
+          "release_s": 158.29,
+          "result": "unknown",
+          "decision_s": 161.79,
+          "crossing_s": null,
+          "evidence": "insufficient_evidence",
+          "points": 0,
+          "points_verified": false
+        },
+        {
+          "release_s": 167.97,
+          "result": "unknown",
+          "decision_s": 170.77,
+          "crossing_s": null,
+          "evidence": "insufficient_evidence",
+          "points": 0,
+          "points_verified": false
+        },
+        {
+          "release_s": 171.67,
+          "result": "made",
+          "decision_s": 171.97,
+          "crossing_s": 171.938,
+          "evidence": "entered+descend+exit",
+          "points": 2,
+          "points_verified": true
+        },
+        {
+          "release_s": 173.41,
+          "result": "unknown",
+          "decision_s": 174.81,
+          "crossing_s": null,
+          "evidence": "insufficient_evidence",
+          "points": 0,
+          "points_verified": false
+        },
+        {
+          "release_s": 184.68,
+          "result": "unknown",
+          "decision_s": 186.62,
+          "crossing_s": null,
+          "evidence": "insufficient_evidence",
+          "points": 0,
+          "points_verified": false
+        },
+        {
+          "release_s": 190.96,
+          "result": "unknown",
+          "decision_s": 191.79,
+          "crossing_s": null,
+          "evidence": "insufficient_evidence",
+          "points": 0,
+          "points_verified": false
+        }
+      ]
+    },
+    {
+      "id": "s2_hs_game03",
+      "truth_shots": 10,
+      "engine_events": 10,
+      "confirmed_made": 4,
+      "matched": 9,
+      "missed": 1,
+      "extra": 1,
+      "matched_result_correct": 4,
+      "pairs": [
+        {
+          "truth_index": 0,
+          "event_index": 0,
+          "delta_s": 0.8399999999999999
+        },
+        {
+          "truth_index": 1,
+          "event_index": 1,
+          "delta_s": 1.1099999999999994
+        },
+        {
+          "truth_index": 3,
+          "event_index": 2,
+          "delta_s": 1.1300000000000026
+        },
+        {
+          "truth_index": 4,
+          "event_index": 4,
+          "delta_s": 0.35999999999999943
+        },
+        {
+          "truth_index": 5,
+          "event_index": 5,
+          "delta_s": 1.259999999999991
+        },
+        {
+          "truth_index": 6,
+          "event_index": 6,
+          "delta_s": 0.4099999999999966
+        },
+        {
+          "truth_index": 7,
+          "event_index": 7,
+          "delta_s": 0.6599999999999966
+        },
+        {
+          "truth_index": 8,
+          "event_index": 8,
+          "delta_s": 1.1500000000000057
+        },
+        {
+          "truth_index": 9,
+          "event_index": 9,
+          "delta_s": 0.5300000000000011
+        }
+      ],
+      "truth": [
+        {
+          "release_s": 3.0,
+          "result": "missed",
+          "value": 1,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 8.0,
+          "result": "missed",
+          "value": 3,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 23.0,
+          "result": "missed",
+          "value": 3,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 31.0,
+          "result": "made",
+          "value": 2,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 56.0,
+          "result": "missed",
+          "value": 2,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 158.0,
+          "result": "missed",
+          "value": 3,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 180.0,
+          "result": "missed",
+          "value": 2,
+          "is_replay": false,
+          "note": "分值为推断（上篮=2）"
+        },
+        {
+          "release_s": 197.0,
+          "result": "made",
+          "value": 2,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 211.0,
+          "result": "missed",
+          "value": 2,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 230.0,
+          "result": "made",
+          "value": 2,
+          "is_replay": false,
+          "note": "用户说「上篮出手命中」，分值为推断"
+        }
+      ],
+      "events": [
+        {
+          "release_s": 3.84,
+          "result": "unknown",
+          "decision_s": 6.81,
+          "crossing_s": null,
+          "evidence": "insufficient_evidence",
+          "points": 0,
+          "points_verified": false
+        },
+        {
+          "release_s": 9.11,
+          "result": "unknown",
+          "decision_s": 10.74,
+          "crossing_s": null,
+          "evidence": "insufficient_evidence",
+          "points": 0,
+          "points_verified": false
+        },
+        {
+          "release_s": 32.13,
+          "result": "made",
+          "decision_s": 32.73,
+          "crossing_s": 32.733,
+          "evidence": "entered+descend+exit",
+          "points": 2,
+          "points_verified": true
+        },
+        {
+          "release_s": 34.23,
+          "result": "unknown",
+          "decision_s": 34.77,
+          "crossing_s": null,
+          "evidence": "insufficient_evidence",
+          "points": 0,
+          "points_verified": false
+        },
+        {
+          "release_s": 56.36,
+          "result": "unknown",
+          "decision_s": 58.16,
+          "crossing_s": 57.524,
+          "evidence": "insufficient_evidence",
+          "points": 0,
+          "points_verified": false
+        },
+        {
+          "release_s": 159.26,
+          "result": "made",
+          "decision_s": 160.19,
+          "crossing_s": 160.16,
+          "evidence": "entered+descend+exit",
+          "points": 2,
+          "points_verified": true
+        },
+        {
+          "release_s": 180.41,
+          "result": "missed",
+          "decision_s": 181.58,
+          "crossing_s": 181.014,
+          "evidence": "left_region_or_timeout",
+          "points": 0,
+          "points_verified": false
+        },
+        {
+          "release_s": 197.66,
+          "result": "made",
+          "decision_s": 198.23,
+          "crossing_s": 198.231,
+          "evidence": "entered+descend+exit",
+          "points": 2,
+          "points_verified": true
+        },
+        {
+          "release_s": 212.15,
+          "result": "unknown",
+          "decision_s": 214.11,
+          "crossing_s": null,
+          "evidence": "insufficient_evidence",
+          "points": 0,
+          "points_verified": false
+        },
+        {
+          "release_s": 230.53,
+          "result": "made",
+          "decision_s": 231.23,
+          "crossing_s": 231.231,
+          "evidence": "entered+descend+exit",
+          "points": 2,
+          "points_verified": true
+        }
+      ]
+    }
+  ]
+}
