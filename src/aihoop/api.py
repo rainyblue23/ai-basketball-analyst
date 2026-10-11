@@ -213,7 +213,8 @@ class ManualShot(BaseModel):
     t: float
     team: str = "home"
     player_id: str = "MANUAL"
-    value: int = 2          # 1=罚球 2=两分 3=三分
+    value: Literal[1, 2, 3] = 2
+    result: Literal["made", "missed", "unknown"] = "made"
     x: float = 0.0
     y: float = 0.0
     period: int = 1
@@ -885,15 +886,21 @@ async def add_manual_shot(job_id: str, body: ManualShot) -> Any:
     value = int(body.value)
     if value not in (1, 2, 3):
         raise HTTPException(400, "value 必须是 1、2 或 3")
-    if body.t < 0:
-        raise HTTPException(400, "t 不能为负")
+    import math
+    if not math.isfinite(body.t) or body.t < 0:
+        raise HTTPException(400, "时间必须是有效的非负数")
+    if body.team not in ("", "home", "away"):
+        raise HTTPException(400, "球队无效")
     from .sources import RawTrack
     rt = RawTrack.load(str(rt_path))
+    if rt.duration and body.t >= rt.duration:
+        raise HTTPException(400, "时间超出视频范围")
     fps = rt.fps or 30.0
     manual = _manual_attempts(job_id)
     manual.append({
         "t": float(body.t),
-        "team": body.team or "home",
+        "team": body.team,
+        "team_unknown": not bool(body.team),
         "player_id": body.player_id or "MANUAL",
         "x": float(body.x or 0.0),
         "y": float(body.y or 0.0),
@@ -901,13 +908,14 @@ async def add_manual_shot(job_id: str, body: ManualShot) -> Any:
         "clock": 0.0,
         "is_free_throw": value == 1,
         "release_frame": int(float(body.t) * fps),
-        "made": True,
+        "made": {"made": True, "missed": False, "unknown": None}[body.result],
+        "manual_result": body.result,
         "conf": 1.0,
         "forced_value": value,
         "source": "manual",
-        "location_source": "manual",
+        "location_source": "rim_placeholder",
         "location_estimated": False,
-        "counts_for_score": True,
+        "counts_for_score": bool(body.team) and body.result != "unknown",
         "value_source": "manual",
         "manual": True,
     })
@@ -4067,7 +4075,7 @@ async def _auth_gate(request: Request, call_next):
     from fastapi.responses import JSONResponse, RedirectResponse
     from .auth import COOKIE_NAME, internal_ok, read_session
     p = request.url.path
-    if request.method not in ('GET','HEAD','OPTIONS') and p.startswith('/api/games/example_'):
+    if request.method not in ('GET','HEAD','OPTIONS') and p.startswith('/api/games/example_') and not p.endswith('/ball-feedback'):
         return JSONResponse({'detail': '样例只供查看，请上传自己的视频进行复核'}, status_code=403)
     # Cookie-authenticated writes must originate from this app or an explicit trusted origin.
     origin = request.headers.get("origin")
@@ -4431,3 +4439,31 @@ async def login_page():
 async def app_entry():
     from fastapi.responses import RedirectResponse
     return RedirectResponse("/web/index.html")
+
+
+@app.get("/api/games/{job_id}/ball-feedback/frame")
+async def ball_feedback_frame(job_id: str, t: float):
+    import math
+    from fastapi.responses import Response
+    from .ball_feedback import read_frame
+    if not math.isfinite(t) or t < 0:
+        raise HTTPException(400, "回看时间无效")
+    video = await get_video(job_id)
+    try:
+        image, _ = read_frame(video.path, t)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return Response(image, media_type="image/png", headers={"Cache-Control": "no-store"})
+
+
+@app.post("/api/games/{job_id}/ball-feedback")
+async def ball_feedback_save(job_id: str, request: Request):
+    from .ball_feedback import save_feedback
+    if len(await request.body()) > 32768:
+        raise HTTPException(413, "纠正记录过大")
+    video = await get_video(job_id)
+    try:
+        body = await request.json()
+        return save_feedback(ROOT / "data" / "ball_feedback", video.path, body, job_id)
+    except (ValueError, TypeError) as e:
+        raise HTTPException(400, str(e))

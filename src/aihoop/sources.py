@@ -1292,6 +1292,9 @@ class VideoSource:
             except Exception as e:
                 rt.detections_meta['screen_graphics_error']=type(e).__name__
         cascade_frames=0
+        cascade_missing_frames=0
+        roi_recovery_frames=0
+        rim_recovery_frames=0
         offcourt_person_dropped=0
 
         # ---- 1) 逐帧检测：球员框（含球衣颜色）+ 球候选 ----
@@ -1319,6 +1322,7 @@ class VideoSource:
             t = idx / fps
             legacy_cut = False
             legacy_detections = []
+            recovery_audit = None
             hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             motion = cv2.absdiff(gray, prev_gray) \
@@ -1372,38 +1376,45 @@ class VideoSource:
                 from .screen_graphics import matches as is_screen_graphic
                 rb = ball_model.predict(frame, **predict_options)[0]
                 predictions=[rb]
-                primary_balls=[b for b in rb.boxes if 'ball' in str(rb.names.get(int(b.cls[0]),'')).lower()] if rb.boxes is not None else []
-                graphic_hit=any(is_screen_graphic(frame,[float(v) for v in b.xyxy[0]],graphics) for b in primary_balls)
-                viable=legacy is not None and any(not is_screen_graphic(frame,[float(v) for v in b.xyxy[0]],graphics) and
-                           float(b.conf[0]) >= legacy.config['detect']['ball_conf'] and
-                           legacy.config['detect']['ball_min_w_ratio']*min(W,960) <= float(b.xyxy[0][2]-b.xyxy[0][0]) <= W*.24 for b in primary_balls)
-                # Supplement 640 only when a known graphic has swallowed the ball search.
-                if legacy is not None and graphic_hit and not viable and predict_options.get('imgsz',640)<960:
+                from .ball_recovery import measured_detections, recover_region, recover_rim
+                primary_dets=measured_detections(rb)
+                primary_balls=[b for b in primary_dets if 'ball' in b.cls_name.lower()]
+                graphic_hit=any(is_screen_graphic(frame,b.xyxy,graphics) for b in primary_balls)
+                viable=legacy is not None and legacy.preview_ball(idx,primary_dets,frame,cut=legacy_cut)[0] is not None
+                # Retain the base-scale observations: a larger scale is supplemental,
+                # never a replacement. Missing-ball recovery is capped at 5 Hz;
+                # a known graphic still triggers the existing immediate retry.
+                missing_retry = not viable and idx % max(1, round(fps / 5)) == 0
+                if legacy is not None and not viable and (graphic_hit or missing_retry) and predict_options.get('imgsz',640)<960:
                     predictions.append(ball_model.predict(frame,**dict(predict_options,imgsz=960))[0])
                     cascade_frames+=1
-                # Merge both measured scales. Selection still rejects overlay appearance.
-                det_rows=[(pr,b) for pr in predictions for b in (pr.boxes if pr.boxes is not None else [])]
-                if det_rows:
-                    for pr,b in det_rows:
-                        nm = str(pr.names.get(int(b.cls[0]), "")).lower()
-                        if legacy is not None:
-                            legacy_detections.append(LegacyDet(nm, float(b.conf[0]),
-                                tuple(float(v) for v in b.xyxy[0])))
-                        if "ball" in nm:
-                            bx = [float(v) for v in b.xyxy[0]]
-                            if is_screen_graphic(frame,bx,graphics):continue
-                            bw, bh = bx[2] - bx[0], bx[3] - bx[1]
-                            # 球框应该近似方形、且尺寸在合理范围（远景 8~60px）。
-                            # 太扁/太大的多半是误检（球衣、灯箱、观众席）。
-                            if bw < 4 or bh < 4 or bw > 120 or bh > 120:
-                                continue
-                            if max(bw, bh) > min(bw, bh) * 2.2:
-                                continue
-                            ball_cands.append(BallCandidate(
-                                t=t, x=(bx[0] + bx[2]) / 2,
-                                y=(bx[1] + bx[3]) / 2,
-                                score=min(1.0, float(b.conf[0]) + 0.5),
-                                source="ball_model"))
+                    if not graphic_hit: cascade_missing_frames+=1
+                # Both fallback decisions use the SAME eligibility as the scorer.
+                # A motion-rejected logo must not suppress missing-ball recovery.
+                all_dets=[det for pr in predictions for det in measured_detections(pr)]
+                if (legacy is not None and legacy.config['detect'].get('ball_roi_recovery',False)
+                        and not legacy_cut and missing_retry
+                        and legacy.preview_ball(idx,all_dets,frame)[0] is None):
+                    extra,recovery_audit=recover_region(ball_model,frame,predict_options,legacy,idx)
+                    all_dets.extend(extra)
+                    roi_recovery_frames+=int(recovery_audit['ran'])
+                # 筐周围高分辨率复检（第五轮）：ROI 开在**筐**上，而不是球的预测位置 ——
+                # 球被锁在静止误检上时，预测位置就是那个假目标，而真球在筐附近。
+                if (legacy is not None and legacy.config['detect'].get('ball_rim_recovery',False)
+                        and not legacy_cut and missing_retry
+                        and legacy.preview_ball(idx,all_dets,frame)[0] is None):
+                    extra,rim_audit=recover_rim(ball_model,frame,predict_options,legacy,idx)
+                    all_dets.extend(extra)
+                    rim_recovery_frames+=int(rim_audit['ran'])
+                for det in all_dets:
+                    if legacy is not None:legacy_detections.append(det)
+                    if 'ball' not in det.cls_name.lower():continue
+                    if is_screen_graphic(frame,det.xyxy,graphics):continue
+                    bw,bh=det.w,det.h
+                    if bw<4 or bh<4 or bw>120 or bh>120:continue
+                    if max(bw,bh)>min(bw,bh)*2.2:continue
+                    ball_cands.append(BallCandidate(t=t,x=det.cx,y=det.cy,
+                        score=min(1.,det.conf+.5),source='ball_model'))
             if res is not None and res.boxes is not None and res.boxes.id is not None:
                 for b in res.boxes:
                     name = res.names.get(int(b.cls[0]), "")
@@ -1478,6 +1489,7 @@ class VideoSource:
 
             if legacy is not None:
                 legacy.update(idx, t, legacy_detections, legacy_persons, cut=legacy_cut, image=frame)
+                if recovery_audit is not None:legacy.frames[-1]['ball_recovery']=recovery_audit
 
             # 颜色线索（YOLO 漏掉的球靠它兜底）；背景运动量已经在上面的 bg_motion 里融合。
             # 但**有专用球检测器时直接跳过** —— 广播画面下这条线索是纯噪声
@@ -1522,6 +1534,9 @@ class VideoSource:
                 rt.detections_meta["visual_error"] = "没有有效的真实篮球观测，无法确认投篮结果"
 
         rt.detections_meta['ball_cascade_frames']=cascade_frames
+        rt.detections_meta['ball_missing_cascade_frames']=cascade_missing_frames
+        rt.detections_meta['ball_roi_recovery_frames']=roi_recovery_frames
+        rt.detections_meta['ball_rim_recovery_frames']=rim_recovery_frames
 
         # ---- 2) 球轨迹连接 ----
         step(0.56, "连接球轨迹")

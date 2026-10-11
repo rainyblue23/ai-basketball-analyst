@@ -326,6 +326,7 @@ window.PAGES['overview'] = {
     }
   },
   methods: {
+    locationToReview: function () { window.location.hash = '#/review'; },
     teamName: function (s) { return window.D.teamName(this.game, s); },
     mmss: function (t) { return window.D.mmss(t); },
     /**
@@ -420,8 +421,9 @@ window.PAGES['overview'] = {
     '      <h3 class="card-title">原始视频 <el-tag v-if="sampleReview" size="small" effect="plain">人工复核版</el-tag></h3>',
     '      <div class="replay-stage" v-if="videoUrl">',
     '      <video v-if="videoUrl" :key="videoUrl" ref="video" :src="videoUrl" controls playsinline preload="metadata" style="display:block;width:100%;max-height:520px;background:var(--bg);border-radius:var(--r-sm)" @loadedmetadata="onVideoMeta" @error="onVideoError"></video>',
-    '        <detection-overlay :job-id="S.jobId" />',
+    '        <detection-overlay ref="boxOverlay" :job-id="S.jobId" />',
     '      </div>',
+    '      <ball-feedback v-if="videoUrl" :job-id="S.jobId" />',
     '      <replay-tools v-if="videoUrl" :job-id="S.jobId" :events="game.timeline" :fps="game.fps || (game.meta && game.meta.fps)" @event="gotoEvent" />',
     '      <p v-if="videoUrl && !videoReady && !videoErr" class="hint">正在加载原视频…</p>',
     '      <el-alert v-if="videoErr" type="warning" :closable="false" :title="videoErr" />',
@@ -431,6 +433,7 @@ window.PAGES['overview'] = {
     '      <h3 v-if="sampleReview" class="card-title">全片复核：运动战 {{ sampleReview.field_attempts }} 投 {{ sampleReview.field_made }} 中 · 罚球 {{ sampleReview.free_throw_attempts }} 投 {{ sampleReview.free_throw_made }} 中</h3>',
     '      <h3 v-else class="card-title">检测到 {{ shotCounts.total }} 条投篮候选</h3>',
     '      <p v-if="sampleReview">按你提供的逐球记录整理。自动检测仍有漏检；下方时间可逐条回看。</p>',
+    '      <p v-if="sampleReview && sampleReview.replay_count">含 {{ sampleReview.replay_count }} 条重复回放；去重后运动战 {{ sampleReview.unique_field_attempts }} 投 {{ sampleReview.unique_field_made }} 中。</p>',
     '      <div class="row" style="flex-wrap:wrap;gap:20px;margin-bottom:12px" aria-label="全部投篮候选统计">',
     '        <span>命中 <strong>{{ shotCounts.made }}</strong></span>',
     '        <span>未中 <strong>{{ shotCounts.miss }}</strong></span>',
@@ -456,6 +459,7 @@ window.PAGES['overview'] = {
     '            <span><span v-if="e.team===\'home\' || e.team===\'away\'" class="tl-badge" :class="e.team===\'home\'?\'h\':\'a\'">{{ e.team===\'home\' ? teamName(\'home\') : teamName(\'away\') }}</span>',
     '              <span class="tl-badge" :class="resultClass(e)" style="margin-left:4px">{{ resultClass(e) === \'needs\' ? \'未知（待确认）\' : e.made ? \'命中\' : \'未中\' }}</span></span>',
     '            <span v-if="sampleReview">{{ e.value === 1 ? \'罚球 · 1 分\' : e.value_assumed ? \'运动战 · 分值未确认\' : e.value + \' 分\' }} · 人工复核</span>',
+    '            <el-tag v-if="sampleReview && e.is_replay" size="small" effect="plain">同一次出手的重复回放</el-tag>',
     '            <span v-else class="pl">{{ e.player || "球员未识别" }} · {{ e.zone || "位置未知" }}</span>',
     '            <button v-if="e.review_t != null" class="el-button el-button--small" @click="gotoEvent(e,i,true)">看待确认位置 {{ mmss(e.review_t) }}</button>',
     '            <button v-else-if="e.crossing_t != null" class="el-button el-button--small" @click="gotoEvent(e,i,true)">看篮下 {{ mmss(e.crossing_t) }}</button>',
@@ -465,6 +469,7 @@ window.PAGES['overview'] = {
     '          <el-empty v-if="!timeline.length" description="无符合条件的事件" :image-size="70" />',
     '        </div>',
     '    </div>',
+    '    <section class="card" v-if="rimAvailability || ballVisibility" aria-label="分析覆盖摘要"><h3 class="card-title">分析覆盖</h3><p><span v-if="rimAvailability">篮筐可用 {{ Math.round(rimAvailability.usable_fraction*100) }}%</span><span v-if="ballVisibility"> · 球检测观测 {{ Math.round(ballVisibility.observed_fraction*100) }}%</span></p><p class="hint">这是检测覆盖，不是准确率；没有记录不代表没有投篮。</p><el-button size="small" @click="locationToReview">补录漏掉的出手</el-button></section>',
     '    <section class="card" v-if="(rimAvailability && rimAvailability.unavailable_ranges.length) || (ballVisibility && ballVisibility.blind_ranges.length)" aria-label="检测覆盖范围">',
     '      <h3 class="card-title">部分时段无法持续判定投篮</h3>',
     '      <p v-if="rimAvailability && rimAvailability.unavailable_ranges.length"><copy-note label="说明">以下时段连续至少 2 秒没有可用的篮筐跟踪，可能漏掉投篮；没有记录不代表没有出手。可回看原视频核对。</copy-note></p>',

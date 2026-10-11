@@ -26,6 +26,7 @@ window.PAGES.examples = {
       <img v-if="row.ready" :src="poster(row)" alt="" class="example-poster" loading="lazy" width="640" height="360" />
       <div class="example-info"><h3>{{row.title}}</h3><p>{{row.description}} · {{time(row.duration)}}</p>
       <div v-if="row.ready && row.sample_review" class="example-counts"><strong>人工复核版</strong><span>运动战 {{row.sample_review.field_attempts}} 投 {{row.sample_review.field_made}} 中</span><span>罚球 {{row.sample_review.free_throw_attempts}} 投 {{row.sample_review.free_throw_made}} 中</span></div>
+      <p v-if="row.sample_review && row.sample_review.replay_count">含 {{row.sample_review.replay_count}} 条回放；去重后 {{row.sample_review.unique_field_attempts}} 投 {{row.sample_review.unique_field_made}} 中</p>
       <div v-else-if="row.ready" class="example-counts"><span>识别出手 {{row.shots}}</span><span>确认命中 {{row.made}}</span><span>结果未知 {{row.unknown}}</span></div>
       <el-button type="primary" :disabled="!row.ready || !!opening" :loading="opening===row.id" @click="open(row)">{{row.ready?'播放与查看分析':'分析准备中'}}</el-button>
       </div></article></div>

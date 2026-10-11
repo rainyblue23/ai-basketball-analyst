@@ -39,8 +39,12 @@ body.auth-login::after {
 }
 body.auth-login::before {
   z-index: -2;
-  background: url('./img/login-court-soft-v1.webp') center / cover no-repeat;
-  filter: blur(5px) saturate(.72);
+  /* 背景图：CC0 素材（红蓝两大色块的球场特写，俯视/地面质感）。出图时已做过
+     「轻高斯柔化 + 压饱和 + 略压亮度」（脚本 _tmp/make_login_bg.py，1536x1022，约 26 KB），
+     这里再叠一层很轻的 blur —— 目标是「柔和高斯虚化、不要强烈细节、色调沉稳」，
+     而不是把画面抹成一片纯色（源图只有 1024x681，撑 1080p 全屏本来就靠柔化）。 */
+  background: url('./img/login-court-redblue-v1.webp') center / cover no-repeat;
+  filter: blur(4px) saturate(.85);
   transform: scale(1.025);
 }
 body.auth-login::after {

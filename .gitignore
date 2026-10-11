@@ -151,3 +151,10 @@ data/auth.sqlite*
 
 # Machine-local prepared example catalog
 /data/example_gallery.json
+
+# Reusable evaluation tools (outputs remain ignored)
+!/scripts/eval_annotated_balls.py
+!/scripts/eval_match_annotations.py
+
+# Human correction images and labels stay local
+/data/ball_feedback/

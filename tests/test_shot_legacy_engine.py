@@ -144,6 +144,9 @@ class LegacyIntegration(unittest.TestCase):
             index=0
             def predict(self,frame,**options):
                 seen.append(options)
+                if options.get('imgsz') == 960:
+                    # A second scale reuses the same frame, not the next video frame.
+                    return [SimpleNamespace(boxes=[],names={0:'basketball',1:'rim'})]
                 boxes=[SimpleNamespace(cls=[1],conf=[.9],xyxy=[RIM.xyxy])]
                 if self.index>=2:
                     y=(60,70,80,90,100,110,120,135,150,180)[self.index-2]
@@ -160,8 +163,10 @@ class LegacyIntegration(unittest.TestCase):
              patch.object(source,'_visual_attempts',side_effect=AssertionError('second engine')),\
              patch.object(source,'extract_attempts',side_effect=AssertionError('duplicate candidates')):
             rt=source.run()
-        self.assertEqual(len(seen),12)
-        self.assertTrue(all(o['imgsz']==640 and o['iou']==.5 for o in seen))
+        self.assertEqual(sum(o['imgsz']==640 for o in seen),12)
+        self.assertEqual(sum(o['imgsz']==960 for o in seen),1)
+        self.assertTrue(all(o['iou']==.5 for o in seen))
+        self.assertEqual(rt.detections_meta['ball_missing_cascade_frames'],1)
         self.assertEqual([a.made for a in rt.attempts],[True])
         self.assertEqual(rt.detections_meta['shot_engine'],'legacy')
         trace=rt.detections_meta['legacy_shots']

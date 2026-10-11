@@ -8,7 +8,9 @@ assert.equal(R.trailAt(frames,.2),'');assert.equal(R.trailAt(frames,.3),'5,5 7,7
 assert.equal(R.trailAt([{t:0,ball:[0,0,2,2]},{t:.3,ball:[1,1,3,3]}],.3),'');
 const vue={};vm.createContext(vue);vm.runInContext(fs.readFileSync('web/vendor/vue.global.prod.js','utf8'),vue);
 vue.Vue.compile(c.window.COMPONENTS['detection-overlay'].template,{decodeEntities:s=>s.replace(/&amp;/g,"&").replace(/&lt;/g,"<").replace(/&gt;/g,">"),onError:e=>{throw e;}});
-assert(fs.readFileSync('web/pages/overview.js','utf8').includes('<detection-overlay :job-id="S.jobId"'));
+// 判据是「挂上了 detection-overlay 并且带 job-id」，不是属性的书写顺序 ——
+// 有人给标签加了 ref="boxOverlay" 之后，原来的 includes('<detection-overlay :job-id=') 就误报了（实测踩到）。
+assert(/<detection-overlay\b[^>]*:job-id="S\.jobId"/.test(fs.readFileSync('web/pages/overview.js','utf8')));
 console.log('Replay overlay: timing, gaps, cuts, template and player wiring passed');
 
 assert.equal(R.eventTime({t:4,review_t:0,crossing_t:3}),0);

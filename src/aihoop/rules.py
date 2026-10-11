@@ -317,6 +317,10 @@ def build_shots(attempts: list[dict],
         if a.get("manual") and a.get("made") is not None:
             made, conf, src = bool(a["made"]), 1.0, OutcomeSource.MANUAL.value
 
+        if a.get("manual") and a.get("manual_result") in ("made", "missed", "unknown"):
+            made = {"made": True, "missed": False, "unknown": None}[a["manual_result"]]
+            conf, src = (0.0 if made is None else 1.0), OutcomeSource.MANUAL.value
+
         # 罚球既可以由 is_free_throw 标出，也可以由 forced_value==1 标出
         # （广播比分牌给出的 +1 跳变就属于后者）
         if a.get("is_free_throw") or a.get("forced_value") == 1:
@@ -370,7 +374,7 @@ def build_shots(attempts: list[dict],
 
         if made is not None:
             tags = [tag for tag in tags if tag != "outcome_unknown"]
-        if src == OutcomeSource.MANUAL.value:
+        if src == OutcomeSource.MANUAL.value and made is not None:
             tags = [tag for tag in tags if tag not in {"needs_review", "low_confidence"}]
 
         shots.append(Shot(

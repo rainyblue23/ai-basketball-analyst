@@ -220,6 +220,7 @@ window.PAGES['stats'] = {
     '      <tr><td>罚球</td><td>{{ sampleReview.free_throw_attempts }}</td><td>{{ sampleReview.free_throw_made }}</td><td>{{ sampleReview.free_throw_attempts ? Math.round(100*sampleReview.free_throw_made/sampleReview.free_throw_attempts) : 0 }}%</td></tr>',
     '    </tbody></table>',
     '    <p>共 {{ sampleReview.attempts }} 次出手。队别与出手人尚未确认，不拆分个人得分。</p>',
+    '    <p v-if="sampleReview.replay_count">以上按视频播放计数，含 {{ sampleReview.replay_count }} 条重复回放；去重后运动战 {{ sampleReview.unique_field_attempts }} 投 {{ sampleReview.unique_field_made }} 中。</p>',
     '    <a href="#/overview">逐球时间轴</a> · <a href="#/highlights">全部出手回放</a> · <a href="#/report">查看战报与导出</a>',
     '  </section>',
 

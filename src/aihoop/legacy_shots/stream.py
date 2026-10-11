@@ -11,6 +11,22 @@ DEFAULT_CONFIG = {
     'detect': {'imgsz': 640, 'ball_conf': .25, 'rim_min_conf': .35,
                'ball_min_w_ratio': .012, 'ball_max_w_ratio': .24,
                'ball_jump_px_per_frame': 90., 'rim_min_aspect': 1.2, 'center_lock_widths': 0.,
+               # ---- 静止锁（第三轮诊断加的口径）----
+               # 实测：转播段有 23% 的帧，被跟踪的"球"速度 < 5 px/帧 且持续 ≥1 秒
+               # （镜头一平移，画面里的静止物在缓慢漂移，正好落进预测门），
+               # 而真球那一跳会被 jump 门丢掉。
+               # 连续 ball_static_lock_s 秒低于 ball_static_px_per_frame → 判"可疑"，
+               # 允许**一次**重新锚定：换到一个置信度不低于当前轨迹、尺度合法的候选；
+               # 没有更好的候选就继续用原轨迹（不乱丢）。
+               # ⚠️ 默认 **0 = 关**：第四轮实测（调参段 game01）这条规则触发 303 帧可疑、14 次换锚，
+               # 但指标一模一样（16 个事件 / 匹配 10 / 漏 4 / 多 6）—— 因为那两段漏检里
+               # **原始候选只有 0~1 个**，压根没有别的候选可换。既然没测出收益，
+               # 就不默认改行为；要试就把它设成 1.0（诊断计数 `ball_static_lock` 不受这里影响，照样在算）。
+               'ball_static_px_per_frame': 5., 'ball_static_lock_s': 0.,
+               'ball_reacquire_min_conf': .35,
+               # 筐周围高分辨率复检（第五轮）：球丢/被锁住时，用**筐为中心的窗口**再检一次球。
+               # 默认关；打开后由 sources.py 在"球不可用且到重试节拍"时调用 recover_rim()。
+               'ball_rim_recovery': False,
                # 候选出手层（只提示、不计分）的阈值；见 shot_candidates()
                'cand_window_s': .6, 'cand_rise_px': 25., 'cand_fall_px': 12.,
                'cand_near_rim_widths': 3., 'cand_dedupe_s': 1.2,
@@ -345,6 +361,10 @@ def pack(det):
     return None if det is None else dict(cls=det.cls_name, conf=det.conf,
         xyxy=list(det.xyxy), track_id=det.track_id, predicted=det.predicted)
 
+# 静止锁（"跟踪器锁在一个几乎不动的对象上"）的**诊断**阈值：固定 1 秒。
+# 动作是否执行由 config['detect']['ball_static_lock_s'] 决定（默认 0 = 关）。
+STATIC_LOCK_MEASURE_S = 1.0
+
 class LegacyShotStream:
     def __init__(self, fps, width, config=None, manual_hoop=None, hint=None):
         self.config=copy.deepcopy(DEFAULT_CONFIG)
@@ -358,6 +378,8 @@ class LegacyShotStream:
         self.track_segment=0; self.transitions=[]; self.first_confirmed=None
         self.center_rejected_frames=0
         self.low_rim_history=[]
+        # 静止锁状态（口径见 DEFAULT_CONFIG['detect'] 里的注释）
+        self.static_run=0; self.reacquired_frames=0; self.static_lock_frames=0
 
     def tracked_state(self, t):
         r=self.engine.rim
@@ -386,13 +408,58 @@ class LegacyShotStream:
                                      current=None,closed_attempts=len(closed)))
         self.engine=ScoreEngine(self.config,self.fps)
         self.last_ball=None; self.last_frame=-999; self.vx=self.vy=0.
+        self.static_run=0      # 切镜后不能把上一个镜头的"静止时长"带过来
 
-    def update(self, frame, t, detections, persons=(), cut=False, image=None):
-        if cut:self.reset(frame,t)
-        d=self.config['detect'];s=self.config['score']
-        gap=s['ball_max_gap_frames']
-        if self.last_ball and frame-self.last_frame>max(gap,int(self.fps*s['ball_recent_s'])):
-            self.last_ball=None; self.vx=self.vy=0.
+    def static_lock(self):
+        """是否**允许换锚**：当前轨迹已连续够久几乎不动，且这条规则被打开。
+
+        口径见 DEFAULT_CONFIG['detect']：实测转播段 23% 的帧，被跟踪的"球"速度 < 5 px/帧
+        且持续 ≥1 s（镜头平移时静止物在缓慢漂移，正好落进预测门），而真球那一跳会被
+        jump 门丢掉。`ball_static_lock_s <= 0` 表示关掉这条动作（默认关，见那边的注释）。
+        """
+        lock_s=float(self.config['detect'].get('ball_static_lock_s') or 0.)
+        if lock_s<=0:return False
+        need=max(2,int(round(self.fps*lock_s)))
+        return self.static_run>=need
+
+    def static_lock_measured(self):
+        """只看"锁住了没有"，**与是否允许换锚无关** —— 这是诊断计数用的（永远在算）。
+
+        为什么要分开：可疑帧数是"跟踪器有没有锁错对象"的早期预警指标，
+        不该因为这条动作默认关着就一起没了。
+        """
+        need=max(2,int(round(self.fps*STATIC_LOCK_MEASURE_S)))
+        return self.static_run>=need
+
+    def _reacquire(self, balls, current, lo):
+        """可疑期允许换一次锚：挑置信度不低于当前轨迹、尺度合法的候选。
+
+        只在 static_lock() 为真时调用；没有更好的候选就返回 None（继续用原轨迹，不乱丢）。
+        `current=None` 表示这一帧严格选择什么都没选上（球"丢了"）—— 那也要在可疑期试着捞回来。
+        不要求"离预测位置近"——**正是这条**把快速飞行的真球挡在门外。
+        """
+        d=self.config['detect']
+        floor=float(d.get('ball_reacquire_min_conf',.35))
+        if current is not None:
+            floor=max(floor,float(getattr(current,'conf',0.) or 0.))
+        best=None
+        for c in balls:
+            if c is current or float(c.conf)<floor:continue
+            if not lo<=c.w<=d['ball_max_w_ratio']*self.width:continue
+            if best is None or float(c.conf)>float(best.conf):best=c
+        return best
+
+    def preview_ball(self, frame, detections, image=None, cut=False, suspect=False):
+        """Same selection as update, without altering history or producing evidence.
+
+        `suspect=True`（调用方按 static_lock() 判定）时允许一次重新锚定；
+        它**不改变**历史状态，只是这一次选谁。
+        """
+        d=self.config['detect'];s=self.config['score'];gap=s['ball_max_gap_frames']
+        previous=self.last_ball
+        if cut or frame-self.last_frame>max(gap,int(self.fps*s['ball_recent_s'])):
+            previous=None
+        velocity=(self.vx,self.vy) if previous is not None else (0.,0.)
         from ..screen_graphics import matches
         raw_balls=[b for b in detections if ('ball' in b.cls_name.lower() or
             'basket' in b.cls_name.lower()) and b.conf>=d['ball_conf']]
@@ -406,26 +473,51 @@ class LegacyShotStream:
             elif matches(image,candidate.xyxy,d.get('screen_graphics')):reason='screen_graphic'
             else:balls.append(candidate)
             ball_audit.append(dict(**pack(candidate),selection_reason=reason))
-        ball=pick_best(balls,(self.last_ball.cx,self.last_ball.cy) if self.last_ball else None)
-        if ball and self.last_ball:
-            delta=max(1,frame-self.last_frame)
-            # Prediction is bounded by the existing extrapolation horizon.
-            # Missing frames increase uncertainty, not the allowable speed linearly.
-            horizon=min(delta,max(1,gap))
-            px=self.last_ball.cx+self.vx*horizon;py=self.last_ball.cy+self.vy*horizon
-            bound=d['ball_jump_px_per_frame']*math.sqrt(delta)
-            if math.hypot(ball.cx-px,ball.cy-py)>bound:
-                valid=[b for b in balls if math.hypot(b.cx-px,b.cy-py)<=bound]
-                ball=max(valid,key=lambda b:b.conf) if valid else None
+        from .ball_selection import select_ball
+        ball, selection = select_ball(balls, previous, frame-self.last_frame,
+                                      velocity, gap, d['ball_jump_px_per_frame'])
+        if suspect:
+            alt=self._reacquire(balls,ball,lo)
+            if alt is not None and alt is not ball:
+                for audit in ball_audit:
+                    if (audit.get('selection_reason')=='eligible'
+                            and abs(float(audit.get('conf') or -1.)-float(alt.conf))<1e-9
+                            and abs(audit['xyxy'][0]-alt.xyxy[0])<1e-6):
+                        audit['selection_reason']='reacquired'
+                ball=alt
+        eligible_index=0
+        for audit in ball_audit:
+            if audit['selection_reason']=='eligible':
+                audit.update(selection[eligible_index]);eligible_index+=1
+        return ball, ball_audit
+
+    def update(self, frame, t, detections, persons=(), cut=False, image=None):
+        if cut:self.reset(frame,t)
+        d=self.config['detect'];s=self.config['score']
+        gap=s['ball_max_gap_frames']
+        if self.last_ball and frame-self.last_frame>max(gap,int(self.fps*s['ball_recent_s'])):
+            self.last_ball=None; self.vx=self.vy=0.
+        suspect=self.static_lock()
+        if self.static_lock_measured():self.static_lock_frames+=1
+        ball, ball_audit = self.preview_ball(frame,detections,image,suspect=suspect)
         if ball:
             if self.last_ball and 0<frame-self.last_frame<=10:
                 delta=frame-self.last_frame
                 self.vx=(ball.cx-self.last_ball.cx)/delta;self.vy=(ball.cy-self.last_ball.cy)/delta
+                step=math.hypot(ball.cx-self.last_ball.cx,ball.cy-self.last_ball.cy)/delta
+                if step<d['ball_static_px_per_frame']:self.static_run+=1
+                else:self.static_run=0
+            else:
+                self.static_run=0
+            if any(a.get('selection_reason')=='reacquired' for a in ball_audit):
+                self.reacquired_frames+=1;self.static_run=0
             self.last_ball=ball;self.last_frame=frame;self.real_seen+=1
         elif self.last_ball and frame-self.last_frame<=gap:
             delta=frame-self.last_frame;b=self.last_ball
             ball=Det('basketball',0.,tuple(v+(self.vx if i%2==0 else self.vy)*delta
                         for i,v in enumerate(b.xyxy)),predicted=True)
+        else:
+            self.static_run=0
         rims=[r for r in detections if any(k in r.cls_name.lower() for k in ('rim','hoop'))]
         # 完整指送到此处的 NMS 后候选，不包含检测器阈值以下的框。
         candidates=[dict(index=i,**pack(r),selection_reason='not_selected') for i,r in enumerate(rims)]
@@ -522,6 +614,12 @@ class LegacyShotStream:
                     shot_candidates=shot_candidates(self.frames,self.config,self.events),
                     frames=self.frames,events=self.events,real_ball_frames=self.real_seen,
                     rim_frames=self.rim_seen, center_rejected=self.center_rejected,
+                    # 静止锁诊断（第四轮加）：可疑帧数与真正换锚成功次数，
+                    # 两者都要能对上，否则"换了没换"就成了没法复查的说法。
+                    ball_static_lock=dict(suspect_frames=self.static_lock_frames,
+                                          reacquired_frames=self.reacquired_frames,
+                                          lock_s=self.config['detect'].get('ball_static_lock_s'),
+                                          px_per_frame=self.config['detect'].get('ball_static_px_per_frame')),
                     center_lock_width=self.center_lock_width, center_hint=self.hint)
 
     def tracking_summary(self):

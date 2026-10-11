@@ -86,6 +86,9 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     results: list[tuple[str, bool]] = []
+    if not args.quick:
+        results.append(("篮球纠错保存", run("篮球纠错字段与真实帧检查", [PY, "-B", "tests/test_ball_feedback.py"])))
+        results.append(("漏投补录与纠错接口", run("纠错 HTTP + 补录三态统计检查", [PY, "-B", "tests/test_feedback_integration.py"])))
     results.append(("投篮可见性回归", run("投篮可见性与遮挡单元测试",
         [PY, "-B", "-m", "unittest", "discover", "-s", "tests", "-p", "test_shot*.py"], required=not args.quick)))
     results.append(("外部检测报告回归", run("外部检测报告单元测试",
@@ -186,8 +189,9 @@ def main(argv=None) -> int:
         # return，用户看到的是"没法取帧"。两条都用测试钉住。
         ok9 = run("8h/9 前端接线检查 tests/test_frontend_wiring.js",
                   [node, "tests/test_frontend_wiring.js"])
+        feedback_ok = run("篮球纠错交互", [node, "tests/test_ball_feedback.js"])
         copy_ok = run("界面文案预算 tests/test_ui_copy_budget.js", [node, "tests/test_ui_copy_budget.js"])
-        results.append(("前端自检", ok1 and ok2 and ok3 and ok4 and ok5 and ok6 and ok7 and copy_ok and session_ok))
+        results.append(("前端自检", ok1 and ok2 and ok3 and ok4 and ok5 and ok6 and ok7 and feedback_ok and copy_ok and session_ok))
         results.append(("只标中心的篮筐接入（hoopsight）", ok8))
         ok10 = run("旧版HoopAI标定交互 tests/test_hoopai_calibration.js",
                    [node, "tests/test_hoopai_calibration.js"])

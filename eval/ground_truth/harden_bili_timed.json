@@ -1,0 +1,282 @@
+{
+  "sample": "harden",
+  "source": "human_user",
+  "confirmed_date": "2026-10-11",
+  "scope": "all_players_entire_video",
+  "time_basis": "approximate_release_seconds",
+  "free_throws_separate": true,
+  "shots": [
+    {
+      "id": "harden_01",
+      "release_t": 5,
+      "result": "made",
+      "value": 3,
+      "is_free_throw": false,
+      "note": ""
+    },
+    {
+      "id": "harden_02",
+      "release_t": 14,
+      "result": "made",
+      "value": 3,
+      "is_free_throw": false,
+      "note": ""
+    },
+    {
+      "id": "harden_03",
+      "release_t": 25,
+      "result": "made",
+      "value": null,
+      "is_free_throw": false,
+      "note": ""
+    },
+    {
+      "id": "harden_04",
+      "release_t": 33,
+      "result": "missed",
+      "value": null,
+      "is_free_throw": false,
+      "note": ""
+    },
+    {
+      "id": "harden_05",
+      "release_t": 37,
+      "result": "made",
+      "value": 3,
+      "is_free_throw": false,
+      "note": ""
+    },
+    {
+      "id": "harden_06",
+      "release_t": 50,
+      "result": "made",
+      "value": 2,
+      "is_free_throw": false,
+      "note": "上篮"
+    },
+    {
+      "id": "harden_07",
+      "release_t": 58,
+      "result": "made",
+      "value": 3,
+      "is_free_throw": false,
+      "note": ""
+    },
+    {
+      "id": "harden_08",
+      "release_t": 67,
+      "result": "made",
+      "value": 2,
+      "is_free_throw": false,
+      "note": "上篮"
+    },
+    {
+      "id": "harden_09",
+      "release_t": 76,
+      "result": "made",
+      "value": null,
+      "is_free_throw": false,
+      "note": ""
+    },
+    {
+      "id": "harden_10",
+      "release_t": 86,
+      "result": "made",
+      "value": 2,
+      "is_free_throw": false,
+      "note": "上篮"
+    },
+    {
+      "id": "harden_11",
+      "release_t": 97,
+      "result": "made",
+      "value": 2,
+      "is_free_throw": false,
+      "note": "上篮"
+    },
+    {
+      "id": "harden_12",
+      "release_t": 106,
+      "result": "made",
+      "value": 3,
+      "is_free_throw": false,
+      "note": ""
+    },
+    {
+      "id": "harden_13",
+      "release_t": 115,
+      "result": "missed",
+      "value": 2,
+      "is_free_throw": false,
+      "note": "上篮未中"
+    },
+    {
+      "id": "harden_14",
+      "release_t": 116,
+      "result": "made",
+      "value": 2,
+      "is_free_throw": false,
+      "note": "随后补扣；时刻为近似值，需核对离手帧"
+    },
+    {
+      "id": "harden_15",
+      "release_t": 125,
+      "result": "made",
+      "value": 3,
+      "is_free_throw": false,
+      "note": ""
+    },
+    {
+      "id": "harden_16",
+      "release_t": 136.5,
+      "result": "made",
+      "value": 2,
+      "is_free_throw": false,
+      "note": "空接"
+    },
+    {
+      "id": "harden_17",
+      "release_t": 145,
+      "result": "made",
+      "value": 2,
+      "is_free_throw": false,
+      "note": "篮下"
+    },
+    {
+      "id": "harden_18",
+      "release_t": 154,
+      "result": "made",
+      "value": 3,
+      "is_free_throw": false,
+      "note": ""
+    },
+    {
+      "id": "harden_19",
+      "release_t": 164,
+      "result": "made",
+      "value": 2,
+      "is_free_throw": false,
+      "note": "篮下"
+    },
+    {
+      "id": "harden_20",
+      "release_t": 173,
+      "result": "made",
+      "value": null,
+      "is_free_throw": false,
+      "note": ""
+    },
+    {
+      "id": "harden_21",
+      "release_t": 181,
+      "result": "made",
+      "value": 3,
+      "is_free_throw": false,
+      "note": ""
+    },
+    {
+      "id": "harden_22",
+      "release_t": 193,
+      "result": "made",
+      "value": 3,
+      "is_free_throw": false,
+      "note": ""
+    },
+    {
+      "id": "harden_23",
+      "release_t": 202,
+      "result": "made",
+      "value": 3,
+      "is_free_throw": false,
+      "note": ""
+    },
+    {
+      "id": "harden_24",
+      "release_t": 212,
+      "result": "made",
+      "value": 3,
+      "is_free_throw": false,
+      "note": ""
+    },
+    {
+      "id": "harden_25",
+      "release_t": 221,
+      "result": "made",
+      "value": 2,
+      "is_free_throw": false,
+      "note": "篮下"
+    },
+    {
+      "id": "harden_26",
+      "release_t": 231,
+      "result": "made",
+      "value": 3,
+      "is_free_throw": false,
+      "note": ""
+    },
+    {
+      "id": "harden_27",
+      "release_t": 238,
+      "result": "made",
+      "value": null,
+      "is_free_throw": false,
+      "note": ""
+    },
+    {
+      "id": "harden_28",
+      "release_t": 250,
+      "result": "made",
+      "value": 2,
+      "is_free_throw": false,
+      "note": "上篮"
+    },
+    {
+      "id": "harden_29",
+      "release_t": 260,
+      "result": "made",
+      "value": 2,
+      "is_free_throw": false,
+      "note": "上篮"
+    },
+    {
+      "id": "harden_30",
+      "release_t": 283,
+      "result": "made",
+      "value": 2,
+      "is_free_throw": false,
+      "note": "上篮"
+    },
+    {
+      "id": "harden_31",
+      "release_t": 288,
+      "result": "made",
+      "value": 2,
+      "is_free_throw": false,
+      "note": "空接"
+    },
+    {
+      "id": "harden_32",
+      "release_t": 303,
+      "result": "made",
+      "value": null,
+      "is_free_throw": false,
+      "note": ""
+    },
+    {
+      "id": "harden_33",
+      "release_t": 313,
+      "result": "made",
+      "value": null,
+      "is_free_throw": false,
+      "note": ""
+    },
+    {
+      "id": "harden_34",
+      "release_t": 325,
+      "result": "missed",
+      "value": null,
+      "is_free_throw": false,
+      "note": ""
+    }
+  ]
+}
