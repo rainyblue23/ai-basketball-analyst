@@ -494,7 +494,11 @@
   return postJSON('/api/calibrate_auto', payload);
 };
 API.calibrateMulti = function (payload) {
-    return API.postJSON(API.base + '/api/calibrate_multi', payload);
+    // ⚠️ 单独给 120 秒（默认是 30 秒）。为什么：这条路要做"按镜头分组 + 逐段解算"，
+    // 最坏情况还要抓几帧、算几次 ORB —— 实测一次正常的跨镜头标定可以到 40 秒以上。
+    // 30 秒的上限会让浏览器先放弃，用户看到的是"解算失败：后端算太久被浏览器中断了"，
+    // 而后端其实还在算（甚至已经存好了）—— 用户却以为标定失败了（实测踩到）。
+    return API.postJSON(API.base + '/api/calibrate_multi', payload, 120000);
   };
 
   /* ---- 比分牌：自动定位 / 手动框选 + OCR 读得分事件 ----

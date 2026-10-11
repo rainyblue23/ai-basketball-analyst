@@ -327,6 +327,13 @@ def run_pipeline(rt: RawTrack, cfg: Optional[PipelineConfig] = None,
         # 优先说"自动逐帧标定为什么不够"，其次才是静态标定的结论 ——
         # 用户真正要的信息是"我离出战术图还差什么"。
         why = sliding_why or cal_reason or "没有可用的球员球场坐标"
+        # ★ 但如果**原因是人数异常**（轨迹里混进观众/替补），就必须说这一条：
+        #   用户看到的是"战术图一个人都没有"，跟"标定没通过"是两回事，
+        #   而且修法也不同（去核对球场边界 / 重新标定）。
+        _drop = _tactics_population_drop(rt, cfg)
+        if _drop:
+            why = _drop["reason"]
+            meta["tactics_frame_drop"] = _drop["meta"]
         game["tactics"] = {
             "available": False, "reason": why,
             "player_track_samples": int((meta.get("player_track") or {}).get("samples") or 0),
@@ -359,9 +366,21 @@ def run_pipeline(rt: RawTrack, cfg: Optional[PipelineConfig] = None,
             if not independent_ok:
                 tactics_data["position_note"] = "静态标定未通过独立篮筐校验，位置仅供参考。"
             tactics_data["position_source"] = "static_calibration"
-        if tactics_data.get("available"):
-            tactics_frames = build_tactics_frames(
-                rt.player_track, rt.ball_track, duration=rt.duration, cfg=tcfg)
+        # ---- 帧级体检（**不管上面判成可用还是不可用都要做**）----------------
+        # 理由比"球轨迹不足"更贴近用户看到的症状（一张空球场），所以允许**覆盖**。
+        _drop = _tactics_population_drop(rt, cfg)
+        if _drop:
+            tactics_data["available"] = False
+            tactics_data["reason"] = _drop["reason"]
+            tactics_data.setdefault("notes", []).append("⚠ " + _drop["reason"])
+            meta["tactics_frame_drop"] = _drop["meta"]
+        else:
+            try:
+                tactics_frames = build_tactics_frames(
+                    rt.player_track, rt.ball_track, duration=rt.duration, cfg=tcfg)
+            except Exception as e:                               # noqa: BLE001
+                tactics_frames = []
+                meta["tactics_frames_error"] = f"{type(e).__name__}: {e}"
         game["tactics"] = _tactics_summary(tactics_data)
 
     # ---- 5) 战报 ----
@@ -581,6 +600,41 @@ def _sliding_position_ok(meta: dict) -> tuple[bool, str]:
     # 成功的这条返回值会被拼进"位置未校验"的说明里，所以只给读数、不带前缀，
     # 免得出现"自动逐帧标定（自动逐帧标定（…））"这种套娃（实测拼出来过）。
     return True, ("%d 个锚点，达标率 %.2f，中位 ratio %.2f" % (n_a, ok_ratio, med))
+
+
+def _tactics_population_drop(rt, cfg) -> Optional[dict]:
+    """战术帧的"空帧占比"体检：人数异常时给出**人话原因**。
+
+    实测踩到（用户反馈"这都没人了"）：球员轨迹里混了大量观众/替补（球场标定
+    不可信时没法按场内判定剔除），每帧人数超过"每队 5 人"的硬上限，帧级判据把
+    这些帧整帧丢弃 —— 481 帧里 251 帧是空的（52%），战术图上一个人都没有。
+    所以这里如实报"不可用 + 为什么 + 怎么修"，而不是给一张空球场。
+
+    返回 None 表示体检通过（帧数正常）；否则返回 {reason, meta}。
+    """
+    tcfg = getattr(cfg, "tactics", None)
+    max_team = int(getattr(tcfg, "max_players_per_team", 5) or 5) if tcfg else 5
+    try:
+        frames = build_tactics_frames(rt.player_track, rt.ball_track,
+                                      duration=rt.duration,
+                                      cfg=tcfg or TacticsConfig())
+    except Exception:                                            # noqa: BLE001
+        return None
+    n = len(frames or [])
+    if not n:
+        return None
+    empty = sum(1 for f in frames if not (f.get("players") or []))
+    if empty / n <= 0.30:
+        return None
+    why = ("球员人数异常：%d/%d 帧因为「每队人数超过 %d 人」被丢弃，"
+           "说明这一场的球员轨迹里混进了观众/替补（多是球场标定不可信、"
+           "无法按场内判定剔除所致）。战术图会是一张空球场，所以这次不展示。"
+           "修法：在「上传与分析」页重新标一次球场（打开「叠加球场线自检」，"
+           "确认红色虚线压在画面白线上），再重新分析。"
+           % (empty, n, max_team))
+    return {"reason": why,
+            "meta": {"frames": n, "empty_frames": empty,
+                     "reason": "player_population_exceeded"}}
 
 
 def _tactics_coords_sane(player_track) -> tuple[bool, str]:

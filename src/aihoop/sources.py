@@ -1293,6 +1293,20 @@ class VideoSource:
                 rt.detections_meta['screen_graphics_error']=type(e).__name__
         cascade_frames=0
         offcourt_person_dropped=0
+        # ---- 标定可信度：决定"场内判定"这把剪刀允不允许用 ----------------
+        # 标定本身就弱（吻合度低于门槛）或已被判未校验时，它投出来的坐标只能参考，
+        # **不能拿来在检测入口就把人删掉**：实测那条 240s 的比赛，静态标定
+        # ratio 0.31/1.21（门槛 1.25），而这份偏掉的标定被当成"场内范围"过滤，
+        # 结果真球员被整批删掉（只剩 1.89 人/帧、战术图几乎空白），
+        # 场边观众反而被收进场内。现在：不可信 → 不删，只标记未校验。
+        _meta0 = getattr(rt, "detections_meta", {}) or {}
+        cal_trusted = bool(_meta0.get("calibration_valid")) and not bool(
+            _meta0.get("calibration_position_unverified"))
+        rt.detections_meta["player_entry_filter"] = {
+            "enabled": bool(cal_trusted),
+            "rule": ("标定可信 → 检测入口就按脚底点剔掉场外人员" if cal_trusted else
+                     "标定不可信 → 检测入口**不剔人**（只标记未校验，避免把真球员删掉）"),
+        }
 
         # ---- 1) 逐帧检测：球员框（含球衣颜色）+ 球候选 ----
         step(0.02, "检测球员与篮球")
@@ -1428,10 +1442,11 @@ class VideoSource:
                         # 静态/分时段标定可用时，在检测入口就用脚底点过滤场外人员。
                         # 这样观众不会进入投篮人关联、球衣识别和回放绿框，再由下游隐藏。
                         _person_cal = self._cal_at(t)
-                        _on_court = calibrated_person_on_court(_person_cal, xyxy)
-                        if _on_court is False:
-                            offcourt_person_dropped += 1
-                            continue
+                        if cal_trusted:
+                            _on_court = calibrated_person_on_court(_person_cal, xyxy)
+                            if _on_court is False:
+                                offcourt_person_dropped += 1
+                                continue
                         pid = f"T{tid}"
                         if legacy is not None:
                             legacy_persons.append(LegacyDet("person",float(b.conf[0]),tuple(xyxy),pid))
@@ -1609,9 +1624,12 @@ class VideoSource:
                 rt.detections_meta["sliding_error"] = f"{type(e).__name__}: {e}"
 
         rt.detections_meta["court_player_prefilter"] = {
-            "enabled": bool(rt.detections_meta.get("calibration_valid")),
+            # enabled 表示"这道剪刀有没有真的在用" —— 标定不可信时它是关的
+            # （见上面 cal_trusted：宁可留下场边的人，也不能把真球员删掉）
+            "enabled": bool(cal_trusted),
             "dropped_observations": int(offcourt_person_dropped),
-            "rule": "player_box_bottom_center_inside_calibrated_court",
+            "rule": ("player_box_bottom_center_inside_calibrated_court"
+                     if cal_trusted else "disabled_untrusted_calibration"),
         }
 
         # ---- 3b) 套餐 B：把球员像素轨迹投影成球场坐标 ----
@@ -1645,6 +1663,24 @@ class VideoSource:
             # 站位、阵型、间距全部跟着偏（近处偏差更大，因为透视放大）。
             # 广播机位下球员框底边≈脚，这是单目定位里最省事也最有效的近似。
             use_sliding = bool(self.sliding and self.sliding.get("anchors"))
+            # ---- 场内判定该不该"删人"？----------------------------------------
+            # 只有**可信的**标定才配当剪刀。标定本身就弱（吻合度低于门槛）或已被
+            # 判为未校验时，用它投影出来的坐标最多只能"参考"，不能拿来把球员删掉：
+            # 实测一条 240s 的比赛，静态标定 ratio 0.31/1.21（都低于门槛 1.25），
+            # 而这份偏掉的标定被当作"场内范围"去过滤 → 真球员被整批删掉
+            # （只剩 1.89 人/帧、战术图几乎空白），场边观众反而被收进场。
+            # 现在的规矩：不可信的标定 → 不删，只标记；轨迹质量交给
+            # population_quality / position_unverified 去如实说明。
+            _meta_pre = getattr(rt, "detections_meta", {}) or {}
+            _cal_trust = bool(_meta_pre.get("calibration_valid")) and not bool(
+                _meta_pre.get("calibration_position_unverified"))
+            strict_on_court = bool(use_sliding) or _cal_trust
+            kept_without_trusted_cal = 0
+            # 场内判定用到的两个计数器：
+            #   on_court_hits  : 每条轨迹被判定为场内多少次（诊断用）
+            #   offcourt_obs_dropped : 被这把剪刀删掉的越界观测数
+            on_court_hits: dict = {}
+            offcourt_obs_dropped = 0
             # 逐帧人数上限：同一时刻场内最多 max_players 个人。
             # 按置信度保留最可信的那些 —— 宁可少画一个，也别把观众画进球场。
             dropped_by_cap = 0
@@ -1665,6 +1701,19 @@ class VideoSource:
             else:
                 self._keep_boxes = None
             rt.detections_meta["player_cap_dropped"] = dropped_by_cap
+            # 场内判定这道剪刀的状态如实记录（用户反馈"战术图上的点全挤在一块"时，
+            # 第一件要能回答的就是：是不是标定不可信却还在拿它删人）
+            rt.detections_meta["on_court_filter"] = {
+                "strict": bool(strict_on_court),
+                "kept_without_trusted_calibration": int(kept_without_trusted_cal),
+                "calibration_valid": bool(_meta_pre.get("calibration_valid")),
+                "calibration_position_unverified": bool(
+                    _meta_pre.get("calibration_position_unverified")),
+                "rule": ("标定可信 → 只留落在球场范围内的球员"
+                         if strict_on_court else
+                         "标定不可信 → **不按投影删人**（观众交给像素侧形状/置信度"
+                         "过滤与每队人数上限处理）"),
+            }
             for pid, boxes in (self._player_boxes or {}).items():
                 team = rt.players[pid].team if pid in rt.players else "home"
                 for row in boxes:
@@ -1673,34 +1722,51 @@ class VideoSource:
                     tt, x1, y1, x2, y2 = row[:5]
                     foot_x = (x1 + x2) / 2.0
                     foot_y = y2
+                    # _cc 非空 = 这一帧有**可信的**投影可用于场内判定；
+                    # 空 = 判不了 → 交给下面"按轨迹"的判据，而不是就地删人。
+                    _cc = None
                     if use_sliding:
                         # 逐帧 H（锚点间插值）——跟住会动的镜头
                         from .calibcheck import homography_at
-                        # 同样：不能叫 H（会覆盖 run() 里的画面高度，见上面那段注释）
                         Hf = homography_at(self.sliding, int(round(tt * fps)),
                                            bool(self.sliding.get("half_court", True)))
-                        if Hf is None:
-                            continue
-                        px, py = apply_homography(Hf, foot_x, foot_y)
-                        # sliding 的目标点本身就是折半坐标（half_court=True 时）
-                        px, py = fold_to_analysis(px, py, "half")
+                        if Hf is not None:
+                            px, py = apply_homography(Hf, foot_x, foot_y)
+                            # sliding 的目标点本身就是折半坐标（half_court=True 时）
+                            px, py = fold_to_analysis(px, py, "half")
+                        # ⚠️ 场内判定**不用滑窗标定**（_cc 留空 = 这一帧"判不了"）：
+                        #    它的质量分只反映"线压到了亮脊上"，不能证明四角对
+                        #    （实测 median_ratio 10.88 却把四角算到看台里）。
+                        #    geom_ok 闸门已经把这种锚点标成不可用，这里再兜一层。
                     else:
                         # 多机位时按**这一帧所属镜头**取标定
                         _c = self._cal_at(tt)
                         if _c is None or not _c.H:
                             continue
                         px, py = _c.to_court(foot_x, foot_y)
+                        _cc = _c if strict_on_court else None
                     # 只保留**真正落在场内**的点。这一刀很关键：广播镜头里
                     # 同时会检出替补席、裁判、观众（实测 30 秒里 83 条轨迹），
                     # 它们站在边线外/中线外/底线后方，投影出来正好贴着边线或
                     # 中圈，会变成战术图上一堆不动的点，把阵型与空间指标全带偏。
                     #
-                    # 范围必须取"这份标定实际覆盖的球场"，不能写死 |y|<=14：
-                    # 半场标定只覆盖 y∈[-14,0]（或 [0,14]），用对称范围会把
-                    # 远底线后方的观众当成场内球员收进来。
-                    _cc = self._cal_at(tt) or self.cal
-                    if not _cc.in_court(px, py, tol=0.12):
-                        continue
+                    # 范围取"这份标定实际覆盖的球场"（court.analysis_bounds）。
+                    # ⚠️ 别把它放宽成整块球场：实测放宽后观众全被收进来，每帧人数
+                    #    超过"每队 5 人"上限 → 战术层整帧丢弃 → 战术图一张空球场
+                    #    （用户原话"这都没人了"）。旧的小框虽然量纲上是拿米当像素，
+                    #    但它意外地起到了收窄作用；要改它必须同时解决"谁来剔观众"。
+                    # ⚠️ 这把剪刀只在投影**可信**时用（_cc 非空）：静态标定弱
+                    #    （实测 ratio 0.31/1.21）和滑窗标定（质量分虚高、四角算进
+                    #    看台，见 _plausible_quad 闸门）都不算可信。不可信时按保守
+                    #    处理（不删人），并由 pipeline 的帧级体检如实报"战术图不可用"，
+                    #    而不是硬画一张空场。
+                    if _cc is not None:
+                        if not _cc.in_court(px, py, tol=0.12):
+                            offcourt_obs_dropped += 1
+                            continue
+                        on_court_hits[pid] = on_court_hits.get(pid, 0) + 1
+                    else:
+                        kept_without_trusted_cal += 1
                     key = (round(float(tt), 3), pid)
                     on_court_obs.add(key)
                     # 像素观测也只保留场内球员；分队、球衣 OCR 与进球归属不能再吃到观众。
@@ -1735,9 +1801,16 @@ class VideoSource:
                     else:
                         hidden += 1
             rt.detections_meta["court_player_filter"] = {
-                "enabled": True, "shown_observations": shown,
+                "enabled": bool(strict_on_court),
+                "shown_observations": shown,
                 "hidden_off_court_observations": hidden,
-                "rule": "player_box_bottom_center_inside_calibrated_court"}
+                "kept_without_trusted_calibration": int(kept_without_trusted_cal),
+                # 判不了而先留下的观测数 + 真被删掉的越界观测数：这两个数一起看，
+                # 就能判断"这次到底是靠投影筛的，还是压根没筛"
+                "kept_unjudged": int(kept_without_trusted_cal),
+                "offcourt_observations_dropped": int(offcourt_obs_dropped),
+                "rule": ("player_box_bottom_center_inside_calibrated_court"
+                         if strict_on_court else "not_trusted_no_filter")}
         rt.detections_meta["player_track"] = {
             "samples": len(rt.player_track),
             "players": len({s.player_id for s in rt.player_track}),

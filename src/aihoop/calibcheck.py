@@ -726,6 +726,41 @@ def refine_calibration(bgr, cal: Calibration, half_court: bool = True,
     return out
 
 
+def _plausible_quad(corners, min_frac: float = 0.12) -> bool:
+    """这四个角点像不像一块**球场**（与"线拟合分数"无关的几何检查）。
+
+    为什么必须有这道闸门（实测踩到）：这条 960×544 校园素材上，逐帧滑窗标定的
+    质量分很漂亮（median_ratio 10.88，达标率 1.0，门槛 1.25），但它给出的
+    "球场四角"是 [[344,112],[913,292],[1081,345],[301,545]] —— 跨了整个画面、
+    还插进看台，而且四帧里一模一样（完全没跟住镜头）。也就是说
+    **线拟合分数不能证明坐标对**：分数只说明"投影的线压到了某些亮脊上"，
+    四角一旦荒腔走板，投出来的"线"照样能压到别处的亮脊（看台边缘、地板反光）。
+    不挡掉的话，下游会拿这份歪标定当剪刀去删球员（实测只剩 0.41 人/帧，
+    战术图一个人都没有 —— 比"点少"更糟）。
+    """
+    try:
+        q = [[float(p[0]), float(p[1])] for p in corners]
+    except Exception:                                            # noqa: BLE001
+        return False
+    if len(q) != 4:
+        return False
+    # ① 凸性：四个叉积同号（凹/自交的四边形一律不认）
+    signs = []
+    for i in range(4):
+        a, b, c = q[i], q[(i + 1) % 4], q[(i + 2) % 4]
+        cross = ((b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]))
+        signs.append(1 if cross > 0 else (-1 if cross < 0 else 0))
+    if 0 in signs or len(set(signs)) != 1:
+        return False
+    # ② 面积：用鞋带公式，太小（退化成一条线）的一律不认
+    area = 0.0
+    for i in range(4):
+        x1, y1 = q[i]
+        x2, y2 = q[(i + 1) % 4]
+        area += x1 * y2 - x2 * y1
+    return abs(area) / 2.0 >= 1e6 * min_frac      # 960×544 的 12%
+
+
 def sliding_calibration(video_path: str, cal0: Optional[Calibration] = None,
                         half_court: bool = True, stride: int = 5,
                         max_seconds: float = 0.0, recheck_below: float = 1.4,
@@ -826,9 +861,17 @@ def sliding_calibration(video_path: str, cal0: Optional[Calibration] = None,
             proto = proto_of(corners)
         else:
             stats["reuses"] += 1
+        # 几何合理性闸门：分数再高，四角不成一块球场就不认（见 _plausible_quad）。
+        # ⚠️ 用**单独的字段 geom_ok**，不能借用 `valid` —— 那个键在滑窗标定里
+        #    另有含义（valid=False = "这一帧坐标暂停"，前端会据此画暂停区间）。
+        #    geom_ok=False 的锚点不参与场内判定（宁可不判，也不拿歪的四角删球员）。
+        geom_ok = _plausible_quad(corners)
+        if not geom_ok:
+            stats["implausible_quads"] = stats.get("implausible_quads", 0) + 1
         anchors.append({"frame": int(fi),
                         "corners": [list(map(float, c)) for c in corners],
-                        "ratio": round(float(cur), 2), "kind": kind})
+                        "ratio": round(float(cur), 2), "kind": kind,
+                        "geom_ok": bool(geom_ok)})
         if report and len(anchors) % 40 == 0:
             print(f"    滑动标定 {fi}/{total} ratio={cur:.2f} kind={kind}")
         if progress:
@@ -856,6 +899,15 @@ def corners_at(sliding: dict, frame_idx: int) -> Optional[list]:
     A = (sliding or {}).get("anchors") or []
     if not A:
         return None
+
+    def _ok(a):
+        """这一帧的角点能不能用：既要 valid（坐标暂停语义），也要几何合理。
+
+        `geom_ok` 缺省为 True —— 老数据/直接构造的滑窗结构里没有这个字段，
+        不能因为缺字段就把所有帧都判成不可用。
+        """
+        return bool(a.get("valid", True)) and bool(a.get("geom_ok", True))
+
     guarded = bool(sliding.get("guarded_interpolation"))
     if guarded:
         stride = max(1, int(sliding.get("stride", 1)))
@@ -863,12 +915,12 @@ def corners_at(sliding: dict, frame_idx: int) -> Optional[list]:
             return None
         for anchor in A:
             if frame_idx == anchor["frame"]:
-                return anchor["corners"] if anchor.get("valid") else None
+                return anchor["corners"] if _ok(anchor) else None
         if frame_idx > A[-1]["frame"]:
-            return A[-1]["corners"] if A[-1].get("valid") else None
+            return A[-1]["corners"] if _ok(A[-1]) else None
         for a, b in zip(A, A[1:]):
             if a["frame"] < frame_idx < b["frame"]:
-                if (not a.get("valid") or not b.get("valid")
+                if (not _ok(a) or not _ok(b)
                         or a.get("segment") != b.get("segment")):
                     return None
                 span = max(1, b["frame"] - a["frame"])
@@ -878,18 +930,20 @@ def corners_at(sliding: dict, frame_idx: int) -> Optional[list]:
                         for k in range(4)]
         return None
     if frame_idx <= A[0]["frame"]:
-        return A[0]["corners"]
+        return A[0]["corners"] if _ok(A[0]) else None
     if frame_idx >= A[-1]["frame"]:
-        return A[-1]["corners"]
+        return A[-1]["corners"] if _ok(A[-1]) else None
     for i in range(len(A) - 1):
         a, b = A[i], A[i + 1]
         if a["frame"] <= frame_idx <= b["frame"]:
+            if not _ok(a) or not _ok(b):
+                return None
             span = max(1, b["frame"] - a["frame"])
             t = (frame_idx - a["frame"]) / span
             return [[a["corners"][k][0] + (b["corners"][k][0] - a["corners"][k][0]) * t,
                      a["corners"][k][1] + (b["corners"][k][1] - a["corners"][k][1]) * t]
                     for k in range(4)]
-    return A[-1]["corners"]
+    return A[-1]["corners"] if _ok(A[-1]) else None
 
 
 def homography_at(sliding: dict, frame_idx: int, half_court: bool = True):

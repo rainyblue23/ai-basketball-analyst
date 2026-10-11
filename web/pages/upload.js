@@ -140,7 +140,18 @@ window.PAGES['upload'] = {
       showCourtOverlay: true,
       overlayW: 0,
       overlayH: 0,
-      overlayLines: [],        // [[[x,y],...], ...] 画面像素坐标
+      overlayLines: [],        // [[[x,y],...], ...] 画面像素坐标（左画面 / 单画面）
+      // ⚠️ 叠线必须**每个画面各一份**。为什么（实测踩到）：左右两个画面是**两个机位**
+      // （各拍半场、取的时刻也不同），后端一份 H 只属于其中一幅。以前两边都渲染同一个
+      // overlayLines，于是把一个机位的球场线画到了另一个机位上 —— 左边整体偏 20m、
+      // 右边也压不到白线，用户看到的"红框明显不对"就是这个。
+      // 现在：左画面用自己那一帧的 H、右画面用自己那一帧的 H，分别算各自的线。
+      overlayLinesLeft: [],
+      overlayLinesRight: [],
+      overlayWLeft: 0,
+      overlayHLeft: 0,
+      overlayWRight: 0,
+      overlayHRight: 0,
       // 「点吸附精修」被采纳时的点（画成空心黄圈，供对照）——
       // 后端 refine_keypoints 采纳后，**存下来的标定用的是吸附后的点**，
       // 所以画面上必须也把它画出来，否则用户看到的点和他实际存下来的不一致
@@ -238,6 +249,19 @@ window.PAGES['upload'] = {
     },
     frameH: function () {
       if (this.markKind === 'court') return this.mfCurrent ? this.mfCurrent.h : 0;
+      return this.markSize.h || 0;
+    },
+    /** **右画面**那一帧的原始像素尺寸。
+     *  两个画面的 viewBox/坐标必须各用各的：以前右画面的 svg 用的是左帧的 frameW/frameH，
+     *  两帧尺寸不同时（不同码率/不同机位的素材）右画面的点和叠线会被整体拉偏。 */
+    frameWRight: function () {
+      var f = this.mfCurrentRight || this.mfCurrent;
+      if (this.markKind === 'court') return f ? f.w : 0;
+      return this.markSize.w || 0;
+    },
+    frameHRight: function () {
+      var f = this.mfCurrentRight || this.mfCurrent;
+      if (this.markKind === 'court') return f ? f.h : 0;
       return this.markSize.h || 0;
     },
     /** 本帧已标的点（只画这些 —— 别的帧的点坐标不通用） */
@@ -504,6 +528,33 @@ window.PAGES['upload'] = {
       var v = f && f.ratio;
       return (typeof v === 'number') ? v : 0;
     },
+    /** 这份标定的吻合度是**哪一段**的读数（分时段标定才有）。
+     *
+     *  实测争议点：界面只显示一个"吻合度 0.17"，用户看不出"是整份都差，
+     *  还是只有那一段差"。分时段标定里每一段各解一份 H，后端给的是**最差那一段**
+     *  的读数（取最好那段会把坏段盖住），所以必须把"这是最差一段"和"每段各是多少"
+     *  一起摆出来，否则用户只能理解成"工具坏了"或者把整份重标一遍。 */
+    fitSegRows: function () {
+      var r = this.mfResult || this.courtResult;
+      var f = r && r.calibration_fit;
+      var list = (f && f.by_segment) || [];
+      if (!Array.isArray(list) || list.length < 2) return [];
+      return list.map(function (s) {
+        var a = (s && s.t_start != null) ? Number(s.t_start) : NaN;
+        var b = (s && s.t_end != null) ? Number(s.t_end) : NaN;
+        var ratio = (s && s.ratio != null) ? Number(s.ratio) : NaN;
+        return {
+          when: (isFinite(a) ? a.toFixed(1) : '?') + '~' + (isFinite(b) ? b.toFixed(1) : '?') + 's',
+          ratio: isFinite(ratio) ? ratio : null,
+          rmse: (s && s.rmse_m != null) ? s.rmse_m : null,
+          n: (s && s.n_points != null) ? s.n_points : null,
+          // 门槛 1.25 与分析端一致（低于它分析端就不出战术图/热图）
+          ok: isFinite(ratio) && ratio >= 1.25
+        };
+      });
+    },
+    /** 吻合度读数是不是"分时段里最差那一段"的（决定标题怎么写，别让用户误会成整份） */
+    fitIsWorstOfSegments: function () { return this.fitSegRows.length > 0; },
     /** 多机位标定里"不可信的那几段"（后端 calibration_fit.weak_segments）。
      *
      *  为什么必须逐段摆出来（用户实测踩到）：多机位是**每一段各解一份 H**，
@@ -904,6 +955,18 @@ window.PAGES['upload'] = {
           ? (self.mfLeftCov.enough || self.mfRightCov.enough)
           : (self.mfPtsHere.length >= 4);
         if (!enough) return;                 // 还不够 4 个点：静默等着，别弹错误
+        // ★ 两幅画面只要**有一幅还没点够 4 个点**就别自动解算。
+        //   为什么（实测复现）：用户在第二幅画面点下**第 1 个点**的那一刻（6 点/2 幅），
+        //   两边的点会被后端合到一起解 —— 5 个属于左镜头、1 个属于右镜头，
+        //   RANSAC 一个内点都找不到 → 直接报"跨画面的点混在一起解不了"，
+        //   而且那条路要 40+ 秒（浏览器 30 秒就中断了）。用户看到的就是
+        //   "点完点之后显示解算不了"——**纯属中间状态被自动算了一次**。
+        //   正式解算必须等两边各自够 4 个（后端那时才走"每幅一份 H"的正确路径）；
+        //   想提前看效果的人可以自己按「先预览（不保存）」。
+        if (self.mfDualSplit &&
+            !(self.mfLeftCov.enough && self.mfRightCov.enough)) {
+          return;
+        }
         self.previewCourtMulti(true);
       }, 600);
     },
@@ -1293,11 +1356,11 @@ window.PAGES['upload'] = {
         [(d * h - e * g) / det, (b * g - a * h) / det, (a * e - b * d) / det]
       ];
     },
-    /** 用一份 H 把球场线投影到画面像素坐标 */
-    _buildOverlay: function (H, W, Hh) {
-      if (!H || !W || !Hh) { this.overlayLines = []; return; }
+    /** 用一份 H 把球场线投影到画面像素坐标（**纯函数**：不写任何状态） */
+    _overlayLinesFor: function (H, W, Hh) {
+      if (!H || !W || !Hh) return [];
       var inv = this._invertH(H);
-      if (!inv) { this.overlayLines = []; return; }
+      if (!inv) return [];
       var out = [];
       this._courtPolylines().forEach(function (line) {
         var pix = [];
@@ -1312,14 +1375,117 @@ window.PAGES['upload'] = {
         });
         if (pix.length > 1) out.push(pix);
       });
+      return out;
+    },
+    /** 用一份 H 把球场线投影到画面像素坐标（写进默认的那一份叠线） */
+    _buildOverlay: function (H, W, Hh) {
       this.overlayW = W;
       this.overlayH = Hh;
-      this.overlayLines = out;
+      this.overlayLines = this._overlayLinesFor(H, W, Hh);
     },
-    /** 预览/解算回来之后刷新自检叠加层（用的是后端返回的那份 H） */
+    /** 前端自己判断"这份 H 是不是属于这一帧"，**不依赖后端多回任何字段**。
+     *
+     *  做法：用 H 把这一帧的点反投影到球场坐标，再看它离**这一帧自己的地标名**
+     *  该在的球场坐标有多远（米）。属于它的那份 H 误差是厘米级，别的机位那份是米级
+     *  —— 两者差两个数量级，用 0.75 m 判就够了，不会两边都命中或都不命中。
+     *
+     *  为什么不让后端直接告诉前端（它其实知道）：那是"响应里多一个字段"的耦合，
+     *  而这里用**前端的原始数据**算，任何后端版本、任何返回格式都能自证，
+     *  也不再出现"后端换了返回结构 → 叠线悄悄不画了"这种没法测的坏法。 */
+    _HMatchesFrame: function (H, t) {
+      if (!H || !this.courtSideNames) return false;
+      var dstOf = {};
+      (this.courtSideNames.full || []).forEach(function (it) { dstOf[it.name] = it.dst; });
+      var pts = (this.mfPts || []).filter(function (p) { return p.t === t && dstOf[p.name]; });
+      if (!pts.length) return false;
+      var f = null;
+      (this.mfFrames || []).forEach(function (x) { if (Number(x.t) === Number(t)) f = x; });
+      var sz = this._frameSizeFor(f);
+      var best = Infinity;
+      for (var i = 0; i < pts.length; i++) {
+        var g = this._applyH(H, pts[i].x, pts[i].y, sz[0], sz[1]);
+        if (!g) continue;
+        var d = dstOf[pts[i].name];
+        var e = Math.sqrt(Math.pow(g[0] - d[0], 2) + Math.pow(g[1] - d[1], 2));
+        if (e < best) best = e;
+      }
+      return best <= 0.75;
+    },
+    /** 像素（归一化 0~1）→ 球场米；H 的方向是「像素 → 球场」（与后端一致）。
+     *  画面尺寸必须由调用方给：两帧的 w/h 可能不同（不同机位/不同码率），
+     *  用错尺寸等于把点挪了位置，判定就会失效。 */
+    _applyH: function (H, x, y, W, Hh) {
+      if (!H || !H[0] || !H[1] || !H[2]) return null;
+      W = W || this.frameW || 960;
+      Hh = Hh || this.frameH || 540;
+      var px = x * W, py = y * Hh;
+      var w = H[2][0] * px + H[2][1] * py + H[2][2];
+      if (!isFinite(w) || Math.abs(w) < 1e-12) return null;
+      return [(H[0][0] * px + H[0][1] * py + H[0][2]) / w,
+              (H[1][0] * px + H[1][1] * py + H[1][2]) / w];
+    },
+    /** 逐帧的 H 表（t → H）。两个来源：
+     *   * `per_frame_fit`：单镜头那条路带回来的"每帧各自拟合"的 H；
+     *   * `segments_H`：**多机位那条路**（顶层没有 H、per_frame_fit 也是空的）
+     *     带回来的"每段一份 H"，按时间段认领。
+     *  旧后端没有这两个字段也不影响 —— `_HForFrame` 会退回"按前端点判"。 */
+    _perFrameHByT: function (r) {
+      var byT = {};
+      ((r && r.per_frame_fit) || []).forEach(function (f) {
+        if (f && f.H && f.t != null) byT[Number(f.t)] = f.H;
+      });
+      return byT;
+    },
+    /** 某一帧落在哪一段里 → 那一段的 H（多机位路径用） */
+    _segmentHForT: function (r, t) {
+      if (t == null) return null;
+      var segs = (r && r.segments_H) || [];
+      var tt = Number(t);
+      for (var i = 0; i < segs.length; i++) {
+        var a = Number(segs[i].t_start), b = Number(segs[i].t_end);
+        if (isFinite(a) && isFinite(b) && tt >= a - 1e-6 && tt <= b + 1e-6 && segs[i].H) {
+          return segs[i].H;
+        }
+      }
+      return null;
+    },
+    /** 某一帧该用哪份 H。
+     *
+     *  ① 顶层 H 就是这一帧解出来的（`best_frame_t`）→ 直接用它（最准，且与后端一致）；
+     *  ② 后端给了"每段/每帧自己的 H"（`segments_H` / `per_frame_fit.H`）→ 按 t 认领。
+     *     **多机位那条路顶层没有 H**，就是靠它才能"各画各的"；
+     *  ③ 都没有（旧后端）→ 用前端的点反投影把这一帧认出来，认不出就**不画**。
+     *     宁可这个画面不画线，也绝不把别的机位的线画上来 —— 那正是用户看到的
+     *     "红框明显不对"（左边偏 20m、右边也压不到白线）。 */
+    _HForFrame: function (r, t) {
+      if (t == null) return null;
+      var best = r && r.best_frame_t;
+      if (best != null && Math.abs(Number(best) - Number(t)) < 1e-6 && r && r.H) {
+        return r.H;
+      }
+      var Hseg = this._segmentHForT(r, t);
+      if (Hseg) return Hseg;
+      var byT = this._perFrameHByT(r);
+      if (byT[Number(t)]) return byT[Number(t)];
+      var H = r && r.H;
+      if (H) {
+        if (best == null || !(this.mfPts || []).length) return H;   // 单画面：就这一份
+        if (this._HMatchesFrame(H, Number(t))) return H;
+      }
+      return null;
+    },
+    /** 某一帧的画面原始尺寸（像素），用于把叠线的 viewBox 对齐到那一张图 */
+    _frameSizeFor: function (frame) {
+      if (frame && frame.w && frame.h) return [frame.w, frame.h];
+      return [this.markSize.w || 960, this.markSize.h || 540];
+    },
+    /** 预览/解算回来之后刷新自检叠加层。
+     *
+     *  ⚠️ 每个画面各算各的：左画面用左帧自己的 H、右画面用右帧自己的 H。
+     *  以前这里只算一份、两个 `<svg>` 都渲染它 —— 于是"一个机位的线画到另一个机位上"，
+     *  两边的红线都对不上画面里的白线（用户实测反馈："红框明显不对"）。 */
     refreshOverlay: function () {
       var r = this.mfResult || this.courtResult;
-      var H = r && r.H;
       // 「点吸附精修」被采纳时，存下来的标定用的是**吸附后的点**。
       // 所以画面上必须也把吸附后的位置画出来（空心黄圈），
       // 否则用户看到的点和他实际存下来的标定不一致 —— 会以为工具偷偷改了位置。
@@ -1340,20 +1506,59 @@ window.PAGES['upload'] = {
         });
       }
       this.snapPts = snapPts || [];
-      if (!this.showCourtOverlay || !H) { this.overlayLines = []; return; }
-      var t = null, frame = null, i;
-      if (this.mfFrames && this.mfFrames.length) {
-        t = this.mfResult && this.mfResult.best_frame_t;
-        frame = this.mfCurrent;
-        if (t != null) {
-          for (i = 0; i < this.mfFrames.length; i++) {
-            if (Math.abs(this.mfFrames[i].t - t) < 1e-6) { frame = this.mfFrames[i]; }
+
+      // 清空（含"关掉自检开关"、"点了新点还没算出来"）：绝不能留着上一轮的线
+      this.overlayLines = [];
+      this.overlayLinesLeft = [];
+      this.overlayLinesRight = [];
+      this.overlayW = 0; this.overlayH = 0;
+      this.overlayWLeft = 0; this.overlayHLeft = 0;
+      this.overlayWRight = 0; this.overlayHRight = 0;
+      if (!this.showCourtOverlay || !r) return;
+
+      // 1) 左画面 / 单画面（以前的路径原样保留：球场的点、拖拽、自动叠线都靠它）
+      var tL = this.mfCurrent ? this.mfCurrent.t : null;
+      var HL = this._HForFrame(r, tL);
+      if (HL) {
+        var sL = this._frameSizeFor(this.mfCurrent);
+        this.overlayLinesLeft = this._overlayLinesFor(HL, sL[0], sL[1]);
+        this.overlayWLeft = sL[0];
+        this.overlayHLeft = sL[1];
+      }
+
+      // 2) 右画面：只有它**确实是另一帧**时才单独算
+      //    （同一帧时不重复算 —— 两个画面本来就画同一份线，那也是对的）
+      if (this.mfDualSplit && this.mfCurrentRight) {
+        var tR = this.mfCurrentRight.t;
+        if (Number(tR) !== Number(tL)) {
+          var HR = this._HForFrame(r, tR);
+          if (HR) {
+            var sR = this._frameSizeFor(this.mfCurrentRight);
+            this.overlayLinesRight = this._overlayLinesFor(HR, sR[0], sR[1]);
+            this.overlayWRight = sR[0];
+            this.overlayHRight = sR[1];
           }
         }
       }
-      var W = frame ? frame.w : this.markSize.w;
-      var Hh = frame ? frame.h : this.markSize.h;
-      this._buildOverlay(H, W, Hh);
+
+      // 3) 画面上真正渲染的那一份 = **这一帧的**（模板共用一套渲染代码）
+      var t = this.mfActive === 1 ? this.mfCurrentRight : this.mfCurrent;
+      var H = this._HForFrame(r, t ? t.t : null);
+      if (H) {
+        var s = this._frameSizeFor(t);
+        this.overlayLines = this._overlayLinesFor(H, s[0], s[1]);
+        this.overlayW = s[0];
+        this.overlayH = s[1];
+      } else if (!this.mfDualSplit) {
+        // 单画面 + 后端只回了一份 H（老路径）：照旧用它，行为不变
+        var H0 = r.H;
+        if (H0) {
+          var s0 = this._frameSizeFor(this.mfCurrent);
+          this.overlayLines = this._overlayLinesFor(H0, s0[0], s0[1]);
+          this.overlayW = s0[0];
+          this.overlayH = s0[1];
+        }
+      }
     },
     toggleCourtOverlay: function () {
       this.showCourtOverlay = !this.showCourtOverlay;
@@ -1392,7 +1597,10 @@ window.PAGES['upload'] = {
       this.mfPts = [];
       this.mfTarget = '';
       this.mfResult = null;
+      // 换了两帧 → 上一轮的叠线（左右各一份）一律作废，否则新画面上会留着旧线
       this.overlayLines = [];
+      this.overlayLinesLeft = [];
+      this.overlayLinesRight = [];
       var jobs = [[t1, 0], [t2, 1]];
       jobs.forEach(function (it) {
         var t = it[0], slot = it[1];
@@ -1618,6 +1826,8 @@ window.PAGES['upload'] = {
     onMarkClosed: function () {
       this.mfVersion++;
       this.overlayLines = [];
+      this.overlayLinesLeft = [];    // 左右各一份，关窗时都要清（不然重开会看到上一轮的线）
+      this.overlayLinesRight = [];
       this.hoverPt = null;
       this.mfDrag = null;
     },
@@ -2273,8 +2483,21 @@ window.PAGES['upload'] = {
     // 战术图是空的，完全对不上账（实测踩到：AI 自己标的点 ratio 只有 0.32）。
     '    <el-alert v-if="markKind===\'court\' && mfResult && mfResult.calibration_fit" :closable="false" show-icon style="margin-bottom:6px"',
     '      :type="fitRatio >= 1.25 ? \'success\' : \'warning\'"',
-    '      :title="\'吻合度读数：\' + (mfResult.calibration_fit.ratio != null ? mfResult.calibration_fit.ratio : \'—\') + \'（门槛 1.25）\' + (fitRatio >= 1.25 ? \' —— 这份标定会被分析端接受，战术图/热图能出\' : \' —— 太低，分析端会拒收：战术图、热图、2/3 分区分都不会生成（只判进球）\')"',
+    // 标题里必须写清"这是**最差那一段**的读数"：分时段标定（两个机位各一份 H）
+    // 时只显示一个数字，用户会以为整份都差 —— 实测就卡在这（"那条 0.17 是怎么来的"）。
+    '      :title="(fitIsWorstOfSegments ? \'吻合度读数（分时段，取最差的一段）：\' : \'吻合度读数：\') + (mfResult.calibration_fit.ratio != null ? mfResult.calibration_fit.ratio : \'—\') + \'（门槛 1.25）\' + (fitRatio >= 1.25 ? \' —— 这份标定会被分析端接受，战术图/热图能出\' : \' —— 太低，分析端会拒收：战术图、热图、2/3 分区分都不会生成（只判进球）\')"',
     '      description="低于 1.25 时，核对叠线并调整标点。" />',
+    // 分时段标定：**逐段**把吻合度摆出来。
+    // 为什么必须有（用户实测反馈）：每一段各解一份 H，只报一个"最差 0.17"看不出
+    // "是整份都差，还是只有那一段差" —— 于是要么以为工具坏了、要么白重标一遍。
+    '    <div v-if="markKind===\'court\' && fitSegRows.length" class="row" style="flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:6px">',
+    '      <span class="hint">逐段读数：</span>',
+    '      <el-tag v-for="(s,i) in fitSegRows" :key="\'fs\'+i" size="small" effect="plain"',
+    '        :type="s.ok ? \'success\' : \'danger\'">',
+    '        {{ s.when }}：吻合度 {{ s.ratio != null ? s.ratio : \'—\' }}{{ s.ok ? \' ✓\' : \' ✗\' }}（{{ s.n }} 点）',
+    '      </el-tag>',
+    '      <copy-note label="说明">这一段视频里镜头/机位切过，所以**每一段各解一份标定**（两个机位没有共同坐标系，硬合成一份必然互相矛盾）。上面的总读数取的是**最差那一段** —— 只要有一段不过门槛，那段时间的位置结论（热区/战术图）就不可信，但其它段是好的、不用重标整份。</copy-note>',
+    '    </div>',
     // 「点吸附精修」的结果：采纳了没有（+ 后端给的原因）。
     // 为什么必须显式区分"采纳/没采纳"：护栏拒绝时点集**根本没动**，
     // 若只显示一个"已精修"的绿条，用户会以为点被改过（实测这机位就会被拒）。
@@ -2542,8 +2765,10 @@ window.PAGES['upload'] = {
     '                    stroke-dasharray="4 3" />',
     '          </template>',
     // 标定自检：把这份 H 算出来的球场线画回画面（对不上就是对不上，一眼可见）
+    // ⚠️ 用的是**左画面自己那一帧的 H**（overlayLinesLeft）—— 右画面有它自己的一份，
+    // 见下面右画面的模板。两个画面共用一个 overlayLines 会把一个机位的线画到另一个上。
     '          <template v-if="showCourtOverlay">',
-    '            <polyline v-for="(ln,li) in overlayLines" :key="\'ov\'+li"',
+    '            <polyline v-for="(ln,li) in overlayLinesLeft" :key="\'ov\'+li"',
     '              :points="ln.map(function(q){return q[0].toFixed(0)+\',\'+q[1].toFixed(0)}).join(\' \')"',
     '              fill="none" stroke="#f5222d" :stroke-width="Math.max(2, frameW*0.0035)"',
     '              stroke-dasharray="10 6" opacity="0.95" />',
@@ -2561,32 +2786,34 @@ window.PAGES['upload'] = {
     '           @mousedown="onMarkDown" @mouseup="onMarkUp">',
     '        <img v-if="mfCurrentRight" :src="mfCurrentRight.image" style="width:100%;height:auto;display:block;border-radius:var(--r-sm)" />',
     '        <div v-if="mfDualSplit" class="mf-badge">右画面{{ mfActive===1 ? \'（正在点这里）\' : \'\' }}</div>',
-    '        <svg v-if="frameW && frameH" :viewBox="\'0 0 \' + frameW + \' \' + frameH"',
+    '        <svg v-if="frameWRight && frameHRight" :viewBox="\'0 0 \' + frameWRight + \' \' + frameHRight"',
     '             preserveAspectRatio="none"',
     '             style="position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none">',
     '          <template v-for="(p,i) in mfPtsRight" :key="\'R\'+i">',
-    '            <circle :cx="p.x * frameW" :cy="p.y * frameH" :r="Math.max(10, frameW*0.012)"',
-    '                    fill="rgba(34,197,94,.35)" stroke="#22c55e" :stroke-width="Math.max(2, frameW*0.003)" />',
-    '            <text :x="p.x * frameW + Math.max(12, frameW*0.014)" :y="p.y * frameH"',
-    '                  fill="#22c55e" :font-size="Math.max(16, frameW*0.022)"',
+    '            <circle :cx="p.x * frameWRight" :cy="p.y * frameHRight" :r="Math.max(10, frameWRight*0.012)"',
+    '                    fill="rgba(34,197,94,.35)" stroke="#22c55e" :stroke-width="Math.max(2, frameWRight*0.003)" />',
+    '            <text :x="p.x * frameWRight + Math.max(12, frameWRight*0.014)" :y="p.y * frameHRight"',
+    '                  fill="#22c55e" :font-size="Math.max(16, frameWRight*0.022)"',
     '                  style="paint-order:stroke;stroke:#000;stroke-width:3px">{{ i + 1 }}. {{ p.label }}</text>',
     '          </template>',
     '          <template v-for="(p,i) in snapPtsRight" :key="\'SR\'+i">',
-    '            <circle :cx="p.x * frameW" :cy="p.y * frameH" :r="Math.max(11, frameW*0.013)"',
-    '                    fill="none" stroke="#f59e0b" :stroke-width="Math.max(2, frameW*0.0035)"',
+    '            <circle :cx="p.x * frameWRight" :cy="p.y * frameHRight" :r="Math.max(11, frameWRight*0.013)"',
+    '                    fill="none" stroke="#f59e0b" :stroke-width="Math.max(2, frameWRight*0.0035)"',
     '                    stroke-dasharray="4 3" />',
     '          </template>',
     '          <template v-for="(p,i) in miniPtsRight" :key="\'MR\'+i">',
-    '            <circle :cx="p.x * frameW" :cy="p.y * frameH" :r="Math.max(11, frameW*0.013)"',
-    '                    fill="rgba(34,197,94,.35)" stroke="#22c55e" :stroke-width="Math.max(2, frameW*0.0035)" />',
-    '            <text :x="p.x * frameW + Math.max(13, frameW*0.015)" :y="p.y * frameH"',
-    '                  fill="#22c55e" :font-size="Math.max(18, frameW*0.024)"',
+    '            <circle :cx="p.x * frameWRight" :cy="p.y * frameHRight" :r="Math.max(11, frameWRight*0.013)"',
+    '                    fill="rgba(34,197,94,.35)" stroke="#22c55e" :stroke-width="Math.max(2, frameWRight*0.0035)" />',
+    '            <text :x="p.x * frameWRight + Math.max(13, frameWRight*0.015)" :y="p.y * frameHRight"',
+    '                  fill="#22c55e" :font-size="Math.max(18, frameWRight*0.024)"',
     '                  style="paint-order:stroke;stroke:#000;stroke-width:3px">{{ p.seq }}</text>',
     '          </template>',
+    // ⚠️ 右画面用的是**它自己那一帧的 H**（overlayLinesRight）。以前这里渲染的是
+    // 左画面的 overlayLines —— 两个机位的球场线互相串，两边都压不到白线上。
     '          <template v-if="showCourtOverlay">',
-    '            <polyline v-for="(ln,li) in overlayLines" :key="\'ovr\'+li"',
+    '            <polyline v-for="(ln,li) in overlayLinesRight" :key="\'ovr\'+li"',
     '              :points="ln.map(function(q){return q[0].toFixed(0)+\',\'+q[1].toFixed(0)}).join(\' \')"',
-    '              fill="none" stroke="#f5222d" :stroke-width="Math.max(2, frameW*0.0035)"',
+    '              fill="none" stroke="#f5222d" :stroke-width="Math.max(2, frameWRight*0.0035)"',
     '              stroke-dasharray="10 6" opacity="0.95" />',
     '          </template>',
     '        </svg>',

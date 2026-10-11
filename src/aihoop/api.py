@@ -1980,6 +1980,112 @@ async def get_scoreboard_events(video_path: str) -> Any:
             "start": d.get("start")}
 
 
+def _applies_to_times(vp: Path, t_hint) -> Optional[list]:
+    """这份标定**只在这几个时刻**成立 —— 用已保存的分时段标定查出来。
+
+    为什么必须查（用户实测反馈："那条 0.17 是怎么来的"）：
+        `court_fit_score` 默认拿**整段视频**的 4 个采样时刻去量吻合度
+        （5% / 30% / 55% / 80%）。而分时段标定里**每一段各有一份 H**，
+        拿"这一段"的 H 去量别的镜头那一帧的白线，必然量出"基本不相关"
+        （实测就是那条 0.17）—— 那个数字既不代表整份标定的质量，
+        也不是用户点错了，纯粹是**拿错镜头去量**。
+        所以：先问一句"这份 H 属于哪个时段"，只在该时段里量。
+
+    返回 None = 没查到（就按原来的整段采样量）。
+    """
+    if t_hint is None:
+        return None
+    try:
+        from .multical import MultiCal
+        p = _calibration_path_for(str(vp))
+        if not p.exists():
+            return None
+        mc = MultiCal.from_dict(json.loads(p.read_text(encoding="utf-8")) or {})
+        s = mc.cal_at(float(t_hint))
+        if s is None:
+            return None
+        a, b = float(s.t_start), float(s.t_end)
+        if not (b > a):
+            return None
+        # 在时段内均匀取 3 个时刻（避开两端各 20%，别量到切镜那一帧）
+        span = b - a
+        return [a + span * f for f in (0.2, 0.5, 0.8)]
+    except Exception:                                            # noqa: BLE001
+        return None
+
+
+def _fit_with_segments(fit: dict, mc) -> dict:
+    """给多机位（分时段）的吻合度读数**逐段**附上明细。
+
+    为什么要逐段（用户实测反馈："那条 0.17 是怎么来的"）：
+        分时段标定里**每一段各解一份 H**，`calibration_fit` 给的是**最差那一段**的读数
+        （取 max 会把坏段盖住，所以故意取 min）。但界面只显示一个数字 0.17，
+        用户没法知道"是整份都差，还是只有那一段差、另一段其实很好" —— 于是
+        要么以为工具坏了，要么把整份标定重标一遍。
+        把每段的 `ratio`/`rmse_m`/时间段一起回给前端，界面就能逐段摆出来：
+        "段1（0~55.2s）吻合度 0.17 ❌｜段2（55.2~240.1s）吻合度 0.94 ❌"。
+    顶层 `ratio` 的含义不变（= 最差那一段），只是现在有明细可查。
+    """
+    out = dict(fit or {})
+    try:
+        segs = [dict(s) for s in ((mc.summary() or {}).get("segments") or [])]
+    except Exception:                                            # noqa: BLE001
+        segs = []
+    if segs:
+        out["by_segment"] = segs
+    return out
+
+
+def _segments_h(mc) -> list:
+    """分时段标定里**每一段自己的 H**（前端按帧的 t 认领，各画各的叠线）。
+
+    段对象是 `multical.Segment`（t_start/t_end/H），H 的方向和顶层那份一样：
+    像素 → 球场米。
+    """
+    out = []
+    for s in (getattr(mc, "segments", None) or []):
+        H = getattr(s, "H", None)
+        if H is None:
+            continue
+        try:
+            out.append({"t_start": round(float(getattr(s, "t_start", 0.0)), 2),
+                        "t_end": round(float(getattr(s, "t_end", 0.0)), 2),
+                        "names": list(getattr(s, "names", None) or []),
+                        "n_points": int(getattr(s, "n_points", 0) or 0),
+                        "H": [[float(v) for v in row] for row in H]})
+        except Exception:                                        # noqa: BLE001
+            continue
+    return out
+
+
+def _per_frame_fit_payload(per_frame_fit: list) -> list:
+    """逐帧拟合结果：**把每帧自己的 H 也带上**（H 不可用时为 None）。
+
+    为什么必须带（前端实测踩到）：界面上左右两个画面是**两个机位**，各有一份 H。
+    但接口只回一份"顶层 H = 选中的那一幅"，前端把这一份画到了**两个**画面上 ——
+    于是其中一个画面的红叠线整体偏 20m，另一个才对。用户看到的"红框明显不对"
+    就是它。带上每帧的 H，前端才能"各画各的"。
+
+    为什么不带 `src_px`/`dst_m`（原来是 `f.items() - H`）：那两个数组是纯诊断用的
+    原始像素（几十个点），前端画线只要 H。带上它们只会让响应变大。
+    """
+    out = []
+    for f in (per_frame_fit or []):
+        item = {"t": f.get("t"), "n": f.get("n"), "ok": f.get("ok"),
+                "rmse_m": f.get("rmse_m"), "note": f.get("note")}
+        Hf = f.get("H")
+        if Hf is not None and f.get("ok"):
+            try:
+                item["H"] = [[float(v) for v in row] for row in Hf]
+            except Exception:                                    # noqa: BLE001
+                item["H"] = None
+        else:
+            # 这一帧自己没能标定（点数不够 / 不自洽）→ 明说，别让前端去猜
+            item["H"] = None
+        out.append(item)
+    return out
+
+
 def _pick_calibration_homography(Hm, rmse, src, dst, tags, per_frame_fit,
                                  merged_inliers=None) -> dict:
     """在多画面标定里挑**用哪一份单应矩阵**。
@@ -2258,8 +2364,12 @@ def _diagnose_keypoints(src, dst, tags, label_of=None) -> dict:
     return {"enough": True, "rows": rows, "worst": worst, "note": note}
 
 
-def _calibration_quality(vp: Path, cal) -> dict:
+def _calibration_quality(vp: Path, cal, t_hint=None) -> dict:
     """标定的两项客观体检（保存前 + 分析时都用同一套判据）。
+
+    `t_hint`：这份 H 属于哪一帧（秒）。分时段标定时**只在该时段里量吻合度** ——
+    拿这一段的 H 去量别的镜头的白线必然"基本不相关"（实测那条 0.17 就是这么来的：
+    4 个采样时刻横跨两个镜头，其中 3 个是别的机位）。
 
     1. **退化检测**：点几乎共线 / 有重合点。这时重投影误差必然是 0.00m 左右，
        所以"误差很小"完全不能证明标定可用 —— 实测一份 4 点标定误差 1.45m、
@@ -2304,7 +2414,14 @@ def _calibration_quality(vp: Path, cal) -> dict:
     fit = {}
     try:
         from .calibcheck import court_fit_score
-        fit = court_fit_score(str(vp), cal) or {}
+        # 只在该 H 成立的那段时间里量（分时段标定：拿这一段的 H 去量别的镜头
+        # 那一帧的白线，必然"基本不相关" —— 那个 ratio 毫无意义）
+        _scope = _applies_to_times(vp, t_hint)
+        fit = court_fit_score(str(vp), cal, times=_scope) or {}
+        if t_hint is not None:
+            fit = dict(fit)
+            fit["measured_at_s"] = t_hint
+            fit["scoped_to_segment"] = bool(_scope)
     except Exception as e:  # noqa: BLE001  量不出来不该让标定存不下去
         fit = {"ok": None, "ratio": None,
                "note": f"吻合度没量成（{type(e).__name__}: {e}）"}
@@ -3002,6 +3119,10 @@ async def post_calibrate_multi(req: MultiCalibRequest) -> Any:
                     "rmse_m": round(max(s.rmse_m for s in mc.segments), 3),
                     "n_segments": len(mc.segments),
                     "segments": mc.summary()["segments"],
+                    # 每个镜头**自己的那一份 H**：前端要拿它把球场线各画在各画面上
+                    # （顶层没有 H —— 两个机位本来就没有共同坐标系，
+                    #  前端以前因此要么不画、要么把上一次的旧线留着）。
+                    "segments_H": _segments_h(mc),
                     "cuts": [round(float(c), 2) for c in (cuts or [])],
                     "note": "；".join(got.get("notes") or [])
                             + (("；" + hoop_note) if hoop_note else ""),
@@ -3009,12 +3130,13 @@ async def post_calibrate_multi(req: MultiCalibRequest) -> Any:
                     # 界面据此解释"我明明点了它，怎么没算"。
                     "hoop_excluded": hoop_excluded,
                     "saved": rev_out is not None, "revision": rev_out,
-                    "calibration_fit": dict(
-                        # ⚠️ 取**最差**那一段的读数，**不能取 max**：
-                        # 用户实测两段是 ratio 0.34 / 3.12，取 max 报 3.12
-                        # 就把"半个视频坐标全错"这件事盖住了（我第一版就是这么写的）。
-                        worst_readings(mc),
-                        weak_segments=weak_segments(mc)),
+                    "calibration_fit": _fit_with_segments(
+                        dict(
+                            # ⚠️ 取**最差**那一段的读数，**不能取 max**：
+                            # 用户实测两段是 ratio 0.34 / 3.12，取 max 报 3.12
+                            # 就把"半个视频坐标全错"这件事盖住了（我第一版就是这么写的）。
+                            worst_readings(mc),
+                            weak_segments=weak_segments(mc)), mc),
                     # 任一段弱就算未校验 —— 半份标定不可信时，位置结论整体不可信
                     "position_unverified": bool(weak_segments(mc)),
                 }
@@ -3073,55 +3195,81 @@ async def post_calibrate_multi(req: MultiCalibRequest) -> Any:
     warped_by_key: dict = {}   # (frame_id, 点名) → 补偿到参考帧后的像素点
     if getattr(req, "compensate", True) and len({t["t"] for t in tags}) > 1:
         # ---- 镜头位移补偿：只合并同一镜头内的点 ----
+        #
+        # ⚠️ 先花几百毫秒问一句"这几个时刻是不是同一个镜头"，**不同镜头就直接不补偿**。
+        # 为什么必须有这道闸（实测踩到）：用户把两帧取在 t=13.5s / t=117.97s（同一台
+        # 机位摇了 100 秒，中间还夹着切镜），`build_segments` 会去链式估计这两帧之间
+        # 的**每一帧**（2600 帧）—— 实测 **41 秒**，远超浏览器 30 秒的等待上限，
+        # 于是用户看到的是"解算失败：后端算太久被浏览器中断了"，而且这条路最后还是
+        # 会判"不可信、不合并"（白算）。跨镜头的两帧本来就没有共同坐标系，
+        # 硬链过去没有意义：直接跳过补偿，由下面的 per-shot 分支按镜头各解一份。
+        # `_split_marks_by_shot` 只采样少数帧做 ORB，约 0.3~3s，比全链式便宜一个数量级。
+        _skip_comp_reason = ""
         try:
-            import numpy as _np
-            from .frame_motion import build_segments, warp_point
-            times = sorted({t["t"] for t in tags})
-            seg = build_segments(str(vp), times)
-            # 每个片段里有多少个点
-            best = None
-            for gi, g in enumerate(seg["segments"]):
-                sel_idx = [i for i, t_ in enumerate(tags) if t_["t"] in g["times"]]
-                info = {"idx": gi, "ref_t": g["ref_t"],
-                        "times": [round(x, 2) for x in g["times"]],
-                        "n": len(sel_idx)}
-                seg_info.append(info)
-                if len(sel_idx) >= 4 and (best is None or
-                                          len(sel_idx) > best[1]):
-                    best = (gi, len(sel_idx), g, sel_idx)
-            if best is not None:
-                gi, _n, g, sel_idx = best
-                src2, dst2, tags2 = [], [], []
-                for i in sel_idx:
-                    Hmap = _np.array(g["to_ref"][float(tags[i]["t"])],
-                                     dtype=_np.float64)
-                    wx, wy = warp_point(Hmap, src[i][0], src[i][1])
-                    src2.append([wx, wy])
-                    dst2.append(dst[i])
-                    tags2.append({**tags[i], "warped_to": g["ref_t"]})
-                # 其余片段的点只能丢 —— 不同镜头没有统一坐标系
-                kept_t = {tags[i]["t"] for i in sel_idx}
-                dropped = sorted({t["t"] for t in tags if t["t"] not in kept_t})
-                src, dst, tags = src2, dst2, tags2
-                for info in seg_info:
-                    info["used"] = (info["idx"] == gi)
-                comp_ref_t = float(g["ref_t"])
-                for _i2, _tg2 in enumerate(tags2):
-                    if _tg2.get("warped_to") is not None:
-                        warped_by_key[(_tg2.get("frame_id"), _tg2["name"])] = list(src2[_i2])
-                comp_note = ("已按镜头位移补偿：用第 %d 段（参考帧 t=%.2fs，%d 个点）"
-                             % (gi, g["ref_t"], len(src)))
-                if dropped:
-                    comp_note += ("；其余画面（t=%s）与它不在同一镜头，未参与解算"
-                                  % "、".join("%.1f" % x for x in dropped))
-            else:
-                comp_note = "各画面都没有凑够 4 个点，无法做镜头位移补偿"
-        except Exception as e:  # noqa: BLE001
-            # 记下"尝试过、失败了"，并把原因原样写进说明 —— 这条路径与"用户没启用补偿"
-            # 是两件事，落盘必须能分开（用户 2026-10-05 的验收第 3 条）。
-            comp_failed = True
-            comp_fail_reason = f"{type(e).__name__}: {e}"
-            comp_note = f"镜头位移补偿失败（{comp_fail_reason}），按原样解算"
+            _times_all = sorted({t["t"] for t in tags})
+            _groups, _cuts = _split_marks_by_shot(str(vp), _times_all)
+            if len(_groups) > 1:
+                _skip_comp_reason = ("这几个时刻跨了 %d 个镜头（切镜 %s）—— "
+                                     "跨镜头没有统一坐标系，跳过镜头位移补偿"
+                                     % (len(_groups),
+                                        "、".join("%.1fs" % c for c in (_cuts or []))))
+        except Exception as _e:                    # noqa: BLE001  探测失败不影响原逻辑
+            _skip_comp_reason = ""
+        if _skip_comp_reason:
+            comp_note = "已跳过镜头位移补偿：" + _skip_comp_reason
+            # 明确记成"没启用"：界面据此说的是"没用补偿"，而不是"补偿失败"
+            comp_ref_t = None
+            seg_info = []
+        else:
+            try:
+                import numpy as _np
+                from .frame_motion import build_segments, warp_point
+                times = sorted({t["t"] for t in tags})
+                seg = build_segments(str(vp), times)
+                # 每个片段里有多少个点
+                best = None
+                for gi, g in enumerate(seg["segments"]):
+                    sel_idx = [i for i, t_ in enumerate(tags) if t_["t"] in g["times"]]
+                    info = {"idx": gi, "ref_t": g["ref_t"],
+                            "times": [round(x, 2) for x in g["times"]],
+                            "n": len(sel_idx)}
+                    seg_info.append(info)
+                    if len(sel_idx) >= 4 and (best is None or
+                                              len(sel_idx) > best[1]):
+                        best = (gi, len(sel_idx), g, sel_idx)
+                if best is not None:
+                    gi, _n, g, sel_idx = best
+                    src2, dst2, tags2 = [], [], []
+                    for i in sel_idx:
+                        Hmap = _np.array(g["to_ref"][float(tags[i]["t"])],
+                                         dtype=_np.float64)
+                        wx, wy = warp_point(Hmap, src[i][0], src[i][1])
+                        src2.append([wx, wy])
+                        dst2.append(dst[i])
+                        tags2.append({**tags[i], "warped_to": g["ref_t"]})
+                    # 其余片段的点只能丢 —— 不同镜头没有统一坐标系
+                    kept_t = {tags[i]["t"] for i in sel_idx}
+                    dropped = sorted({t["t"] for t in tags if t["t"] not in kept_t})
+                    src, dst, tags = src2, dst2, tags2
+                    for info in seg_info:
+                        info["used"] = (info["idx"] == gi)
+                    comp_ref_t = float(g["ref_t"])
+                    for _i2, _tg2 in enumerate(tags2):
+                        if _tg2.get("warped_to") is not None:
+                            warped_by_key[(_tg2.get("frame_id"), _tg2["name"])] = list(src2[_i2])
+                    comp_note = ("已按镜头位移补偿：用第 %d 段（参考帧 t=%.2fs，%d 个点）"
+                                 % (gi, g["ref_t"], len(src)))
+                    if dropped:
+                        comp_note += ("；其余画面（t=%s）与它不在同一镜头，未参与解算"
+                                      % "、".join("%.1f" % x for x in dropped))
+                else:
+                    comp_note = "各画面都没有凑够 4 个点，无法做镜头位移补偿"
+            except Exception as e:  # noqa: BLE001
+                # 记下"尝试过、失败了"，并把原因原样写进说明 —— 这条路径与"用户没启用补偿"
+                # 是两件事，落盘必须能分开（用户 2026-10-05 的验收第 3 条）。
+                comp_failed = True
+                comp_fail_reason = f"{type(e).__name__}: {e}"
+                comp_note = f"镜头位移补偿失败（{comp_fail_reason}），按原样解算"
 
     # 合并规则（用户 2026-10-05 收紧）：
     #   **只有**两帧都做过镜头位移补偿（warped_to 存在）、**且这两次测量映射到同一参考帧后
@@ -3469,7 +3617,9 @@ async def post_calibrate_multi(req: MultiCalibRequest) -> Any:
                        src_px=pick_src, dst_m=pick_dst, H=Hm,
                        reproj_error_m=round(rmse, 3),
                        frame="full", for_video=str(vp), frame_size=[W, H])
-    qual = _calibration_quality(vp, cand)
+    qual = _calibration_quality(vp, cand,
+                                t_hint=(pick.get("t") if pick.get("t") is not None
+                                        else comp_ref_t))
     deg, hoop_check = qual["metrics"], qual["hoop_check"]
     hoop_err2 = None
     if hoop_check.get("checked"):
@@ -3672,15 +3822,16 @@ async def post_calibrate_multi(req: MultiCalibRequest) -> Any:
                 # 界面靠它们如实说明"哪个镜头那段不可信"。漏了它们，
                 # 一份标定里就算有一半是错的，界面也只能显示"可用"
                 # —— 用户"战术图不对"就是这么来的。
-                "calibration_fit": dict(worst_readings(_mc2),
-                                        weak_segments=weak_segments(_mc2)),
+                "calibration_fit": _fit_with_segments(
+                    dict(worst_readings(_mc2),
+                         weak_segments=weak_segments(_mc2)), _mc2),
                 "position_unverified": bool(weak_segments(_mc2)),
                 # 被跳过的篮筐点数（与 per-shot 路径一致）
                 "hoop_excluded": hoop_excluded,
-                "per_frame_fit": [{"t": f_.get("t"), "n": f_.get("n"),
-                                   "ok": f_.get("ok"),
-                                   "rmse_m": f_.get("rmse_m")}
-                                  for f_ in per_frame_fit],
+                # 每幅画面各一份 H：多机位这条路顶层也没有 H，
+                # 前端要拿每帧自己的 H 把叠线画在**对应**的画面上（各画各的）。
+                "segments_H": _segments_h(_mc2),
+                "per_frame_fit": _per_frame_fit_payload(per_frame_fit),
                 "note": _multical_note(_mc2, "这 %d 幅画面**混在一起解不了**"
                                             "（跨镜头没有统一坐标系，"
                                             "合并解必然互相矛盾 —— 这是拍摄方式决定的，"
@@ -3709,8 +3860,7 @@ async def post_calibrate_multi(req: MultiCalibRequest) -> Any:
                 "degeneracy": deg, "hoop_check": hoop_check,
                 "hoop_error_m": (round(hoop_err2, 2) if hoop_err2 is not None else None),
                 "position_unverified": False,
-                "per_frame_fit": [{k: v for k, v in f_.items() if k != "H"}
-                                  for f_ in per_frame_fit],
+                "per_frame_fit": _per_frame_fit_payload(per_frame_fit),
                 # 软失败（退化 / 篮筐校验不过）这条出口也要带上这两把键
                 "snap": snap_info, "mini": mini_info}
 
@@ -3897,8 +4047,9 @@ async def post_calibrate_multi(req: MultiCalibRequest) -> Any:
             "H": Hm,
             "best_frame_t": (float(pick.get("t")) if pick.get("t") is not None
                              else None),
-            "per_frame_fit": [{k: v for k, v in f_.items() if k != "H"}
-                              for f_ in per_frame_fit],
+            # ⚠️ 这里带上**每帧自己的 H**（不是只用顶层那份）：左右两个画面是两个
+            # 机位时，顶层 H 只属于其中一幅，前端必须各画各的（否则红叠线有一边偏 20m）。
+            "per_frame_fit": _per_frame_fit_payload(per_frame_fit),
             "compensate_note": comp_note, "segments": seg_info,
             # 整批的补偿状态（逐帧状态见 source_frames[i].warp_status）：
             #   not_enabled = 本次请求没启用补偿
