@@ -601,6 +601,10 @@ async def get_shotchart(job_id: str) -> Any:
 async def get_replay_detections(job_id: str) -> Any:
     """Compact pixel observations for original-video replay overlays."""
     from .replay_overlay import detection_overlay
+    directory = _out_dir(job_id)
+    compact = directory / "detection_overlay.json"
+    if job_id.startswith('example_') and compact.exists():
+        return JSONResponse(json.loads(compact.read_text(encoding='utf-8')), headers={"Cache-Control": "no-store"})
     raw = _out_dir(job_id) / "raw_track.json"
     if not raw.exists():
         return JSONResponse({"available": False, "frames": [],

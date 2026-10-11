@@ -1,0 +1,8 @@
+﻿球员统计表
+player_id,name,jersey,team,points,fgm,fga,fg_pct,tpm,tpa,tp_pct,ftm,fta,ft_pct,efg,ts,reb,ast,stl,blk,tov,pf
+,,,,0,31,34,0.912,12,12,1.0,0,0,0.0,1.088,0.0,0,0,0,0,0,0
+
+球队汇总
+team,points,fgm,fga,fg_pct,tpm,tpa,tp_pct,ftm,fta
+home,0,0,0,0.0,0,0,0.0,0,0
+away,0,0,0,0.0,0,0,0.0,0,0

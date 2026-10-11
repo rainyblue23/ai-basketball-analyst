@@ -24,3 +24,7 @@ data/calibration*.json
 *.mov
 *.avi
 *.mkv
+
+# Published, reviewed demonstration snapshots and playback media
+!/examples/
+!/examples/**

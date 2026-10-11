@@ -1,0 +1,8 @@
+﻿传球 / 失误事件
+t,kind,team,from,to,dist_m,battle_s,x,depth
+
+传球网络（有向：从 -> 到）
+team,from,to,count
+
+球员传球统计
+player_id,name,team,passes,received
