@@ -229,7 +229,100 @@ def calibration_degeneracy(cal, min_src_frac: float = 0.008,
         out["reason"] = ("你选的特征点在球场上也几乎共线（展开面积只有 "
                          "%.2fm²）—— 请选**既不同线、又不同侧**的点。"
                          % out["dst_tri_m2"])
+
+    # ---- 最后一道、也是最直接的一道：把球场四角投回去看它还在不在 ----
+    # 为什么必须加（用户实测踩到）：他这条 960×540 固定机位素材的标定，4 个点里
+    # **3 个都在同一条线 y=-8.2 上**、只铺开近端一小块。最大三角形面积 14.2m²
+    # 高于阈值，所以上面几条全过 —— 而实际解出来的 H **行列式 1.2e-20、
+    # 条件数 3.5e17（等于不可逆）**，把整块球场压成了**一个像素**：
+    #     球场四角 (-7.5,-14)(7.5,-14)(7.5,14)(-7.5,14) → 全都投到 (463,408)
+    # 那 4 个标定点自己却投得很准（误差 0），所以"误差小"完全没暴露它。
+    # 下游于是拿这份标定判"谁在场内" → 694 个观测删掉 688 个。
+    # 判据：球场四角投回画面后必须还是一块**正常四边形**（面积够大、凸、顶点不重合）。
+    if not out["degenerate"]:
+        ok_quad, quad_info = _court_quad_ok(cal, ref_src)
+        out.update(quad_info)
+        if not ok_quad:
+            out["degenerate"] = True
+            out["reason"] = quad_info.get("quad_reason", "")
     return out
+
+
+def _court_quad_ok(cal, ref_src: float) -> tuple[bool, dict]:
+    """把球场四角投回画面，看它是不是一块正常四边形。
+
+    返回 ``(ok, 读数)``。读数写进 degeneracy 报告，界面/报告据此说明白原因。
+    """
+    info = {"quad_area_px2": None, "quad_frac": None, "quad_reason": ""}
+    Hm = getattr(cal, "H", None) or []
+    if not Hm:
+        info["quad_reason"] = "没有解出单应矩阵。"
+        return False, info
+    # 先看数值条件：**近奇异**是"点了 4 个几乎共线的点"最直接的指纹
+    # （实测那份坏标定 det=1.2e-20、cond=3.5e17，四个标定点自己却误差为 0）
+    try:
+        import numpy as _np
+        Hn = _np.asarray(Hm, dtype=_np.float64)
+        if abs(float(_np.linalg.det(Hn))) > 0:
+            Hn = Hn / Hn[2][2] if abs(Hn[2][2]) > 1e-12 else Hn
+            cond = float(_np.linalg.cond(Hn))
+            info["H_cond"] = round(cond, 1)
+            if cond > 1e8:
+                info["quad_reason"] = (
+                    "这份标定在数值上是**奇异**的（条件数 %.1e）—— 你那几个点"
+                    "几乎在同一条线上、或只铺开了球场一小块，解出来的矩阵会把"
+                    "整块球场压成一条线/一个点（虽然每个标定点自己的重投影误差是 0）。"
+                    "请换几个**铺得开、不在同一条线上**的点重标（例如底线两角 + "
+                    "罚球区两角 + 中圈中心）。" % cond)
+                return False, info
+    except Exception:                                            # noqa: BLE001
+        pass
+    inv = invert(Hm)
+    if not inv:
+        info["quad_reason"] = ("单应矩阵不可逆（数值奇异）—— 点位太集中或几乎共线，"
+                               "请换几个铺得开的点重标。")
+        return False, info
+    corners = [(-COURT_WIDTH / 2, -COURT_LENGTH / 2),
+               (COURT_WIDTH / 2, -COURT_LENGTH / 2),
+               (COURT_WIDTH / 2, COURT_LENGTH / 2),
+               (-COURT_WIDTH / 2, COURT_LENGTH / 2)]
+    pts = []
+    for (mx, my) in corners:
+        w = inv[2][0] * mx + inv[2][1] * my + inv[2][2]
+        if abs(w) < 1e-9:
+            info["quad_reason"] = ("这份标定把球场压成了一条线（有一个角投不出画面）—— "
+                                   "点位太集中或几乎共线，请换几个铺得开的点重标。")
+            return False, info
+        pts.append((inv[0][0] * mx + inv[0][1] * my + inv[0][2],
+                    inv[1][0] * mx + inv[1][1] * my + inv[1][2]))
+        pts[-1] = (pts[-1][0] / w, pts[-1][1] / w)
+    # 顶点两两距离：压成一个点时这里会直接暴露
+    mind = min(
+        ((pts[i][0] - pts[j][0]) ** 2 + (pts[i][1] - pts[j][1]) ** 2) ** 0.5
+        for i in range(4) for j in range(i + 1, 4))
+    # 面积（鞋带公式）
+    area = 0.0
+    for i in range(4):
+        x1, y1 = pts[i]
+        x2, y2 = pts[(i + 1) % 4]
+        area += x1 * y2 - x2 * y1
+    area = abs(area) / 2.0
+    info["quad_area_px2"] = round(area, 1)
+    info["quad_frac"] = round(area / max(1.0, ref_src), 4)
+    info["quad_min_vertex_px"] = round(mind, 1)
+    if mind < 8.0:
+        info["quad_reason"] = (
+            "这份标定把球场压成了一个点（四角投到同一处，最近的两个只差 %.0fpx）—— "
+            "多半是你的点**几乎在同一条线上**、或者只铺开了球场很小一块。"
+            "重标时请选铺得开的点（例如底线两角 + 罚球区两角 + 中圈中心）。" % mind)
+        return False, info
+    if area < max(2000.0, 0.02 * ref_src):
+        info["quad_reason"] = (
+            "这份标定把球场压得太小（四角投回画面只占 %.2f%% 的面积）—— "
+            "点位太集中，解出来的坐标在场上会整片错位。请换几个铺得开的点重标。"
+            % (100.0 * (info["quad_frac"] or 0.0)))
+        return False, info
+    return True, info
 
 
 # --------------------------------------------------------------------------
