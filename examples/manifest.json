@@ -8,28 +8,28 @@
     },
     {
       "path": "lillard/events.jsonl",
-      "bytes": 10114,
-      "sha256": "19dedbdb0d7e12b32e10a4bf20c768433f34f799bf0a455caa708e81a8f29d37"
+      "bytes": 10099,
+      "sha256": "70077130d01dbd72cfa7b540f7ef9874aac5621f1d950f99b57ff18760989b15"
     },
     {
       "path": "lillard/game.json",
-      "bytes": 112389,
-      "sha256": "f9466963aefb1ffebbb0dc19d676b565730fc3ef177d29779b440da25b138723"
+      "bytes": 108240,
+      "sha256": "b3c8cc2d8fbd2c5f3129292a0e9785a4ee3cd42642a82ef6193f78a91afa7709"
     },
     {
       "path": "lillard/human_review.json",
-      "bytes": 2935,
-      "sha256": "f249cb244fcccf0e000ac5f9fbc58fc7d7665a089e4f03dc39f982527f0a7e18"
+      "bytes": 2800,
+      "sha256": "5c523a741b314647152bf6a5ef225611295a5c6dca3c51b16d66481c41a66f52"
     },
     {
       "path": "lillard/passes.csv",
-      "bytes": 191,
-      "sha256": "61dd77fd55da78e35f1cdaa2275d592be860aaddce463a7f479c6b5349a7d34a"
+      "bytes": 183,
+      "sha256": "f3822aa3247ac512a33c13c757c5826d0e277415bcae8ceafe85aa2e76022016"
     },
     {
       "path": "lillard/players.json",
-      "bytes": 2310,
-      "sha256": "88ac961b9c43b2aa58f301247c85116ae01aca270fc2f2d6407ec83aad6542e2"
+      "bytes": 2176,
+      "sha256": "82796d97c3e41a1919ca2a2142c3665e8a0b189d942e718e59b9ba423e518edd"
     },
     {
       "path": "lillard/poster.jpg",
@@ -38,48 +38,48 @@
     },
     {
       "path": "lillard/report.json",
-      "bytes": 15387,
-      "sha256": "1ea7a50ebc61560fe14182c61aeaf0bde6c343da5932d2c87b255a92a6adbb43"
+      "bytes": 14559,
+      "sha256": "25eedbb778b63f30159ab92d87216e0fbbafc62411137539f59f193cec49a9d0"
     },
     {
       "path": "lillard/report.md",
-      "bytes": 845,
-      "sha256": "4f37e4d459eecc4fea569a987d9bb8fc8033c94a44d6182132a00262b83b431d"
+      "bytes": 822,
+      "sha256": "49c9bf8471453b20ded3934d21da65d047e065c27a61672915888ab170c050dc"
     },
     {
       "path": "lillard/review_shots.csv",
-      "bytes": 693,
-      "sha256": "105d1740979d9ada7e7a02602796247193c1ae24e54d0c2f717d00f9c7e41c57"
+      "bytes": 677,
+      "sha256": "0256c9a40dbd0b4c936d7b35261a2932145af7748c5f7856d4bd28d45afe1d55"
     },
     {
       "path": "lillard/shotchart.json",
-      "bytes": 309,
-      "sha256": "07594dcbe37c994a630df9758a57926c9c350e99985ad2eed5c441324c489c7e"
+      "bytes": 297,
+      "sha256": "dec92129588a8756322c157c82e0007d582ad33b25f6425dd213399f23fda0fd"
     },
     {
       "path": "lillard/shots.csv",
-      "bytes": 2529,
-      "sha256": "d9461d50668ca74f9dfba80d223f0c2981db774692563198b474f4f192913556"
+      "bytes": 2513,
+      "sha256": "8adb958392f7f5d935c58807bbb26d73aa0bb0fb8a1a484907b44e881cc6dbbd"
     },
     {
       "path": "lillard/spacing.csv",
-      "bytes": 1802,
-      "sha256": "4e3633b7aa6d21f552d00dba4f8fba623c8ee77ca1abac9c68a62582c68d649a"
+      "bytes": 1767,
+      "sha256": "39096442dad0f296751e34ecb230266d0e68e30b4e5ac76181a29377fd5bcd66"
     },
     {
       "path": "lillard/stats.csv",
-      "bytes": 309,
-      "sha256": "14bcdde275f882808d513aafbe6c6a82ce4ae71e952e3736dce5469d68ff3a8b"
+      "bytes": 301,
+      "sha256": "79df8db10bb4a62a8e7f3b674bf2a18a29d3ca85a62c2380bde389a4ea647156"
     },
     {
       "path": "lillard/tactics.json",
-      "bytes": 14840,
-      "sha256": "df61b4fc41cd54ec61b069b77465141f6ceb995b77c745d52ebcfbe84e7a1a95"
+      "bytes": 14125,
+      "sha256": "dee8c3717dcbd35a1164cbe1fc3e07da10b9957ead27d7589d65f59184324305"
     },
     {
       "path": "lillard/tactics_frames.jsonl",
-      "bytes": 67372,
-      "sha256": "77dd2681ea8178dffd73782685e6d1c4f89228eb723fbaddda22b947f73a3551"
+      "bytes": 67030,
+      "sha256": "10e4d4eb51d4cf0bf674eee5dd043d791974ab1881106ac85e6e87238bb9a921"
     },
     {
       "path": "lillard/video.mp4",
@@ -88,8 +88,8 @@
     },
     {
       "path": "lillard/highlights/index.json",
-      "bytes": 5954,
-      "sha256": "964b3736eaec017beb75e430a1e11a4e5f4d24fc563b23ed7e8d26a165dcbb16"
+      "bytes": 5695,
+      "sha256": "8138f7f60a3ef368455865dbddfc8e3a2b80e61358b69e6c108e43da0b747209"
     },
     {
       "path": "lillard/highlights/review_01.mp4",
@@ -173,28 +173,28 @@
     },
     {
       "path": "harden/events.jsonl",
-      "bytes": 22734,
-      "sha256": "aec78eb28202cceb360674880de55a00015fbadf29e55f64e6c64ec9bdfbf68f"
+      "bytes": 22700,
+      "sha256": "23ec1b4d9768d4ac60b53fb197727d27fc2943f33cf204dace5be7cdf0b47ed6"
     },
     {
       "path": "harden/game.json",
-      "bytes": 252180,
-      "sha256": "2ff1fb4bbfa9748309b96442ba51f17765623c3adae2d5ab8ddeb1b36fbee7f6"
+      "bytes": 242332,
+      "sha256": "0eacb7addc19a5d9432fc70238a40ccc6dc79e2a409b28d74d435ea2d7fa5557"
     },
     {
       "path": "harden/human_review.json",
-      "bytes": 5792,
-      "sha256": "2fafab7d8e5f53120c70de4b9504e83db8bcefaba0dc59281257e60539988d14"
+      "bytes": 5511,
+      "sha256": "4200cd14ca09f3d2f45a1ee667ce3b6214629b760d5b4435dbc778ffeee46367"
     },
     {
       "path": "harden/passes.csv",
-      "bytes": 191,
-      "sha256": "61dd77fd55da78e35f1cdaa2275d592be860aaddce463a7f479c6b5349a7d34a"
+      "bytes": 183,
+      "sha256": "f3822aa3247ac512a33c13c757c5826d0e277415bcae8ceafe85aa2e76022016"
     },
     {
       "path": "harden/players.json",
-      "bytes": 4663,
-      "sha256": "267515ec00e48494754aec81557b2273057a8927398111d8073b55ea3852c790"
+      "bytes": 4396,
+      "sha256": "8e80c4444e6346d41b0849cd5158537fe1a7b970bd932f35b3c86a8a71d01a30"
     },
     {
       "path": "harden/poster.jpg",
@@ -203,48 +203,48 @@
     },
     {
       "path": "harden/report.json",
-      "bytes": 30769,
-      "sha256": "556f72f0149ec172716b117067616f06f6718bf1ff25b4e88312aead10f6e5bb"
+      "bytes": 28990,
+      "sha256": "1d819372ad60478d4ba46b4f5d2971982c7e5936ea7b318350fd1892aebbb7e5"
     },
     {
       "path": "harden/report.md",
-      "bytes": 1304,
-      "sha256": "2800fea471a97c19f0ef0cef198ea4fd1326c19ee941ee5a0c3520042165c2fe"
+      "bytes": 1262,
+      "sha256": "ea717f6fbe3614452178be5487451fc6b4d4510026de27f9db321f79b21b547e"
     },
     {
       "path": "harden/review_shots.csv",
-      "bytes": 1247,
-      "sha256": "ec891829e6da6e3627b3a1a3b3cf72ac962006ac4e359fddc9a1de27f7814411"
+      "bytes": 1212,
+      "sha256": "d0c27e170b09f761936c943f6d93c3ef4abd9497b686aafbe954d580680ff3de"
     },
     {
       "path": "harden/shotchart.json",
-      "bytes": 309,
-      "sha256": "07594dcbe37c994a630df9758a57926c9c350e99985ad2eed5c441324c489c7e"
+      "bytes": 297,
+      "sha256": "dec92129588a8756322c157c82e0007d582ad33b25f6425dd213399f23fda0fd"
     },
     {
       "path": "harden/shots.csv",
-      "bytes": 5417,
-      "sha256": "a7209fd2e3c1028efc650a6ec35df8e28028355491c602fd43fdabe2b8fcb395"
+      "bytes": 5382,
+      "sha256": "b31e79088ea429efe1a77bbbdc96f12f8155a691a699166a276ba9197c8784dc"
     },
     {
       "path": "harden/spacing.csv",
-      "bytes": 3436,
-      "sha256": "f9643bc52720747d268a4d9ea0c398f78480965accb932cbe0bc4e77a5d4470d"
+      "bytes": 3368,
+      "sha256": "8b89fb0aa61cf1d277b4f0fef53a346bc5270803d4ba5c893587ff3b36cb40e6"
     },
     {
       "path": "harden/stats.csv",
-      "bytes": 312,
-      "sha256": "2818d0bd77ebfe0953c4a265c3b88d5d08b0f9fbbf28b9aa184bac5cf4b4f5e6"
+      "bytes": 304,
+      "sha256": "f0ad83138a5c7f2e05218fb5681a7459ca12978ce183307c183559806c5c7310"
     },
     {
       "path": "harden/tactics.json",
-      "bytes": 25247,
-      "sha256": "9a1f3fcf120d05a6cf1e147ddefb1ca332a170206692a5b20207180522192baa"
+      "bytes": 23993,
+      "sha256": "d01a889aba963070049aa6ecaac3fa27e4c729c0aab9288c32844ef64c189ec7"
     },
     {
       "path": "harden/tactics_frames.jsonl",
-      "bytes": 124963,
-      "sha256": "299fdf0d18eeed95b4a63d1e53e7660e45e3b463c47722ddbb94addfd17b6170"
+      "bytes": 124306,
+      "sha256": "8b5c14e72a12c5449368859c925e8e4b40a4e5cfab228279e2163e7d65432ccc"
     },
     {
       "path": "harden/video.mp4",
@@ -253,8 +253,8 @@
     },
     {
       "path": "harden/highlights/index.json",
-      "bytes": 13366,
-      "sha256": "c04d4a7701f99fd79d4dd77048ff0713519f0cfd3485ef1e56bd6a79bdb71ed5"
+      "bytes": 12784,
+      "sha256": "2d2d2e7cad903c8f316ab75f626200c5e9dce1964da5ef96558dc6957956bcf4"
     },
     {
       "path": "harden/highlights/review_01.mp4",
