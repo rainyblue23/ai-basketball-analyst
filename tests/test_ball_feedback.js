@@ -1,0 +1,11 @@
+const assert=require('assert'),fs=require('fs'),vm=require('vm');
+const context={window:{COMPONENTS:{}},console};vm.runInNewContext(fs.readFileSync('web/ball-feedback.js','utf8'),context);
+const c=context.window.COMPONENTS['ball-feedback'];
+const x={...c.data(),...c.methods,paint(){},$refs:{canvas:{getBoundingClientRect(){return {left:10,top:20,width:200,height:100}},setPointerCapture(){}}}};
+x.image={};x.down({clientX:50,clientY:40,pointerId:1});x.up({clientX:90,clientY:60});assert.equal(x.boxes.length,1);assert.equal(x.boxes[0].kind,'ball');assert.equal(x.boxes[0].xyxy[0],.2);
+x.boxes=[{kind:'detected',xyxy:[.2,.2,.4,.4]}];x.down({clientX:60,clientY:50,pointerId:1});x.up({clientX:60,clientY:50});assert.equal(x.boxes[0].kind,'decoy');
+x.undo();assert.equal(x.boxes.length,0);
+x.jobId='job';c.watch.jobId.call(x);assert.equal(x.open,false);assert.equal(x.image,null);
+const api=fs.readFileSync('src/aihoop/api.py','utf8');assert(api.includes("and not p.endswith('/ball-feedback')"));
+assert(fs.readFileSync('web/app.js','utf8').includes("app.component('ball-feedback'"));assert(fs.readFileSync('web/pages/overview.js','utf8').includes('<ball-feedback'));
+console.log('Ball feedback: drawing, decoy selection, undo, job reset and wiring passed');

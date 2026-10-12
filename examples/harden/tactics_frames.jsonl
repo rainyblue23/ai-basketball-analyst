@@ -1,0 +1,657 @@
+{"t": 0.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 14, "team_counts": {"home": 12, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 0.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 14, "team_counts": {"home": 12, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 1.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 12, "team_counts": {"home": 10, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 1.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 13, "team_counts": {"home": 11, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 2.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 13, "team_counts": {"home": 11, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 2.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 14, "team_counts": {"home": 12, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 3.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 16, "team_counts": {"home": 13, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 3.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 16, "team_counts": {"home": 12, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 4.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 13, "team_counts": {"home": 10, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 4.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 14, "team_counts": {"home": 12, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 5.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 15, "team_counts": {"home": 13, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 5.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 17, "team_counts": {"home": 15, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 6.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 16, "team_counts": {"home": 14, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 6.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 14, "team_counts": {"home": 13, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 7.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 13, "team_counts": {"home": 13}, "reason": "player_population_exceeded"}}
+{"t": 7.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 11, "team_counts": {"home": 11}, "reason": "player_population_exceeded"}}
+{"t": 8.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 12, "team_counts": {"home": 12}, "reason": "player_population_exceeded"}}
+{"t": 8.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 12, "team_counts": {"home": 12}, "reason": "player_population_exceeded"}}
+{"t": 9.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 7, "team_counts": {"home": 7}, "reason": "player_population_exceeded"}}
+{"t": 9.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 6, "team_counts": {"home": 6}, "reason": "player_population_exceeded"}}
+{"t": 10.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 14, "team_counts": {"home": 14}, "reason": "player_population_exceeded"}}
+{"t": 10.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 17, "team_counts": {"home": 17}, "reason": "player_population_exceeded"}}
+{"t": 11.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"home": 19}, "reason": "player_population_exceeded"}}
+{"t": 11.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"home": 19}, "reason": "player_population_exceeded"}}
+{"t": 12.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 21, "team_counts": {"home": 20, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 12.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 21, "team_counts": {"home": 20, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 13.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 24, "team_counts": {"home": 23, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 13.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 23, "team_counts": {"home": 22, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 14.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"home": 18, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 14.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"home": 18, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 15.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 20, "team_counts": {"home": 19, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 15.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"home": 18, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 16.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 17, "team_counts": {"home": 16, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 16.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 17, "team_counts": {"home": 15, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 17.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 15, "team_counts": {"home": 13, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 17.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 10, "team_counts": {"home": 9, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 18.0, "side": 1, "ball": null, "players": [["T2", "home", 0.461, -11.447], ["T319", "home", 4.827, 0.347]]}
+{"t": 18.5, "side": 1, "ball": null, "players": [["T2", "home", 0.459, -11.458], ["T319", "home", 4.886, 0.525]]}
+{"t": 19.5, "side": 1, "ball": null, "players": [["T891", "away", -2.748, -7.261]]}
+{"t": 20.0, "side": 1, "ball": null, "players": [["T891", "away", -1.063, -8.979]]}
+{"t": 20.5, "side": 1, "ball": null, "players": [["T891", "away", -0.993, -9.287]]}
+{"t": 21.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 14, "team_counts": {"home": 10, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 21.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 20, "team_counts": {"home": 16, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 22.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"home": 16, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 22.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 20, "team_counts": {"home": 17, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 23.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 21, "team_counts": {"home": 18, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 23.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 17, "team_counts": {"home": 14, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 24.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 20, "team_counts": {"home": 17, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 24.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 21, "team_counts": {"home": 18, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 25.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 21, "team_counts": {"home": 17, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 25.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"home": 15, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 26.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 20, "team_counts": {"home": 16, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 26.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"home": 16, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 27.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 21, "team_counts": {"home": 17, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 27.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 21, "team_counts": {"home": 17, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 28.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 18, "team_counts": {"home": 15, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 28.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 13, "team_counts": {"home": 10, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 29.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 18, "team_counts": {"home": 13, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 29.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 23, "team_counts": {"home": 16, "away": 7}, "reason": "player_population_exceeded"}}
+{"t": 30.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"away": 7, "home": 12}, "reason": "player_population_exceeded"}}
+{"t": 30.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 10, "team_counts": {"away": 4, "home": 6}, "reason": "player_population_exceeded"}}
+{"t": 31.0, "side": 1, "ball": null, "players": [["T1170", "away", 0.466, -12.771]]}
+{"t": 31.5, "side": 1, "ball": null, "players": [["T1170", "away", -0.448, -11.98]]}
+{"t": 32.0, "side": 1, "ball": null, "players": [["T1170", "away", -1.356, -11.09], ["T1544", "home", -7.051, -9.179]]}
+{"t": 32.5, "side": 1, "ball": null, "players": [["T1170", "away", -1.41, -11.037], ["T1544", "home", -7.051, -9.179]]}
+{"t": 33.0, "side": 1, "ball": null, "players": [["T1570", "home", -0.689, 4.825], ["T1576", "home", -1.076, -7.505], ["T1580", "home", -7.03, -2.638], ["T1592", "home", 6.461, 0.751], ["T1596", "home", 1.85, -5.506]]}
+{"t": 33.5, "side": 1, "ball": null, "players": [["T1570", "home", -0.04, 0.196], ["T1576", "home", -0.216, -8.605], ["T1580", "home", -7.03, -2.638], ["T1592", "home", 5.145, -2.362], ["T1596", "home", 1.649, -6.876]]}
+{"t": 34.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 12, "team_counts": {"home": 12}, "reason": "player_population_exceeded"}}
+{"t": 34.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 14, "team_counts": {"home": 14}, "reason": "player_population_exceeded"}}
+{"t": 35.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 18, "team_counts": {"home": 17, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 35.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 17, "team_counts": {"home": 17}, "reason": "player_population_exceeded"}}
+{"t": 36.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"home": 19}, "reason": "player_population_exceeded"}}
+{"t": 36.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"home": 19}, "reason": "player_population_exceeded"}}
+{"t": 37.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 18, "team_counts": {"home": 18}, "reason": "player_population_exceeded"}}
+{"t": 37.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"home": 19}, "reason": "player_population_exceeded"}}
+{"t": 38.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"home": 19}, "reason": "player_population_exceeded"}}
+{"t": 38.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 18, "team_counts": {"home": 18}, "reason": "player_population_exceeded"}}
+{"t": 39.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"home": 18, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 39.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 18, "team_counts": {"home": 17, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 40.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 18, "team_counts": {"home": 17, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 40.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"home": 16, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 41.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 18, "team_counts": {"home": 15, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 41.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 8, "team_counts": {"home": 7, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 42.0, "side": 1, "ball": null, "players": [["T1852", "home", 5.743, -10.251]]}
+{"t": 42.5, "side": 1, "ball": null, "players": [["T1852", "home", 5.743, -10.251]]}
+{"t": 44.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 13, "team_counts": {"home": 12, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 44.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 21, "team_counts": {"home": 17, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 45.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 24, "team_counts": {"home": 19, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 45.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 21, "team_counts": {"home": 16, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 46.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 20, "team_counts": {"home": 16, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 46.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 16, "team_counts": {"home": 12, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 47.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"home": 16, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 47.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 18, "team_counts": {"home": 15, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 48.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"home": 15, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 48.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 23, "team_counts": {"home": 18, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 49.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 26, "team_counts": {"home": 21, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 49.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 25, "team_counts": {"home": 21, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 50.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 25, "team_counts": {"home": 20, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 50.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 25, "team_counts": {"home": 20, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 51.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 23, "team_counts": {"home": 18, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 51.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 24, "team_counts": {"home": 18, "away": 6}, "reason": "player_population_exceeded"}}
+{"t": 52.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 21, "team_counts": {"home": 15, "away": 6}, "reason": "player_population_exceeded"}}
+{"t": 52.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 11, "team_counts": {"home": 9, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 53.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 7, "team_counts": {"home": 7}, "reason": "player_population_exceeded"}}
+{"t": 53.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 7, "team_counts": {"home": 7}, "reason": "player_population_exceeded"}}
+{"t": 54.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 9, "team_counts": {"home": 9}, "reason": "player_population_exceeded"}}
+{"t": 54.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 9, "team_counts": {"home": 9}, "reason": "player_population_exceeded"}}
+{"t": 55.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 9, "team_counts": {"home": 9}, "reason": "player_population_exceeded"}}
+{"t": 55.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 10, "team_counts": {"home": 10}, "reason": "player_population_exceeded"}}
+{"t": 56.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 9, "team_counts": {"home": 9}, "reason": "player_population_exceeded"}}
+{"t": 56.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 9, "team_counts": {"home": 9}, "reason": "player_population_exceeded"}}
+{"t": 57.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 17, "team_counts": {"home": 15, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 57.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"home": 17, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 58.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 21, "team_counts": {"home": 19, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 58.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 24, "team_counts": {"home": 21, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 59.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 20, "team_counts": {"home": 16, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 59.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 24, "team_counts": {"home": 19, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 60.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 23, "team_counts": {"home": 18, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 60.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 25, "team_counts": {"home": 20, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 61.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 23, "team_counts": {"home": 20, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 61.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 22, "team_counts": {"home": 19, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 62.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 17, "team_counts": {"home": 15, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 62.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 14, "team_counts": {"home": 12, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 63.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 15, "team_counts": {"home": 15}, "reason": "player_population_exceeded"}}
+{"t": 63.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 13, "team_counts": {"home": 13}, "reason": "player_population_exceeded"}}
+{"t": 64.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 18, "team_counts": {"home": 15, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 64.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 21, "team_counts": {"home": 17, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 65.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 20, "team_counts": {"home": 15, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 65.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 22, "team_counts": {"home": 17, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 66.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 24, "team_counts": {"home": 18, "away": 6}, "reason": "player_population_exceeded"}}
+{"t": 66.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 23, "team_counts": {"home": 20, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 67.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 26, "team_counts": {"home": 23, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 67.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 26, "team_counts": {"home": 25, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 68.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 20, "team_counts": {"home": 20}, "reason": "player_population_exceeded"}}
+{"t": 68.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 18, "team_counts": {"home": 18}, "reason": "player_population_exceeded"}}
+{"t": 69.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 16, "team_counts": {"home": 16}, "reason": "player_population_exceeded"}}
+{"t": 69.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 11, "team_counts": {"home": 11}, "reason": "player_population_exceeded"}}
+{"t": 70.0, "side": 1, "ball": null, "players": [["T3996", "away", 0.932, -12.943], ["T3997", "home", 4.104, -12.244]]}
+{"t": 70.5, "side": 1, "ball": null, "players": [["T3996", "away", 0.932, -12.943], ["T3997", "home", 4.104, -12.244]]}
+{"t": 71.0, "side": 1, "ball": null, "players": [["T4000", "home", -5.561, -12.673]]}
+{"t": 71.5, "side": 1, "ball": null, "players": [["T4000", "home", -5.561, -12.673]]}
+{"t": 73.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 8, "team_counts": {"home": 8}, "reason": "player_population_exceeded"}}
+{"t": 73.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 8, "team_counts": {"home": 8}, "reason": "player_population_exceeded"}}
+{"t": 74.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 8, "team_counts": {"home": 8}, "reason": "player_population_exceeded"}}
+{"t": 74.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 8, "team_counts": {"home": 8}, "reason": "player_population_exceeded"}}
+{"t": 75.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 10, "team_counts": {"home": 10}, "reason": "player_population_exceeded"}}
+{"t": 75.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 10, "team_counts": {"home": 10}, "reason": "player_population_exceeded"}}
+{"t": 76.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 9, "team_counts": {"home": 9}, "reason": "player_population_exceeded"}}
+{"t": 76.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 10, "team_counts": {"home": 10}, "reason": "player_population_exceeded"}}
+{"t": 77.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 13, "team_counts": {"home": 12, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 77.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 13, "team_counts": {"home": 12, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 78.0, "side": 1, "ball": null, "players": [["T3899", "home", 3.327, -9.956], ["T4024", "home", 5.663, 3.036], ["T4060", "home", 3.678, 10.7], ["T4179", "home", 2.863, 13.377], ["T4433", "home", 3.748, -8.635]]}
+{"t": 78.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 7, "team_counts": {"home": 6, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 79.0, "side": 1, "ball": null, "players": [["T3899", "home", 4.236, -13.538], ["T4024", "home", 5.502, 3.508], ["T4060", "home", 4.304, 12.13], ["T4179", "home", 2.91, 13.873], ["T4300", "away", -1.035, -13.207], ["T4433", "home", 5.864, -4.007]]}
+{"t": 79.5, "side": 1, "ball": null, "players": [["T3899", "home", 4.055, -11.926], ["T4024", "home", 5.195, 4.629], ["T4060", "home", 4.318, 12.168], ["T4179", "home", 2.913, 13.687], ["T4300", "away", -1.669, -13.875], ["T4433", "home", 6.089, -4.606]]}
+{"t": 80.0, "side": 1, "ball": null, "players": [["T3899", "home", 3.492, -9.88], ["T4024", "home", 4.202, 5.059], ["T4060", "home", 4.331, 12.2], ["T4179", "home", 2.888, 13.512], ["T4433", "home", 6.357, -4.982]]}
+{"t": 80.5, "side": 1, "ball": null, "players": [["T3899", "home", 3.406, -9.278], ["T4024", "home", 4.026, 5.205], ["T4179", "home", 2.894, 13.578]]}
+{"t": 81.0, "side": 1, "ball": null, "players": [["T4501", "home", 6.564, -8.692], ["T4503", "home", 0.865, -10.588], ["T4545", "home", -3.286, -10.091]]}
+{"t": 81.5, "side": 1, "ball": null, "players": [["T4501", "home", 6.564, -8.692], ["T4503", "home", 0.865, -10.588], ["T4545", "home", -3.286, -10.091]]}
+{"t": 82.0, "side": 1, "ball": null, "players": [["T4590", "away", -2.257, -0.126]]}
+{"t": 82.5, "side": 1, "ball": null, "players": [["T4590", "away", -2.257, -0.126]]}
+{"t": 83.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 10, "team_counts": {"home": 7, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 83.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 12, "team_counts": {"home": 9, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 84.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 12, "team_counts": {"home": 9, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 84.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 12, "team_counts": {"home": 9, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 85.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 18, "team_counts": {"home": 14, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 85.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 20, "team_counts": {"home": 15, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 86.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 22, "team_counts": {"home": 16, "away": 6}, "reason": "player_population_exceeded"}}
+{"t": 86.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 23, "team_counts": {"home": 16, "away": 7}, "reason": "player_population_exceeded"}}
+{"t": 87.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"home": 13, "away": 6}, "reason": "player_population_exceeded"}}
+{"t": 87.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 22, "team_counts": {"home": 15, "away": 7}, "reason": "player_population_exceeded"}}
+{"t": 88.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 22, "team_counts": {"home": 16, "away": 6}, "reason": "player_population_exceeded"}}
+{"t": 88.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 21, "team_counts": {"home": 15, "away": 6}, "reason": "player_population_exceeded"}}
+{"t": 89.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 14, "team_counts": {"home": 9, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 89.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 11, "team_counts": {"home": 7, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 90.0, "side": 1, "ball": null, "players": [["T4796", "home", 1.428, -3.506], ["T5014", "home", 4.884, 2.783]]}
+{"t": 90.5, "side": 1, "ball": null, "players": [["T4796", "home", 2.153, -0.71], ["T5014", "home", 5.368, 3.478]]}
+{"t": 91.0, "side": 1, "ball": null, "players": [["T4796", "home", 2.878, 2.086], ["T5047", "away", 0.84, -10.066]]}
+{"t": 91.5, "side": 1, "ball": null, "players": [["T4796", "home", 3.004, 2.572], ["T5047", "away", 0.84, -10.066]]}
+{"t": 92.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 12, "team_counts": {"home": 10, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 92.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 12, "team_counts": {"home": 10, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 93.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 12, "team_counts": {"home": 10, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 93.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 12, "team_counts": {"home": 10, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 94.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 11, "team_counts": {"home": 10, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 94.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 11, "team_counts": {"home": 10, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 95.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 13, "team_counts": {"home": 12, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 95.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 13, "team_counts": {"home": 12, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 96.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"home": 15, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 96.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 22, "team_counts": {"home": 18, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 97.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 21, "team_counts": {"home": 17, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 97.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 12, "team_counts": {"home": 10, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 98.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 11, "team_counts": {"home": 9, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 98.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 11, "team_counts": {"home": 9, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 99.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 12, "team_counts": {"home": 10, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 99.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 11, "team_counts": {"home": 9, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 100.0, "side": 1, "ball": null, "players": [["T5494", "away", 6.441, 8.271], ["T5504", "home", 5.931, 10.213], ["T5647", "home", 6.765, -5.548], ["T5683", "home", 0.537, -8.67]]}
+{"t": 100.5, "side": 1, "ball": null, "players": [["T5494", "away", 6.998, 8.777], ["T5504", "home", 6.137, 10.686], ["T5647", "home", 7.394, -5.645], ["T5683", "home", 0.537, -8.67]]}
+{"t": 103.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 9, "team_counts": {"home": 8, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 103.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 10, "team_counts": {"home": 9, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 104.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"home": 15, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 104.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 20, "team_counts": {"home": 16, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 105.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 20, "team_counts": {"home": 16, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 105.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"home": 15, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 106.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 20, "team_counts": {"home": 15, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 106.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 22, "team_counts": {"home": 16, "away": 6}, "reason": "player_population_exceeded"}}
+{"t": 107.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 22, "team_counts": {"home": 15, "away": 7}, "reason": "player_population_exceeded"}}
+{"t": 107.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 23, "team_counts": {"home": 15, "away": 8}, "reason": "player_population_exceeded"}}
+{"t": 108.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"home": 12, "away": 7}, "reason": "player_population_exceeded"}}
+{"t": 108.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 21, "team_counts": {"home": 12, "away": 9}, "reason": "player_population_exceeded"}}
+{"t": 109.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 18, "team_counts": {"home": 10, "away": 8}, "reason": "player_population_exceeded"}}
+{"t": 109.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 14, "team_counts": {"home": 8, "away": 6}, "reason": "player_population_exceeded"}}
+{"t": 110.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 11, "team_counts": {"home": 7, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 110.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 11, "team_counts": {"home": 7, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 112.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 11, "team_counts": {"home": 9, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 112.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 12, "team_counts": {"home": 10, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 113.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 10, "team_counts": {"away": 1, "home": 9}, "reason": "player_population_exceeded"}}
+{"t": 113.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 12, "team_counts": {"away": 2, "home": 10}, "reason": "player_population_exceeded"}}
+{"t": 114.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 21, "team_counts": {"home": 19, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 114.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 25, "team_counts": {"home": 23, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 115.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 28, "team_counts": {"home": 24, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 115.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 28, "team_counts": {"home": 24, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 116.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 25, "team_counts": {"home": 21, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 116.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 22, "team_counts": {"home": 18, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 117.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 23, "team_counts": {"home": 19, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 117.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 23, "team_counts": {"home": 19, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 118.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 18, "team_counts": {"home": 15, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 118.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 12, "team_counts": {"home": 9, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 119.0, "side": 1, "ball": null, "players": [["T6810", "home", 1.771, 5.569], ["T6871", "away", 4.548, 10.568], ["T7150", "away", 1.306, -10.039], ["T7152", "away", 7.242, -9.597], ["T7174", "home", -5.028, -2.091], ["T7177", "home", 5.952, -1.682]]}
+{"t": 119.5, "side": 1, "ball": null, "players": [["T6810", "home", 2.534, 8.495], ["T6871", "away", 4.745, 12.01], ["T7150", "away", 1.101, -10.809], ["T7152", "away", 5.346, -11.186], ["T7174", "home", -3.779, 0.444], ["T7177", "home", 5.952, -1.682], ["T7181", "away", 2.102, -10.813]]}
+{"t": 120.0, "side": 1, "ball": null, "players": [["T7150", "away", -3.966, -9.171], ["T7152", "away", 5.282, -11.16], ["T7174", "home", -3.411, 1.191], ["T7181", "away", 1.922, -10.195]]}
+{"t": 120.5, "side": 1, "ball": null, "players": [["T7150", "away", -4.245, -8.989], ["T7181", "away", 2.284, -10.713]]}
+{"t": 121.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 10, "team_counts": {"home": 9, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 121.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 11, "team_counts": {"home": 10, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 122.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 9, "team_counts": {"home": 7, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 122.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 7, "team_counts": {"home": 6, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 123.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 11, "team_counts": {"home": 10, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 123.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 10, "team_counts": {"home": 9, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 124.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 10, "team_counts": {"home": 9, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 124.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 10, "team_counts": {"home": 9, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 125.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 15, "team_counts": {"home": 13, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 125.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"home": 16, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 126.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 22, "team_counts": {"home": 19, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 126.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 22, "team_counts": {"home": 18, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 127.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 18, "team_counts": {"home": 15, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 127.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 14, "team_counts": {"home": 13, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 128.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 17, "team_counts": {"home": 14, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 128.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 21, "team_counts": {"home": 17, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 129.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"home": 15, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 129.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 12, "team_counts": {"home": 10, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 130.0, "side": 1, "ball": null, "players": [["T7560", "home", 0.864, -6.144]]}
+{"t": 130.5, "side": 1, "ball": null, "players": [["T7560", "home", 1.493, -5.906], ["T7640", "home", -4.426, -10.189]]}
+{"t": 131.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 17, "team_counts": {"home": 15, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 131.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 22, "team_counts": {"home": 19, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 132.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 25, "team_counts": {"home": 22, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 132.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 23, "team_counts": {"home": 19, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 133.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 23, "team_counts": {"home": 19, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 133.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 21, "team_counts": {"home": 18, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 134.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 18, "team_counts": {"home": 15, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 134.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 14, "team_counts": {"home": 11, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 135.0, "side": 1, "ball": null, "players": [["T7351", "home", 4.379, -5.07], ["T7835", "home", 0.93, -0.995], ["T7836", "home", 6.748, -1.084], ["T7845", "home", -6.111, 8.237], ["T7854", "home", -0.752, -4.729], ["T8063", "away", -3.284, 8.865], ["T8082", "away", 3.362, -1.357], ["T8105", "away", 5.035, 11.096]]}
+{"t": 135.5, "side": 1, "ball": null, "players": [["T7351", "home", 4.096, -4.519], ["T7835", "home", 0.683, -2.093], ["T7836", "home", 6.757, 0.19], ["T7845", "home", -7.085, 5.314], ["T7854", "home", -1.87, -3.958], ["T8063", "away", -4.245, 5.874], ["T8082", "away", 3.236, -0.581], ["T8105", "away", 2.972, 9.943]]}
+{"t": 136.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 11, "team_counts": {"home": 7, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 136.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 12, "team_counts": {"home": 8, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 137.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 13, "team_counts": {"home": 9, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 137.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 21, "team_counts": {"home": 14, "away": 7}, "reason": "player_population_exceeded"}}
+{"t": 138.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 25, "team_counts": {"home": 17, "away": 8}, "reason": "player_population_exceeded"}}
+{"t": 138.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 27, "team_counts": {"home": 18, "away": 9}, "reason": "player_population_exceeded"}}
+{"t": 139.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 28, "team_counts": {"home": 19, "away": 9}, "reason": "player_population_exceeded"}}
+{"t": 139.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 16, "team_counts": {"home": 9, "away": 7}, "reason": "player_population_exceeded"}}
+{"t": 140.0, "side": 1, "ball": null, "players": [["T7300", "home", -1.655, 8.288], ["T7351", "home", 6.123, -0.393], ["T8105", "away", 0.406, -9.223], ["T8199", "away", 0.913, 0.917], ["T8325", "home", -4.015, 0.818], ["T8468", "home", -5.801, -8.812], ["T8504", "away", 3.676, -7.029]]}
+{"t": 140.5, "side": 1, "ball": null, "players": [["T7300", "home", -1.802, 9.12], ["T7351", "home", 6.252, 0.48], ["T8105", "away", 0.462, -9.154], ["T8199", "away", 0.791, 2.299], ["T8325", "home", -5.346, 1.716], ["T8468", "home", -5.801, -8.812], ["T8504", "away", 3.676, -7.029]]}
+{"t": 141.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 8, "team_counts": {"home": 7, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 141.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 8, "team_counts": {"home": 7, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 142.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 13, "team_counts": {"home": 12, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 142.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"home": 15, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 143.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 22, "team_counts": {"home": 17, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 143.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 22, "team_counts": {"home": 18, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 144.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 23, "team_counts": {"home": 18, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 144.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 23, "team_counts": {"home": 19, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 145.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 22, "team_counts": {"home": 17, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 145.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 21, "team_counts": {"home": 17, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 146.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 23, "team_counts": {"home": 19, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 146.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 21, "team_counts": {"home": 17, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 147.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 20, "team_counts": {"home": 17, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 147.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 21, "team_counts": {"home": 19, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 148.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 18, "team_counts": {"home": 17, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 148.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 13, "team_counts": {"home": 13}, "reason": "player_population_exceeded"}}
+{"t": 149.0, "side": 1, "ball": null, "players": [["T9142", "home", 1.568, -13.022]]}
+{"t": 149.5, "side": 1, "ball": null, "players": [["T9142", "home", 1.568, -13.022]]}
+{"t": 150.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 14, "team_counts": {"home": 13, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 150.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 15, "team_counts": {"home": 14, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 151.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 18, "team_counts": {"home": 14, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 151.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 20, "team_counts": {"home": 15, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 152.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 18, "team_counts": {"home": 15, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 152.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 16, "team_counts": {"home": 13, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 153.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 15, "team_counts": {"home": 12, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 153.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 15, "team_counts": {"home": 12, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 154.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"home": 17, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 154.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"home": 17, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 155.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 18, "team_counts": {"home": 16, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 155.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 11, "team_counts": {"home": 10, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 156.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 8, "team_counts": {"home": 7, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 156.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 8, "team_counts": {"home": 7, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 157.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 9, "team_counts": {"home": 8, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 157.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 10, "team_counts": {"home": 9, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 158.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 6, "team_counts": {"home": 6}, "reason": "player_population_exceeded"}}
+{"t": 158.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 9, "team_counts": {"home": 9}, "reason": "player_population_exceeded"}}
+{"t": 159.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 11, "team_counts": {"home": 10, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 159.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 11, "team_counts": {"home": 10, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 160.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 13, "team_counts": {"home": 12, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 160.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 17, "team_counts": {"home": 14, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 161.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 17, "team_counts": {"home": 14, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 161.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 20, "team_counts": {"home": 15, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 162.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 20, "team_counts": {"home": 15, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 162.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 20, "team_counts": {"home": 16, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 163.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 20, "team_counts": {"home": 16, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 163.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 23, "team_counts": {"home": 18, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 164.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 24, "team_counts": {"home": 17, "away": 7}, "reason": "player_population_exceeded"}}
+{"t": 164.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 25, "team_counts": {"home": 17, "away": 8}, "reason": "player_population_exceeded"}}
+{"t": 165.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 25, "team_counts": {"home": 17, "away": 8}, "reason": "player_population_exceeded"}}
+{"t": 165.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 25, "team_counts": {"home": 17, "away": 8}, "reason": "player_population_exceeded"}}
+{"t": 166.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 29, "team_counts": {"home": 17, "away": 12}, "reason": "player_population_exceeded"}}
+{"t": 166.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 28, "team_counts": {"home": 15, "away": 13}, "reason": "player_population_exceeded"}}
+{"t": 167.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 24, "team_counts": {"home": 13, "away": 11}, "reason": "player_population_exceeded"}}
+{"t": 167.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 16, "team_counts": {"home": 8, "away": 8}, "reason": "player_population_exceeded"}}
+{"t": 169.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 12, "team_counts": {"away": 4, "home": 8}, "reason": "player_population_exceeded"}}
+{"t": 169.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 11, "team_counts": {"away": 3, "home": 8}, "reason": "player_population_exceeded"}}
+{"t": 170.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 12, "team_counts": {"away": 2, "home": 10}, "reason": "player_population_exceeded"}}
+{"t": 170.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 12, "team_counts": {"away": 2, "home": 10}, "reason": "player_population_exceeded"}}
+{"t": 171.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 11, "team_counts": {"away": 1, "home": 10}, "reason": "player_population_exceeded"}}
+{"t": 171.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 12, "team_counts": {"home": 11, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 172.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 12, "team_counts": {"home": 11, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 172.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 13, "team_counts": {"home": 11, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 173.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 17, "team_counts": {"home": 14, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 173.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 23, "team_counts": {"home": 19, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 174.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 21, "team_counts": {"home": 18, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 174.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 18, "team_counts": {"home": 13, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 175.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 16, "team_counts": {"home": 12, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 175.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 18, "team_counts": {"home": 15, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 176.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 16, "team_counts": {"home": 13, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 176.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 8, "team_counts": {"home": 6, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 177.0, "side": 1, "ball": null, "players": [["T10468", "home", -3.709, -3.638], ["T10474", "home", 0.24, -0.93], ["T10913", "away", -7.009, -10.243], ["T10917", "home", 6.421, -2.699], ["T10918", "home", -6.852, 5.723], ["T10931", "home", 0.616, 11.631]]}
+{"t": 177.5, "side": 1, "ball": null, "players": [["T10468", "home", -5.024, -2.617], ["T10474", "home", -0.304, 0.751], ["T10913", "away", -5.904, -10.664], ["T10918", "home", -5.665, 2.806], ["T10931", "home", 0.721, 8.876]]}
+{"t": 178.0, "side": 1, "ball": null, "players": [["T10468", "home", -6.34, -1.597], ["T10474", "home", -0.848, 2.433], ["T10609", "home", 5.759, -8.209], ["T10913", "away", -4.235, -11.301], ["T10918", "home", -3.873, -1.601], ["T10929", "away", -5.248, 11.956], ["T10931", "home", 0.881, 4.715]]}
+{"t": 178.5, "side": 1, "ball": null, "players": [["T10468", "home", -5.255, -3.018], ["T10474", "home", -1.032, 3.001], ["T10609", "home", 5.182, -8.704], ["T10913", "away", -1.891, -11.859], ["T10929", "away", -3.888, 9.539], ["T10931", "home", 1.04, 0.553]]}
+{"t": 179.0, "side": 1, "ball": null, "players": [["T10468", "home", -2.944, -5.686], ["T10609", "home", 4.31, -9.451], ["T10913", "away", 0.797, -12.377], ["T10929", "away", -1.833, 5.888], ["T10930", "home", 2.623, 5.49], ["T10931", "home", 1.199, -3.608], ["T11059", "home", 6.352, 1.174]]}
+{"t": 179.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 7, "team_counts": {"home": 6, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 180.0, "side": 1, "ball": null, "players": [["T10930", "home", -0.374, 3.701], ["T10931", "home", -0.366, -5.374], ["T11059", "home", 2.511, -0.217], ["T11526", "home", 4.832, 1.684], ["T11562", "home", 2.446, -4.343]]}
+{"t": 180.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 7, "team_counts": {"home": 7}, "reason": "player_population_exceeded"}}
+{"t": 181.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 8, "team_counts": {"home": 8}, "reason": "player_population_exceeded"}}
+{"t": 181.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 9, "team_counts": {"home": 9}, "reason": "player_population_exceeded"}}
+{"t": 182.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 14, "team_counts": {"home": 11, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 182.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 20, "team_counts": {"home": 16, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 183.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"home": 15, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 183.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 18, "team_counts": {"home": 14, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 184.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 14, "team_counts": {"home": 12, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 184.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 11, "team_counts": {"home": 10, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 185.0, "side": 1, "ball": null, "players": [["T10917", "home", 5.345, -10.504], ["T11864", "away", -0.186, -9.258], ["T11896", "home", -6.641, -8.494]]}
+{"t": 185.5, "side": 1, "ball": null, "players": [["T10917", "home", 6.171, -11.442], ["T11864", "away", -0.394, -9.246], ["T11896", "home", -6.641, -8.494]]}
+{"t": 186.0, "side": 1, "ball": null, "players": [["T10917", "home", 6.997, -12.381], ["T11864", "away", -0.716, -9.228], ["T11965", "away", 5.121, 4.336], ["T11966", "away", -0.475, 5.13], ["T11975", "away", -5.063, -6.994], ["T11976", "away", -7.341, -7.635]]}
+{"t": 186.5, "side": 1, "ball": null, "players": [["T10917", "home", 6.074, -11.038], ["T11864", "away", -1.037, -9.21], ["T11965", "away", 4.822, 6.532], ["T11966", "away", -0.475, 5.13], ["T11975", "away", -5.063, -6.994], ["T11976", "away", -7.341, -7.635]]}
+{"t": 187.0, "side": 1, "ball": null, "players": [["T10917", "home", 4.19, -8.444], ["T11864", "away", -1.359, -9.192], ["T11965", "away", 4.359, 9.933], ["T11977", "home", -7.006, -9.408], ["T11978", "home", -5.584, 8.438], ["T12006", "away", 6.534, -0.377]]}
+{"t": 187.5, "side": 1, "ball": null, "players": [["T10917", "home", 3.52, -7.521], ["T11864", "away", -0.98, -9.792], ["T11965", "away", 4.194, 11.143], ["T11977", "home", -7.006, -9.408], ["T11978", "home", -5.584, 8.438], ["T12006", "away", 6.534, -0.377]]}
+{"t": 188.0, "side": 1, "ball": null, "players": [["T11864", "away", -0.213, -10.733]]}
+{"t": 188.5, "side": 1, "ball": null, "players": [["T11864", "away", 0.061, -11.07]]}
+{"t": 189.0, "side": 1, "ball": null, "players": [["T11946", "away", -6.299, 11.325], ["T12066", "away", 0.49, 7.831], ["T12137", "home", -1.586, -2.707], ["T12140", "home", 6.338, 6.468], ["T12143", "home", 6.549, -0.809]]}
+{"t": 189.5, "side": 1, "ball": null, "players": [["T12066", "away", 0.451, 5.795], ["T12137", "home", -0.727, -4.326], ["T12140", "home", 6.004, 4.12], ["T12143", "home", 6.521, -2.671]]}
+{"t": 190.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 10, "team_counts": {"away": 1, "home": 9}, "reason": "player_population_exceeded"}}
+{"t": 190.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 10, "team_counts": {"away": 1, "home": 9}, "reason": "player_population_exceeded"}}
+{"t": 191.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 11, "team_counts": {"home": 10, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 191.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 10, "team_counts": {"home": 9, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 192.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 14, "team_counts": {"home": 9, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 192.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 14, "team_counts": {"home": 9, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 193.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 20, "team_counts": {"home": 15, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 193.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 23, "team_counts": {"away": 6, "home": 17}, "reason": "player_population_exceeded"}}
+{"t": 194.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 24, "team_counts": {"away": 6, "home": 18}, "reason": "player_population_exceeded"}}
+{"t": 194.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 22, "team_counts": {"home": 16, "away": 6}, "reason": "player_population_exceeded"}}
+{"t": 195.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 23, "team_counts": {"home": 17, "away": 6}, "reason": "player_population_exceeded"}}
+{"t": 195.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 23, "team_counts": {"home": 18, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 196.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 23, "team_counts": {"home": 18, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 196.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"home": 15, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 197.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 12, "team_counts": {"home": 11, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 197.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 10, "team_counts": {"home": 9, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 198.0, "side": 1, "ball": null, "players": [["T12729", "home", -7.237, -12.926], ["T12731", "home", 2.357, -8.595]]}
+{"t": 198.5, "side": 1, "ball": null, "players": [["T12729", "home", -7.237, -12.926], ["T12731", "home", 2.357, -8.595]]}
+{"t": 200.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 7, "team_counts": {"home": 6, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 200.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 7, "team_counts": {"home": 6, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 201.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 15, "team_counts": {"home": 13, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 201.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 18, "team_counts": {"home": 16, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 202.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 20, "team_counts": {"home": 19, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 202.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 18, "team_counts": {"home": 17, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 203.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 20, "team_counts": {"home": 19, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 203.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 18, "team_counts": {"home": 17, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 204.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 17, "team_counts": {"home": 16, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 204.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 11, "team_counts": {"home": 10, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 206.0, "side": 1, "ball": null, "players": [["T13177", "home", -0.655, -9.502], ["T13181", "home", -5.891, -9.043], ["T13183", "home", -3.489, -9.114]]}
+{"t": 206.5, "side": 1, "ball": null, "players": [["T13177", "home", -0.254, -10.067], ["T13181", "home", -5.891, -9.043], ["T13183", "home", -3.489, -9.114]]}
+{"t": 207.0, "side": 1, "ball": null, "players": [["T13177", "home", 0.405, -10.996], ["T13194", "away", 2.597, -7.364]]}
+{"t": 207.5, "side": 1, "ball": null, "players": [["T13177", "home", 0.665, -11.362], ["T13194", "away", 2.597, -7.364]]}
+{"t": 208.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 15, "team_counts": {"home": 11, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 208.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 23, "team_counts": {"home": 19, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 209.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 27, "team_counts": {"home": 20, "away": 7}, "reason": "player_population_exceeded"}}
+{"t": 209.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 24, "team_counts": {"home": 17, "away": 7}, "reason": "player_population_exceeded"}}
+{"t": 210.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 23, "team_counts": {"home": 18, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 210.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 22, "team_counts": {"home": 18, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 211.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 23, "team_counts": {"home": 18, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 211.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 21, "team_counts": {"home": 16, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 212.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 22, "team_counts": {"home": 17, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 212.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 25, "team_counts": {"home": 21, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 213.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 20, "team_counts": {"home": 17, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 213.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"home": 17, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 214.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 21, "team_counts": {"home": 18, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 214.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 21, "team_counts": {"home": 16, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 215.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 20, "team_counts": {"home": 15, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 215.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 17, "team_counts": {"home": 12, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 216.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 16, "team_counts": {"home": 11, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 216.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"home": 13, "away": 6}, "reason": "player_population_exceeded"}}
+{"t": 217.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 23, "team_counts": {"home": 16, "away": 7}, "reason": "player_population_exceeded"}}
+{"t": 217.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 24, "team_counts": {"home": 19, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 218.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 16, "team_counts": {"home": 15, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 218.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 13, "team_counts": {"home": 12, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 219.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 11, "team_counts": {"home": 10, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 219.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 14, "team_counts": {"home": 12, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 220.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 14, "team_counts": {"home": 11, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 220.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 15, "team_counts": {"home": 13, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 221.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 18, "team_counts": {"home": 15, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 221.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 20, "team_counts": {"home": 17, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 222.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 20, "team_counts": {"home": 17, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 222.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"home": 16, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 223.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 20, "team_counts": {"home": 16, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 223.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 14, "team_counts": {"home": 10, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 224.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 10, "team_counts": {"home": 8, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 224.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 11, "team_counts": {"home": 8, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 226.0, "side": 1, "ball": null, "players": [["T14107", "home", -2.733, -11.368]]}
+{"t": 226.5, "side": 1, "ball": null, "players": [["T14107", "home", -1.644, -11.356]]}
+{"t": 227.0, "side": 1, "ball": null, "players": [["T14107", "home", 0.267, -11.334], ["T14118", "home", 6.886, -4.951]]}
+{"t": 227.5, "side": 1, "ball": null, "players": [["T14107", "home", 1.093, -11.325], ["T14118", "home", 6.886, -4.951]]}
+{"t": 228.0, "side": 1, "ball": null, "players": [["T14135", "home", 4.18, -11.737], ["T14147", "home", 1.354, -0.696], ["T14148", "home", -0.295, -5.112]]}
+{"t": 228.5, "side": 1, "ball": null, "players": [["T14135", "home", 4.489, -11.583], ["T14147", "home", 2.145, -1.347], ["T14148", "home", 0.609, -5.936]]}
+{"t": 229.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 14, "team_counts": {"home": 11, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 229.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 18, "team_counts": {"home": 15, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 230.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 17, "team_counts": {"home": 16, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 230.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 17, "team_counts": {"home": 16, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 231.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 21, "team_counts": {"home": 18, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 231.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 21, "team_counts": {"home": 18, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 232.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"home": 16, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 232.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 15, "team_counts": {"home": 13, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 233.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 13, "team_counts": {"home": 10, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 233.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 16, "team_counts": {"home": 12, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 234.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"home": 14, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 234.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 17, "team_counts": {"home": 12, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 235.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 14, "team_counts": {"home": 10, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 235.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 12, "team_counts": {"home": 8, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 236.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 9, "team_counts": {"home": 8, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 236.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 9, "team_counts": {"home": 8, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 237.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 12, "team_counts": {"home": 11, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 237.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 13, "team_counts": {"home": 12, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 238.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 12, "team_counts": {"home": 11, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 238.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 11, "team_counts": {"home": 9, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 239.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 11, "team_counts": {"home": 9, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 239.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 12, "team_counts": {"home": 10, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 240.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 14, "team_counts": {"home": 11, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 240.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 11, "team_counts": {"home": 8, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 241.0, "side": 1, "ball": null, "players": [["T14859", "home", -3.072, -13.838], ["T14875", "home", 4.439, -11.175]]}
+{"t": 241.5, "side": 1, "ball": null, "players": [["T14859", "home", -3.072, -13.838], ["T14875", "home", 6.758, -12.638]]}
+{"t": 242.0, "side": 1, "ball": null, "players": [["T14866", "home", 6.484, -14.021]]}
+{"t": 242.5, "side": 1, "ball": null, "players": [["T14866", "home", 6.484, -14.021]]}
+{"t": 243.0, "side": 1, "ball": null, "players": [["T14903", "away", -5.949, -11.527], ["T14904", "home", 1.81, -1.707], ["T14906", "away", 2.819, -4.631], ["T14929", "away", -6.784, 1.497]]}
+{"t": 243.5, "side": 1, "ball": null, "players": [["T14903", "away", -5.746, -10.715], ["T14904", "home", 2.086, -0.12], ["T14906", "away", 3.095, -4.369], ["T14929", "away", -6.323, 0.789], ["T14969", "away", -6.478, -13.51]]}
+{"t": 244.0, "side": 1, "ball": null, "players": [["T14884", "home", 0.393, -14.078], ["T14903", "away", -5.62, -9.33], ["T14904", "home", 1.901, -1.743], ["T14906", "away", 3.108, -3.946], ["T14929", "away", -6.392, 1.742], ["T14969", "away", -6.478, -13.51], ["T15014", "home", 7.46, -10.825]]}
+{"t": 244.5, "side": 1, "ball": null, "players": [["T14884", "home", 0.393, -14.078], ["T14903", "away", -5.577, -1.698], ["T14904", "home", 0.155, -4.542], ["T14906", "away", 3.183, -3.595], ["T14929", "away", -6.537, 3.272], ["T15014", "home", 7.46, -10.825]]}
+{"t": 245.0, "side": 1, "ball": null, "players": [["T14903", "away", -5.535, 5.934], ["T14904", "home", -2.3, -8.623], ["T15095", "home", 4.827, -5.601], ["T15123", "home", 1.538, -3.225]]}
+{"t": 245.5, "side": 1, "ball": null, "players": [["T14903", "away", -5.515, 9.491], ["T14904", "home", -3.444, -10.525], ["T15095", "home", 4.827, -5.601], ["T15123", "home", 1.652, -3.2]]}
+{"t": 246.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 12, "team_counts": {"home": 11, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 246.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 10, "team_counts": {"home": 10}, "reason": "player_population_exceeded"}}
+{"t": 247.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 9, "team_counts": {"home": 8, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 247.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 9, "team_counts": {"home": 8, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 248.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 8, "team_counts": {"home": 7, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 248.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 8, "team_counts": {"home": 7, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 249.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 15, "team_counts": {"home": 15}, "reason": "player_population_exceeded"}}
+{"t": 249.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 23, "team_counts": {"home": 22, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 250.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 25, "team_counts": {"home": 22, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 250.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 18, "team_counts": {"home": 15, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 251.0, "side": 1, "ball": null, "players": [["T15172", "home", -2.18, -4.322], ["T15180", "home", -3.298, -9.779], ["T15192", "away", 6.362, -7.842], ["T15193", "home", 2.469, 8.506], ["T15713", "home", -5.373, -11.096], ["T15766", "away", 1.988, -4.936], ["T15812", "home", 5.044, 10.568]]}
+{"t": 251.5, "side": 1, "ball": null, "players": [["T15172", "home", -3.377, -2.503], ["T15180", "home", -3.94, -9.243], ["T15192", "away", 7.299, -6.582], ["T15193", "home", 2.444, 12.324], ["T15713", "home", -5.964, -10.629], ["T15766", "away", 1.789, -4.686], ["T15812", "home", 5.044, 10.568]]}
+{"t": 252.0, "side": 1, "ball": null, "players": [["T15172", "home", -4.031, -4.629], ["T15180", "home", -4.583, -8.706], ["T15676", "home", 1.52, -7.699], ["T15811", "home", 3.062, -6.141]]}
+{"t": 252.5, "side": 1, "ball": null, "players": [["T15172", "home", -4.685, -6.755], ["T15180", "home", -4.891, -8.449], ["T15676", "home", 1.52, -7.699], ["T15811", "home", 3.062, -6.141]]}
+{"t": 253.0, "side": 1, "ball": null, "players": [["T15172", "home", -5.34, -8.881], ["T15872", "away", 1.014, -10.521], ["T15890", "away", -5.185, -0.752], ["T15916", "home", 4.13, 1.677]]}
+{"t": 253.5, "side": 1, "ball": null, "players": [["T15172", "home", -5.655, -9.906], ["T15872", "away", -0.258, -10.275], ["T15890", "away", -5.185, -0.752], ["T15916", "home", 4.13, 1.677]]}
+{"t": 254.0, "side": 1, "ball": null, "players": [["T15872", "away", -2.714, -9.799]]}
+{"t": 254.5, "side": 1, "ball": null, "players": [["T15872", "away", -2.065, -10.362]]}
+{"t": 255.0, "side": 1, "ball": null, "players": [["T15872", "away", 1.496, -11.899], ["T15914", "home", -6.376, -10.5], ["T15960", "away", 7.061, 3.271], ["T15992", "away", -1.328, -6.744]]}
+{"t": 255.5, "side": 1, "ball": null, "players": [["T15872", "away", 3.227, -12.646], ["T15914", "home", -6.376, -10.5], ["T15960", "away", 5.917, 0.916], ["T15992", "away", -1.328, -6.744]]}
+{"t": 256.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 15, "team_counts": {"away": 4, "home": 11}, "reason": "player_population_exceeded"}}
+{"t": 256.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 21, "team_counts": {"away": 6, "home": 15}, "reason": "player_population_exceeded"}}
+{"t": 257.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 20, "team_counts": {"home": 16, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 257.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 20, "team_counts": {"home": 16, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 258.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 20, "team_counts": {"home": 16, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 258.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 21, "team_counts": {"home": 17, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 259.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 23, "team_counts": {"home": 18, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 259.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 22, "team_counts": {"home": 19, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 260.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 26, "team_counts": {"away": 6, "home": 20}, "reason": "player_population_exceeded"}}
+{"t": 260.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 23, "team_counts": {"home": 18, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 261.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 20, "team_counts": {"home": 17, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 261.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 21, "team_counts": {"home": 18, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 262.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"home": 15, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 262.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 13, "team_counts": {"home": 10, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 263.0, "side": 1, "ball": null, "players": [["T16338", "home", 0.995, -11.006], ["T16599", "away", 5.332, 0.069], ["T16601", "away", 4.745, 9.833]]}
+{"t": 263.5, "side": 1, "ball": null, "players": [["T15960", "away", -2.837, 2.714], ["T16338", "home", 1.069, -11.041], ["T16599", "away", 5.332, 0.069], ["T16601", "away", 4.745, 9.833]]}
+{"t": 264.0, "side": 1, "ball": null, "players": [["T16338", "home", 1.216, -11.112]]}
+{"t": 264.5, "side": 1, "ball": null, "players": [["T16338", "home", 1.364, -11.183]]}
+{"t": 265.0, "side": 1, "ball": null, "players": [["T16338", "home", 1.512, -11.253], ["T16597", "home", 3.601, -10.276], ["T16661", "away", -1.832, -8.919]]}
+{"t": 265.5, "side": 1, "ball": null, "players": [["T16338", "home", 1.586, -11.289], ["T16543", "home", -4.195, -10.272], ["T16597", "home", 4.013, -10.641], ["T16661", "away", -1.832, -8.919]]}
+{"t": 266.0, "side": 1, "ball": null, "players": [["T16597", "home", 4.844, -11.377], ["T16748", "away", -1.918, -10.754]]}
+{"t": 266.5, "side": 1, "ball": null, "players": [["T16597", "home", 5.265, -11.75], ["T16748", "away", -2.372, -10.936]]}
+{"t": 267.0, "side": 1, "ball": null, "players": [["T16748", "away", -3.291, -11.304]]}
+{"t": 267.5, "side": 1, "ball": null, "players": [["T16748", "away", -4.21, -11.671]]}
+{"t": 268.0, "side": 1, "ball": null, "players": [["T16748", "away", -5.128, -12.039]]}
+{"t": 268.5, "side": 1, "ball": null, "players": [["T16488", "home", -1.511, -13.708], ["T16748", "away", -5.597, -12.227]]}
+{"t": 269.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 12, "team_counts": {"away": 4, "home": 8}, "reason": "player_population_exceeded"}}
+{"t": 269.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 12, "team_counts": {"away": 4, "home": 8}, "reason": "player_population_exceeded"}}
+{"t": 270.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 11, "team_counts": {"away": 4, "home": 7}, "reason": "player_population_exceeded"}}
+{"t": 270.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 10, "team_counts": {"away": 3, "home": 7}, "reason": "player_population_exceeded"}}
+{"t": 271.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 14, "team_counts": {"away": 5, "home": 9}, "reason": "player_population_exceeded"}}
+{"t": 271.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 14, "team_counts": {"away": 5, "home": 9}, "reason": "player_population_exceeded"}}
+{"t": 272.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 15, "team_counts": {"away": 5, "home": 10}, "reason": "player_population_exceeded"}}
+{"t": 272.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 17, "team_counts": {"away": 4, "home": 13}, "reason": "player_population_exceeded"}}
+{"t": 273.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"away": 4, "home": 15}, "reason": "player_population_exceeded"}}
+{"t": 273.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 21, "team_counts": {"away": 5, "home": 16}, "reason": "player_population_exceeded"}}
+{"t": 274.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"away": 7, "home": 12}, "reason": "player_population_exceeded"}}
+{"t": 274.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 14, "team_counts": {"away": 5, "home": 9}, "reason": "player_population_exceeded"}}
+{"t": 275.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 18, "team_counts": {"away": 6, "home": 12}, "reason": "player_population_exceeded"}}
+{"t": 275.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 25, "team_counts": {"away": 8, "home": 17}, "reason": "player_population_exceeded"}}
+{"t": 276.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 22, "team_counts": {"away": 8, "home": 14}, "reason": "player_population_exceeded"}}
+{"t": 276.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 14, "team_counts": {"home": 11, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 277.0, "side": 1, "ball": null, "players": [["T17265", "home", 3.864, -10.062], ["T17267", "away", -1.406, -9.801]]}
+{"t": 277.5, "side": 1, "ball": null, "players": [["T17265", "home", 4.245, -10.406], ["T17267", "away", -1.59, -9.701]]}
+{"t": 278.0, "side": 1, "ball": null, "players": [["T17265", "home", 4.43, -10.127], ["T17267", "away", -2.266, -9.334], ["T17270", "home", 0.218, -2.438], ["T17282", "away", 1.935, -7.537]]}
+{"t": 278.5, "side": 1, "ball": null, "players": [["T17265", "home", 4.701, -10.171], ["T17267", "away", -2.109, -9.501], ["T17270", "home", 0.218, -2.438], ["T17282", "away", 1.738, -7.703], ["T17294", "home", -0.757, -0.932], ["T17301", "home", 1.801, -9.904]]}
+{"t": 279.0, "side": 1, "ball": null, "players": [["T17265", "home", 3.481, -8.574], ["T17267", "away", -2.78, -7.379], ["T17282", "away", 1.424, -7.111], ["T17294", "home", -0.757, -0.932], ["T17301", "home", 1.801, -9.904]]}
+{"t": 279.5, "side": 1, "ball": null, "players": [["T17265", "home", 1.544, -9.505]]}
+{"t": 281.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 8, "team_counts": {"home": 7, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 281.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 11, "team_counts": {"home": 10, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 282.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 11, "team_counts": {"home": 10, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 282.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 9, "team_counts": {"home": 8, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 283.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 10, "team_counts": {"home": 9, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 283.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 10, "team_counts": {"home": 9, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 284.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 12, "team_counts": {"away": 2, "home": 10}, "reason": "player_population_exceeded"}}
+{"t": 284.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 18, "team_counts": {"away": 7, "home": 11}, "reason": "player_population_exceeded"}}
+{"t": 285.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 21, "team_counts": {"away": 8, "home": 13}, "reason": "player_population_exceeded"}}
+{"t": 285.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 21, "team_counts": {"home": 13, "away": 8}, "reason": "player_population_exceeded"}}
+{"t": 286.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 23, "team_counts": {"home": 15, "away": 8}, "reason": "player_population_exceeded"}}
+{"t": 286.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 22, "team_counts": {"home": 13, "away": 9}, "reason": "player_population_exceeded"}}
+{"t": 287.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 26, "team_counts": {"home": 16, "away": 10}, "reason": "player_population_exceeded"}}
+{"t": 287.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 26, "team_counts": {"away": 9, "home": 17}, "reason": "player_population_exceeded"}}
+{"t": 288.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 25, "team_counts": {"away": 8, "home": 17}, "reason": "player_population_exceeded"}}
+{"t": 288.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 21, "team_counts": {"away": 5, "home": 16}, "reason": "player_population_exceeded"}}
+{"t": 289.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 23, "team_counts": {"away": 5, "home": 18}, "reason": "player_population_exceeded"}}
+{"t": 289.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"home": 15, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 290.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 17, "team_counts": {"home": 14, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 290.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 15, "team_counts": {"home": 12, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 291.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 8, "team_counts": {"home": 6, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 291.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 8, "team_counts": {"home": 6, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 292.0, "side": 1, "ball": null, "players": [["T17877", "home", -0.608, -4.457], ["T17891", "home", 1.873, -4.515], ["T17955", "away", -3.866, -3.217], ["T17964", "home", 0.443, -8.233], ["T18071", "away", 2.153, -6.735], ["T18151", "away", -4.846, 1.773], ["T18161", "home", 4.176, -2.028], ["T18165", "home", -2.014, -8.575]]}
+{"t": 292.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 17, "team_counts": {"home": 10, "away": 7}, "reason": "player_population_exceeded"}}
+{"t": 293.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 20, "team_counts": {"home": 11, "away": 9}, "reason": "player_population_exceeded"}}
+{"t": 293.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 15, "team_counts": {"home": 6, "away": 9}, "reason": "player_population_exceeded"}}
+{"t": 294.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 10, "team_counts": {"home": 6, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 294.5, "side": 1, "ball": null, "players": [["T17964", "home", -1.104, -13.041], ["T18151", "away", 1.924, -2.293], ["T18154", "away", 0.421, -2.054], ["T18165", "home", -2.391, -12.731], ["T18178", "home", 0.303, 4.071], ["T18192", "home", -0.183, 2.74], ["T18197", "away", -3.217, -3.624], ["T18204", "away", -3.878, -6.981], ["T18220", "home", -5.47, -12.501]]}
+{"t": 295.0, "side": 1, "ball": null, "players": [["T18151", "away", 3.436, -3.045], ["T18154", "away", 1.753, -2.857], ["T18165", "home", -1.283, -12.225], ["T18178", "home", 1.663, 4.193], ["T18192", "home", 1.225, 7.513], ["T18220", "home", -5.051, -12.202]]}
+{"t": 295.5, "side": 1, "ball": null, "players": [["T18151", "away", 3.162, -3.059], ["T18165", "home", -0.66, -11.94], ["T18178", "home", 2.428, 4.261], ["T18192", "home", 1.061, 9.601], ["T18220", "home", -4.88, -10.76]]}
+{"t": 296.0, "side": 1, "ball": null, "players": [["T18151", "away", 0.597, -2.124], ["T18175", "home", 4.994, 0.333], ["T18192", "home", -1.121, 8.244], ["T18220", "home", -5.029, -7.851], ["T18285", "home", 6.496, -8.913]]}
+{"t": 296.5, "side": 1, "ball": null, "players": [["T18151", "away", -0.85, -1.597], ["T18175", "home", 4.914, 0.461], ["T18192", "home", -2.351, 7.479], ["T18205", "home", 5.414, -9.267], ["T18220", "home", -5.113, -6.211], ["T18285", "home", 6.496, -8.913]]}
+{"t": 297.0, "side": 1, "ball": null, "players": [["T18175", "home", 4.731, 0.755], ["T18243", "away", 2.22, 2.833], ["T18270", "away", 4.161, -10.804], ["T18333", "home", 5.418, -5.599], ["T18339", "home", -1.35, -1.794], ["T18344", "home", 0.077, -6.205], ["T18387", "away", 1.529, -10.688], ["T18409", "home", 2.978, -1.022]]}
+{"t": 297.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 9, "team_counts": {"home": 6, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 298.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 12, "team_counts": {"home": 7, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 298.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 12, "team_counts": {"home": 7, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 299.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 14, "team_counts": {"home": 10, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 299.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 17, "team_counts": {"home": 13, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 300.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 16, "team_counts": {"home": 13, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 300.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 15, "team_counts": {"home": 13, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 301.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 14, "team_counts": {"home": 11, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 301.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 14, "team_counts": {"home": 11, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 302.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 15, "team_counts": {"home": 13, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 302.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 20, "team_counts": {"home": 16, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 303.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 20, "team_counts": {"home": 15, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 303.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 21, "team_counts": {"home": 14, "away": 7}, "reason": "player_population_exceeded"}}
+{"t": 304.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 24, "team_counts": {"home": 16, "away": 8}, "reason": "player_population_exceeded"}}
+{"t": 304.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 23, "team_counts": {"home": 16, "away": 7}, "reason": "player_population_exceeded"}}
+{"t": 305.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"home": 14, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 305.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 15, "team_counts": {"home": 11, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 306.0, "side": 1, "ball": null, "players": [["T18975", "home", 1.041, -10.358], ["T18976", "home", -1.526, -9.881], ["T18980", "home", 4.798, -2.088]]}
+{"t": 306.5, "side": 1, "ball": null, "players": [["T18975", "home", 1.041, -10.358], ["T18976", "home", -1.526, -9.881], ["T18980", "home", 4.798, -2.088]]}
+{"t": 309.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 7, "team_counts": {"home": 7}, "reason": "player_population_exceeded"}}
+{"t": 309.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 7, "team_counts": {"home": 7}, "reason": "player_population_exceeded"}}
+{"t": 310.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 9, "team_counts": {"home": 8, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 310.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 9, "team_counts": {"home": 8, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 311.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 11, "team_counts": {"home": 10, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 311.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 10, "team_counts": {"home": 9, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 312.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 8, "team_counts": {"home": 7, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 312.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 10, "team_counts": {"home": 9, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 313.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 12, "team_counts": {"home": 11, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 313.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 10, "team_counts": {"home": 9, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 314.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 15, "team_counts": {"home": 14, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 314.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 22, "team_counts": {"home": 20, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 315.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 20, "team_counts": {"home": 19, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 315.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 17, "team_counts": {"home": 16, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 316.0, "side": 1, "ball": null, "players": [["T19565", "home", 3.463, -13.677], ["T19572", "home", -5.246, -11.998]]}
+{"t": 316.5, "side": 1, "ball": null, "players": [["T19565", "home", 3.183, -13.134], ["T19572", "home", -5.246, -11.998]]}
+{"t": 317.0, "side": 1, "ball": null, "players": [["T19516", "away", -7.164, -13.522], ["T19565", "home", 2.478, -11.77], ["T19567", "home", 1.998, 5.234], ["T19574", "away", 0.668, 6.142], ["T19576", "away", 6.923, 10.069], ["T19637", "away", 2.51, -1.072], ["T19651", "away", -1.321, 1.526]]}
+{"t": 317.5, "side": 1, "ball": null, "players": [["T19516", "away", -6.774, -11.701], ["T19565", "home", 1.774, -10.406], ["T19567", "home", 1.998, 5.234], ["T19574", "away", 0.668, 6.142], ["T19637", "away", 1.964, -1.366], ["T19651", "away", -1.321, 1.526]]}
+{"t": 318.0, "side": 1, "ball": null, "players": [["T19516", "away", -5.79, -7.103], ["T19550", "away", -1.792, -7.793], ["T19565", "home", 1.07, -9.043], ["T19570", "away", 3.114, -7.569], ["T19578", "home", 2.06, -6.968], ["T19608", "home", 5.331, -2.347], ["T19637", "away", 0.586, -2.109], ["T19709", "home", 5.639, -6.502], ["T19710", "home", -4.536, -4.53]]}
+{"t": 318.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 12, "team_counts": {"home": 8, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 319.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 14, "team_counts": {"home": 9, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 319.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 12, "team_counts": {"home": 8, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 320.0, "side": 1, "ball": null, "players": [["T19550", "away", -3.126, -6.466], ["T19568", "home", 4.674, -7.359], ["T19578", "home", 0.2, -6.697], ["T19750", "away", 7.557, -9.172], ["T19752", "home", 2.306, -7.995]]}
+{"t": 320.5, "side": 1, "ball": null, "players": [["T19568", "home", 5.647, -7.049], ["T19576", "away", -0.69, 4.002], ["T19578", "home", 0.635, -5.966], ["T19750", "away", 7.557, -9.172], ["T19752", "home", 2.306, -7.995]]}
+{"t": 321.0, "side": 1, "ball": null, "players": [["T19894", "home", -3.61, -3.867]]}
+{"t": 321.5, "side": 1, "ball": null, "players": [["T19894", "home", -3.61, -3.867]]}
+{"t": 322.0, "side": 1, "ball": null, "players": [["T19944", "home", 1.303, -10.563]]}
+{"t": 322.5, "side": 1, "ball": null, "players": [["T19944", "home", 1.303, -10.563]]}
+{"t": 323.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 12, "team_counts": {"home": 10, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 323.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 18, "team_counts": {"home": 13, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 324.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 22, "team_counts": {"home": 17, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 324.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 23, "team_counts": {"home": 18, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 325.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 23, "team_counts": {"home": 19, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 325.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 20, "team_counts": {"home": 16, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 326.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 22, "team_counts": {"home": 17, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 326.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 16, "team_counts": {"home": 13, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 327.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 15, "team_counts": {"home": 12, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 327.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 13, "team_counts": {"away": 4, "home": 9}, "reason": "player_population_exceeded"}}
+{"t": 328.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 15, "team_counts": {"away": 4, "home": 11}, "reason": "player_population_exceeded"}}
+{"t": 328.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 17, "team_counts": {"away": 4, "home": 13}, "reason": "player_population_exceeded"}}
+{"t": 329.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 20, "team_counts": {"away": 4, "home": 16}, "reason": "player_population_exceeded"}}
+{"t": 329.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 17, "team_counts": {"away": 3, "home": 14}, "reason": "player_population_exceeded"}}
+{"t": 330.0, "side": 1, "ball": null, "players": [["T19967", "away", 5.384, 0.994], ["T19977", "away", -1.944, 3.814], ["T19983", "home", -0.811, -8.394], ["T20386", "home", 5.47, -13.066], ["T20396", "home", 6.863, -7.497], ["T20472", "home", 2.553, -6.458]]}
+{"t": 330.5, "side": 1, "ball": null, "players": [["T19967", "away", 5.915, 2.164], ["T19977", "away", -2.372, 5.402], ["T19983", "home", -2.258, -7.829], ["T20386", "home", 5.874, -13.649], ["T20396", "home", 6.112, -6.638], ["T20472", "home", 2.49, -6.446]]}
+{"t": 331.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 9, "team_counts": {"home": 7, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 331.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 9, "team_counts": {"home": 7, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 332.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 8, "team_counts": {"home": 7, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 332.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 9, "team_counts": {"home": 8, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 333.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 10, "team_counts": {"home": 8, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 333.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 10, "team_counts": {"home": 8, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 334.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 14, "team_counts": {"home": 10, "away": 4}, "reason": "player_population_exceeded"}}
+{"t": 334.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 17, "team_counts": {"home": 12, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 335.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 23, "team_counts": {"home": 17, "away": 6}, "reason": "player_population_exceeded"}}
+{"t": 335.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 21, "team_counts": {"home": 16, "away": 5}, "reason": "player_population_exceeded"}}
+{"t": 336.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"away": 5, "home": 14}, "reason": "player_population_exceeded"}}
+{"t": 336.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 15, "team_counts": {"away": 4, "home": 11}, "reason": "player_population_exceeded"}}
+{"t": 337.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 15, "team_counts": {"home": 13, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 337.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 17, "team_counts": {"home": 15, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 338.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 19, "team_counts": {"home": 16, "away": 3}, "reason": "player_population_exceeded"}}
+{"t": 338.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 15, "team_counts": {"home": 13, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 339.0, "side": 1, "ball": null, "players": [["T20429", "home", 4.082, -9.392], ["T21006", "home", 3.596, -11.275], ["T21021", "home", 5.046, -13.592]]}
+{"t": 339.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 8, "team_counts": {"home": 7, "away": 1}, "reason": "player_population_exceeded"}}
+{"t": 340.0, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 13, "team_counts": {"home": 11, "away": 2}, "reason": "player_population_exceeded"}}
+{"t": 340.5, "side": 1, "ball": null, "players": [], "population_quality": {"valid": false, "observed_count": 12, "team_counts": {"home": 10, "away": 2}, "reason": "player_population_exceeded"}}

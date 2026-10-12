@@ -1,0 +1,52 @@
+{
+  "annotator": "",
+  "created_at": "",
+  "time_basis": "original_video_seconds",
+  "coordinate_units": "normalized_original_frame",
+  "note": "按 docs/需要人工标注的真值清单_2026-10-11.md 标；模板里的 _example 只作格式参考，正式标注里可删",
+  "samples": [
+    {
+      "id": "match_01",
+      "video": "D:\\dsh_folder\\aihoop_assets\\samples\\proleagues\\01_nba_2025finals_okc_vs_indiana_4min.mp4",
+      "source_sha256": "9424a5d359139964a715085a367cbeaafdcaaa56e09ef1de55255f607a8767fe",
+      "start_s": 30.0,
+      "end_s": 90.0,
+      "readings": []
+    },
+    {
+      "id": "match_02",
+      "video": "D:\\dsh_folder\\aihoop_assets\\samples\\proleagues\\06_acb_spain_realmadrid_vs_baskonia_4min.mp4",
+      "source_sha256": "73e033565c47418e1c0ab42f23f3b02be16d6c68a4e096d4aab1d9dfe89b91ca",
+      "start_s": 30.0,
+      "end_s": 90.0,
+      "readings": []
+    },
+    {
+      "id": "match_03",
+      "video": "D:\\dsh_folder\\aihoop_assets\\samples\\proleagues\\07_wnba_game_4min.mp4",
+      "source_sha256": "d52ccc42357d41bd937479ac936211b91e1c63ccd12c43cfcfd0cf093d9b580a",
+      "start_s": 30.0,
+      "end_s": 90.0,
+      "readings": []
+    },
+    {
+      "id": "match_04",
+      "video": "D:\\dsh_folder\\aihoop_assets\\samples\\proleagues\\08_ncaa_kansas_vs_northcarolina_4min.mp4",
+      "source_sha256": "be2881366e31bcd38e2205f6e8c09ddb8586f6f5967dd8f2cad4f234ec465e58",
+      "start_s": 30.0,
+      "end_s": 90.0,
+      "readings": []
+    }
+  ],
+  "_example": {
+    "id": "match_01",
+    "readings": [
+      {
+        "t": 30.0,
+        "home": 12,
+        "away": 9,
+        "note": ""
+      }
+    ]
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "examples": [
+    {
+      "id": "lillard",
+      "title": "利拉德绝杀片段",
+      "description": "终场进攻与回放 · 约 3 分钟",
+      "duration": 177.311,
+      "source_url": "https://www.bilibili.com/video/BV165YQ68E3C",
+      "prepared_at": "2026-10-11 01:10:18",
+      "review_provenance": "human_user_timed_truth_20261011",
+      "video_path": "examples/lillard/video.mp4",
+      "bundled": true
+    },
+    {
+      "id": "harden",
+      "title": "哈登比赛集锦",
+      "description": "多个进攻回合 · 约 6 分钟",
+      "duration": 340.624,
+      "source_url": "https://www.bilibili.com/video/BV1sHYN6uEGd",
+      "prepared_at": "2026-10-11 01:10:18",
+      "review_provenance": "human_user_timed_truth_20261011",
+      "video_path": "examples/harden/video.mp4",
+      "bundled": true
+    }
+  ]
+}

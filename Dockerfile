@@ -15,6 +15,7 @@ RUN pip install --no-cache-dir -r requirements.txt -r requirements-full.txt
 
 COPY src/ ./src/
 COPY web/ ./web/
+COPY examples/ ./examples/
 COPY scripts/ ./scripts/
 COPY data/.gitkeep data/botsort_reid.yaml data/court_kp_map.json data/scoreboard_templates.npz ./data/
 COPY README.md ./

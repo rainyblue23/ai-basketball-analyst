@@ -1,0 +1,136 @@
+{
+  "sample": "lillard",
+  "source": "human_user",
+  "confirmed_date": "2026-10-11",
+  "scope": "all_players_entire_video",
+  "time_basis": "approximate_release_seconds",
+  "free_throws_separate": true,
+  "shots": [
+    {
+      "id": "lillard_01",
+      "release_t": 2,
+      "result": "made",
+      "value": null,
+      "is_free_throw": false,
+      "note": ""
+    },
+    {
+      "id": "lillard_02",
+      "release_t": 15,
+      "result": "missed",
+      "value": null,
+      "is_free_throw": false,
+      "note": ""
+    },
+    {
+      "id": "lillard_03",
+      "release_t": 21,
+      "result": "missed",
+      "value": null,
+      "is_free_throw": false,
+      "note": "上篮被盖"
+    },
+    {
+      "id": "lillard_04",
+      "release_t": 41,
+      "result": "missed",
+      "value": 1,
+      "is_free_throw": true,
+      "note": "罚球"
+    },
+    {
+      "id": "lillard_05",
+      "release_t": 47,
+      "result": "missed",
+      "value": null,
+      "is_free_throw": false,
+      "note": ""
+    },
+    {
+      "id": "lillard_06",
+      "release_t": 57,
+      "result": "made",
+      "value": 2,
+      "is_free_throw": false,
+      "note": "上篮"
+    },
+    {
+      "id": "lillard_07",
+      "release_t": 67,
+      "result": "made",
+      "value": null,
+      "is_free_throw": false,
+      "note": ""
+    },
+    {
+      "id": "lillard_08",
+      "release_t": 76,
+      "result": "missed",
+      "value": null,
+      "is_free_throw": false,
+      "note": ""
+    },
+    {
+      "id": "lillard_09",
+      "release_t": 104,
+      "result": "made",
+      "value": 3,
+      "is_free_throw": false,
+      "note": ""
+    },
+    {
+      "id": "lillard_10",
+      "release_t": 111,
+      "result": "made",
+      "value": null,
+      "is_free_throw": false,
+      "note": ""
+    },
+    {
+      "id": "lillard_11",
+      "release_t": 120,
+      "result": "made",
+      "value": 2,
+      "is_free_throw": false,
+      "note": "上篮"
+    },
+    {
+      "id": "lillard_12",
+      "release_t": 130,
+      "result": "missed",
+      "value": 2,
+      "is_free_throw": false,
+      "note": "上篮"
+    },
+    {
+      "id": "lillard_13",
+      "release_t": 141,
+      "result": "made",
+      "value": 3,
+      "is_free_throw": false,
+      "note": "绝杀首次播放",
+      "play_id": "lillard_buzzer",
+      "is_replay": false
+    },
+    {
+      "id": "lillard_14",
+      "release_t": 159,
+      "result": "made",
+      "value": 3,
+      "is_free_throw": false,
+      "note": "同一次绝杀回放",
+      "play_id": "lillard_buzzer",
+      "is_replay": true
+    },
+    {
+      "id": "lillard_15",
+      "release_t": 171,
+      "result": "made",
+      "value": 3,
+      "is_free_throw": false,
+      "note": "同一次绝杀回放",
+      "play_id": "lillard_buzzer",
+      "is_replay": true
+    }
+  ]
+}

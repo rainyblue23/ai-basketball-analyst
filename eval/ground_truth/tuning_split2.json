@@ -1,0 +1,209 @@
+{
+  "annotator": "human_user（用户口述，agent 录入）",
+  "created_at": "2026-10-11T18:04:03+08:00",
+  "time_basis": "original_video_seconds",
+  "coordinate_units": "normalized_original_frame",
+  "purpose": "把事件层样本量从 4 次出手扩到 ≥20 次，让召回/精确/F1 能作结论",
+  "how_to_fill": [
+    "release_s = 球**离手那一瞬**的原片秒（不是进球时刻）；播放器显示的时间就是原片秒。",
+    "result = made（球穿过篮筐）/ missed（没进）。看不清就别写这一条，不要猜。",
+    "value = 1/2/3（罚球 1、三分线外 3、其余 2）；拿不准就写 2 并在 note 里说明。",
+    "is_replay = 这一球是不是回放镜头（转播片里回放不要重复计入）。",
+    "标完把该段的 shots_complete 改成 true；然后跑 python scripts\\check_truth_files.py 自检。"
+  ],
+  "samples": [
+    {
+      "id": "s2_fixedcam_7shots",
+      "video": "D:\\dsh_folder\\aihoop_assets\\samples\\fixedcam_shooting_960x540_7shots.mp4",
+      "start_s": 0.0,
+      "end_s": 23.5,
+      "source": "human_user",
+      "source_sha256": "db902e59bb8eb3792b8ad80357369e128be953db96a41970f137cbef7c73fe14",
+      "why_this_clip": "文件名带 7shots：固定机位投篮，一段 24 秒里就 7 次出手，性价比最高",
+      "shots_complete": true,
+      "shots": [
+        {
+          "release_s": 0.5,
+          "result": "missed",
+          "value": 2,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 4.0,
+          "result": "made",
+          "value": 2,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 7.0,
+          "result": "missed",
+          "value": 2,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 11.0,
+          "result": "missed",
+          "value": 2,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 14.0,
+          "result": "missed",
+          "value": 2,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 18.0,
+          "result": "made",
+          "value": 2,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 21.0,
+          "result": "made",
+          "value": 2,
+          "is_replay": false,
+          "note": ""
+        }
+      ],
+      "annotator_note": "投篮训练片（非比赛）；用户口述 7 次出手"
+    },
+    {
+      "id": "s2_hs_game01",
+      "video": "D:\\dsh_folder\\aihoop_assets\\samples\\games4min\\game_01_ahs_boys_vs_kingphilip_4min.mp4",
+      "start_s": 0.0,
+      "end_s": 240.0,
+      "source": "human_user",
+      "source_sha256": "8b5c360f690bad0cae2cde1c6fabd4f702b3a0388dfba8ff823052a7b4921c3b",
+      "why_this_clip": "高中比赛固定机位（系统的目标场景）",
+      "shots_complete": true,
+      "shots": [
+        {
+          "release_s": 1.0,
+          "result": "missed",
+          "value": 2,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 9.5,
+          "result": "missed",
+          "value": 2,
+          "is_replay": false,
+          "note": "用户给的是 9–10s 区间，取中点"
+        },
+        {
+          "release_s": 12.0,
+          "result": "missed",
+          "value": 2,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 15.0,
+          "result": "made",
+          "value": 2,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 39.0,
+          "result": "missed",
+          "value": 3,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 85.0,
+          "result": "made",
+          "value": 2,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 96.0,
+          "result": "missed",
+          "value": 2,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 110.0,
+          "result": "missed",
+          "value": 3,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 121.0,
+          "result": "missed",
+          "value": 2,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 170.0,
+          "result": "missed",
+          "value": 3,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 184.0,
+          "result": "missed",
+          "value": 2,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 190.0,
+          "result": "made",
+          "value": 2,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 203.0,
+          "result": "missed",
+          "value": 2,
+          "is_replay": false,
+          "note": "分值为推断（上篮=2）"
+        },
+        {
+          "release_s": 231.0,
+          "result": "made",
+          "value": 1,
+          "is_replay": false,
+          "note": ""
+        }
+      ],
+      "annotator_note": "用户口述；含 3:51 罚球命中"
+    }
+  ],
+  "provenance": "出手时间/结果/分值为用户口述；只说「上篮」未说分值的按 2 分推断（note 里已标出）；片段范围按用户实际看到的长度扩到全片。",
+  "dropped": [
+    {
+      "id": "s2_highangle_01",
+      "video": "D:\\dsh_folder\\aihoop_assets\\samples\\highangle4min\\acalanes_girls_jv_fixedcam_part1_4min.mp4",
+      "reason": "用户 2026-10-11：判别效果不好，不看了"
+    },
+    {
+      "id": "s2_cba_highlights",
+      "video": "D:\\dsh_folder\\aihoop_assets\\samples\\proleagues\\11_cba_2025finals_g4_highlights_4min.mp4",
+      "reason": "用户 2026-10-11：有字幕干扰，不要了"
+    },
+    {
+      "id": "s2_nba_jordan",
+      "video": "D:\\dsh_folder\\aihoop_assets\\samples\\proleagues\\05_nba_jordan_last_shot_1998_4min.mp4",
+      "reason": "备选段；前 3 段已够 31 次出手，未标"
+    }
+  ],
+  "_role": "诊断/调参子集（held-out = s2_hs_game03，本文件不含它）",
+  "_parent": "eval/ground_truth/shots_split2_20261011.json"
+}

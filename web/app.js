@@ -482,6 +482,7 @@
   app.use(ElementPlus, { locale: ElementPlusLocaleZhCn });
   app.component('calibration-gaps', window.COMPONENTS['calibration-gaps']);
   app.component('replay-tools', window.COMPONENTS['replay-tools']);
+  app.component('ball-feedback', window.COMPONENTS['ball-feedback']);
   app.component('detection-overlay', window.COMPONENTS['detection-overlay']);
   app.component('copy-note', window.COMPONENTS['copy-note']);
   app.component('page-help', window.COMPONENTS['page-help']);

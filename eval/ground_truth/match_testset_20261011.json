@@ -1,0 +1,336 @@
+{
+  "created_at": "2026-10-11T02:16:52.129944+00:00",
+  "time_basis": "original_video_seconds",
+  "coordinate_units": "normalized_original_frame",
+  "samples": [
+    {
+      "id": "match_01",
+      "video": "D:\\dsh_folder\\aihoop_assets\\samples\\proleagues\\01_nba_2025finals_okc_vs_indiana_4min.mp4",
+      "start_s": 30.0,
+      "end_s": 90.0,
+      "source": "human_user",
+      "source_sha256": "9424a5d359139964a715085a367cbeaafdcaaa56e09ef1de55255f607a8767fe",
+      "source_file": "D:\\dsh_folder\\aihoop\\out\\match_testset_20261011\\match_01\\annotations.json",
+      "shots_complete": true,
+      "frames_complete": true,
+      "completion_confirmation": null,
+      "shots": [
+        {
+          "release_s": 40.87,
+          "result": "missed",
+          "value": 2,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 62.42,
+          "result": "made",
+          "value": 1,
+          "is_replay": false,
+          "note": ""
+        },
+        {
+          "release_s": 88.86,
+          "result": "made",
+          "value": 1,
+          "is_replay": false,
+          "note": ""
+        }
+      ],
+      "frames": [
+        {
+          "image": "frame_0030.00.jpg",
+          "visibility": "visible",
+          "boxes": [
+            {
+              "kind": "ball",
+              "xyxy": [
+                0.8496497050147492,
+                0.6212717542020034,
+                0.8741396563594672,
+                0.6614770979929736
+              ]
+            }
+          ]
+        },
+        {
+          "image": "frame_0037.50.jpg",
+          "visibility": "visible",
+          "boxes": [
+            {
+              "kind": "ball",
+              "xyxy": [
+                0.7031403938225941,
+                0.6842019410259956,
+                0.7305801976746866,
+                0.7244072848169657
+              ]
+            }
+          ]
+        },
+        {
+          "image": "frame_0045.00.jpg",
+          "visibility": "visible",
+          "boxes": [
+            {
+              "kind": "ball",
+              "xyxy": [
+                0.2960607252993063,
+                0.43248115372009177,
+                0.324483910844741,
+                0.4761826456745739
+              ]
+            }
+          ]
+        },
+        {
+          "image": "frame_0052.50.jpg",
+          "visibility": "not_visible",
+          "boxes": []
+        },
+        {
+          "image": "frame_0060.00.jpg",
+          "visibility": "unclear",
+          "boxes": []
+        },
+        {
+          "image": "frame_0067.50.jpg",
+          "visibility": "visible",
+          "boxes": [
+            {
+              "kind": "ball",
+              "xyxy": [
+                0.24984637685229996,
+                0.45870210490669044,
+                0.2743364182193722,
+                0.5128919613318379
+              ]
+            }
+          ]
+        },
+        {
+          "image": "frame_0075.00.jpg",
+          "visibility": "not_visible",
+          "boxes": []
+        },
+        {
+          "image": "frame_0082.50.jpg",
+          "visibility": "not_visible",
+          "boxes": []
+        }
+      ],
+      "prior_use_status": "unverified"
+    },
+    {
+      "id": "match_02",
+      "video": "D:\\dsh_folder\\aihoop_assets\\samples\\proleagues\\06_acb_spain_realmadrid_vs_baskonia_4min.mp4",
+      "start_s": 30.0,
+      "end_s": 90.0,
+      "source": "human_user",
+      "source_sha256": "73e033565c47418e1c0ab42f23f3b02be16d6c68a4e096d4aab1d9dfe89b91ca",
+      "source_file": "D:\\dsh_folder\\aihoop\\out\\match_testset_20261011\\match_02\\annotations.json",
+      "shots_complete": true,
+      "frames_complete": true,
+      "completion_confirmation": "用户在聊天确认本段零出手，完成框漏勾；篮球8帧均已填写",
+      "shots": [],
+      "frames": [
+        {
+          "image": "frame_0030.00.jpg",
+          "visibility": "not_visible",
+          "boxes": []
+        },
+        {
+          "image": "frame_0037.50.jpg",
+          "visibility": "not_visible",
+          "boxes": []
+        },
+        {
+          "image": "frame_0045.00.jpg",
+          "visibility": "not_visible",
+          "boxes": []
+        },
+        {
+          "image": "frame_0052.50.jpg",
+          "visibility": "not_visible",
+          "boxes": []
+        },
+        {
+          "image": "frame_0060.00.jpg",
+          "visibility": "unclear",
+          "boxes": []
+        },
+        {
+          "image": "frame_0067.50.jpg",
+          "visibility": "unclear",
+          "boxes": []
+        },
+        {
+          "image": "frame_0075.00.jpg",
+          "visibility": "unclear",
+          "boxes": []
+        },
+        {
+          "image": "frame_0082.50.jpg",
+          "visibility": "visible",
+          "boxes": [
+            {
+              "kind": "ball",
+              "xyxy": [
+                0.11316986984207919,
+                0.46569428120390854,
+                0.13372665450284615,
+                0.5058997850346197
+              ]
+            }
+          ]
+        }
+      ],
+      "prior_use_status": "unverified"
+    },
+    {
+      "id": "match_03",
+      "video": "D:\\dsh_folder\\aihoop_assets\\samples\\proleagues\\07_wnba_game_4min.mp4",
+      "start_s": 30.0,
+      "end_s": 90.0,
+      "source": "human_user",
+      "source_sha256": "d52ccc42357d41bd937479ac936211b91e1c63ccd12c43cfcfd0cf093d9b580a",
+      "source_file": "D:\\dsh_folder\\aihoop\\out\\match_testset_20261011\\match_03\\annotations.json",
+      "shots_complete": true,
+      "frames_complete": true,
+      "completion_confirmation": null,
+      "shots": [],
+      "frames": [
+        {
+          "image": "frame_0030.00.jpg",
+          "visibility": "not_visible",
+          "boxes": []
+        },
+        {
+          "image": "frame_0037.50.jpg",
+          "visibility": "not_visible",
+          "boxes": []
+        },
+        {
+          "image": "frame_0045.00.jpg",
+          "visibility": "not_visible",
+          "boxes": []
+        },
+        {
+          "image": "frame_0052.50.jpg",
+          "visibility": "not_visible",
+          "boxes": []
+        },
+        {
+          "image": "frame_0060.00.jpg",
+          "visibility": "not_visible",
+          "boxes": []
+        },
+        {
+          "image": "frame_0067.50.jpg",
+          "visibility": "not_visible",
+          "boxes": []
+        },
+        {
+          "image": "frame_0075.00.jpg",
+          "visibility": "visible",
+          "boxes": [
+            {
+              "kind": "ball",
+              "xyxy": [
+                0.6126782352593796,
+                0.2611711740259341,
+                0.6420845774422704,
+                0.2996285637649541
+              ]
+            }
+          ]
+        },
+        {
+          "image": "frame_0082.50.jpg",
+          "visibility": "unclear",
+          "boxes": []
+        }
+      ],
+      "prior_use_status": "unverified"
+    },
+    {
+      "id": "match_04",
+      "video": "D:\\dsh_folder\\aihoop_assets\\samples\\proleagues\\08_ncaa_kansas_vs_northcarolina_4min.mp4",
+      "start_s": 30.0,
+      "end_s": 90.0,
+      "source": "human_user",
+      "source_sha256": "be2881366e31bcd38e2205f6e8c09ddb8586f6f5967dd8f2cad4f234ec465e58",
+      "source_file": "D:\\dsh_folder\\aihoop\\out\\match_testset_20261011\\match_04\\annotations.json",
+      "shots_complete": true,
+      "frames_complete": true,
+      "completion_confirmation": null,
+      "shots": [
+        {
+          "release_s": 37,
+          "result": "missed",
+          "value": 2,
+          "is_replay": false,
+          "note": ""
+        }
+      ],
+      "frames": [
+        {
+          "image": "frame_0030.00.jpg",
+          "visibility": "unclear",
+          "boxes": []
+        },
+        {
+          "image": "frame_0037.50.jpg",
+          "visibility": "visible",
+          "boxes": [
+            {
+              "kind": "ball",
+              "xyxy": [
+                0.35112463126843657,
+                0.556593513301223,
+                0.39331369765740226,
+                0.6177755860335239
+              ]
+            }
+          ]
+        },
+        {
+          "image": "frame_0045.00.jpg",
+          "visibility": "not_visible",
+          "boxes": []
+        },
+        {
+          "image": "frame_0052.50.jpg",
+          "visibility": "not_visible",
+          "boxes": []
+        },
+        {
+          "image": "frame_0060.00.jpg",
+          "visibility": "not_visible",
+          "boxes": []
+        },
+        {
+          "image": "frame_0067.50.jpg",
+          "visibility": "not_visible",
+          "boxes": []
+        },
+        {
+          "image": "frame_0075.00.jpg",
+          "visibility": "not_visible",
+          "boxes": []
+        },
+        {
+          "image": "frame_0082.50.jpg",
+          "visibility": "not_visible",
+          "boxes": []
+        }
+      ],
+      "prior_use_status": "unverified"
+    }
+  ],
+  "notes": [
+    "第4段以用户新增37秒2分未中为准，撤销此前零出手确认",
+    "不覆盖原始标注；该文件是评测快照",
+    "素材先前调参使用情况未核实，不宣称独立测试集"
+  ]
+}

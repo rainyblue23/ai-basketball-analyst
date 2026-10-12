@@ -1,0 +1,13 @@
+{
+  "all": {
+    "points": [],
+    "zones": {},
+    "bin_size": 0.0,
+    "unavailable": true,
+    "reason": "只有 0 组对应点 —— 单应矩阵至少要 4 组，而且 4 组时解是精确解、误差恒为 0，无法自证正确。"
+  },
+  "by_team": {
+    "home": {},
+    "away": {}
+  }
+}

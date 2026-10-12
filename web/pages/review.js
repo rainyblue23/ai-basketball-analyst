@@ -26,7 +26,7 @@ window.PAGES['review'] = {
       showAll: false,           // 是否把高置信度出手也列出来
       busyIdx: -1,
       localLog: [],             // 改判记录（用于答辩演示时说明写回口径）
-      manual: { t: 0, team: 'home', value: 2 },  // 手动补录进球
+      manual: { t: 0, team: '', value: 2, result: 'unknown' },  // 手动补录漏掉的出手
       adding: false
     };
   },
@@ -72,13 +72,13 @@ window.PAGES['review'] = {
         return;
       }
       var t = Number(this.manual.t);
-      if (!(t >= 0)) {
-        this.$message.warning('请输入进球时间（秒）');
+      if (!Number.isFinite(t) || !(t >= 0)) {
+        this.$message.warning('请输入出手时间（秒）');
         return;
       }
       this.adding = true;
       window.API.addManualShot(this.S.jobId, {
-        t: t, team: this.manual.team, value: Number(this.manual.value)
+        t: t, team: this.manual.team, value: Number(this.manual.value), result: this.manual.result
       }).then(function (r) {
         self.adding = false;
         self.$message.success('已补录：' + (r.summary || ''));
@@ -329,16 +329,17 @@ window.PAGES['review'] = {
     '    </div>',
     '    <!-- ①.5 手动补录 -->',
     '    <div class="card" v-if="!isExample">',
-    '      <h3 class="card-title">补录进球 </h3>',
+    '      <h3 class="card-title">补录漏掉的出手 </h3>',
     '      <div class="row" style="gap:12px;flex-wrap:wrap">',
     '        <el-input-number v-model="manual.t" :min="0" :max="36000" :step="0.1" controls-position="right" style="width:160px" />',
     '        <el-select v-model="manual.team" style="width:120px">',
-    '          <el-option label="主队" value="home" /><el-option label="客队" value="away" />',
+    '          <el-option label="球队未知" value="" /><el-option label="主队" value="home" /><el-option label="客队" value="away" />',
     '        </el-select>',
     '        <el-select v-model="manual.value" style="width:120px">',
     '          <el-option label="1 分" :value="1" /><el-option label="2 分" :value="2" /><el-option label="3 分" :value="3" />',
     '        </el-select>',
-    '        <el-button type="primary" :loading="adding" :disabled="!canSubmit" @click="addManual">补录进球</el-button>',
+    '        <el-select v-model="manual.result" style="width:120px" aria-label="出手结果"><el-option label="命中" value="made"/><el-option label="未中" value="missed"/><el-option label="未知" value="unknown"/></el-select>',
+    '        <el-button type="primary" :loading="adding" :disabled="!canSubmit" @click="addManual">补录漏掉的出手</el-button>',
     '      </div>',
     '    </div>',
     '    <!-- ② 复核列表 -->',

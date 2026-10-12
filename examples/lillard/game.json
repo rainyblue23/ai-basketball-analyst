@@ -1,0 +1,4150 @@
+{
+  "score": {
+    "home": 0,
+    "away": 0
+  },
+  "clip_score": {
+    "home": 0,
+    "away": 0
+  },
+  "score_policy": "court",
+  "scoreboard_reference": {
+    "home": 0,
+    "away": 0
+  },
+  "teams": {
+    "home": {
+      "name": "主队",
+      "stats": {
+        "team": "home",
+        "points": 0,
+        "fgm": 0,
+        "fga": 0,
+        "tpm": 0,
+        "tpa": 0,
+        "ftm": 0,
+        "fta": 0,
+        "unknown": 0,
+        "fg_pct": 0.0,
+        "tp_pct": 0.0
+      }
+    },
+    "away": {
+      "name": "客队",
+      "stats": {
+        "team": "away",
+        "points": 0,
+        "fgm": 0,
+        "fga": 0,
+        "tpm": 0,
+        "tpa": 0,
+        "ftm": 0,
+        "fta": 0,
+        "unknown": 0,
+        "fg_pct": 0.0,
+        "tp_pct": 0.0
+      }
+    }
+  },
+  "quarter_scores": [
+    {
+      "period": 1,
+      "home": 0,
+      "away": 0
+    },
+    {
+      "period": 2,
+      "home": 0,
+      "away": 0
+    },
+    {
+      "period": 3,
+      "home": 0,
+      "away": 0
+    },
+    {
+      "period": 4,
+      "home": 0,
+      "away": 0
+    }
+  ],
+  "progression": [
+    {
+      "t": 0.0,
+      "home": 0,
+      "away": 0
+    },
+    {
+      "t": 2.0,
+      "home": 0,
+      "away": 0,
+      "scorer": "",
+      "value": 2,
+      "made": true
+    },
+    {
+      "t": 15.0,
+      "home": 0,
+      "away": 0,
+      "scorer": "",
+      "value": 2,
+      "made": false
+    },
+    {
+      "t": 21.0,
+      "home": 0,
+      "away": 0,
+      "scorer": "",
+      "value": 2,
+      "made": false
+    },
+    {
+      "t": 41.0,
+      "home": 0,
+      "away": 0,
+      "scorer": "",
+      "value": 1,
+      "made": false
+    },
+    {
+      "t": 47.0,
+      "home": 0,
+      "away": 0,
+      "scorer": "",
+      "value": 2,
+      "made": false
+    },
+    {
+      "t": 57.0,
+      "home": 0,
+      "away": 0,
+      "scorer": "",
+      "value": 2,
+      "made": true
+    },
+    {
+      "t": 67.0,
+      "home": 0,
+      "away": 0,
+      "scorer": "",
+      "value": 2,
+      "made": true
+    },
+    {
+      "t": 76.0,
+      "home": 0,
+      "away": 0,
+      "scorer": "",
+      "value": 2,
+      "made": false
+    },
+    {
+      "t": 104.0,
+      "home": 0,
+      "away": 0,
+      "scorer": "",
+      "value": 3,
+      "made": true
+    },
+    {
+      "t": 111.0,
+      "home": 0,
+      "away": 0,
+      "scorer": "",
+      "value": 2,
+      "made": true
+    },
+    {
+      "t": 120.0,
+      "home": 0,
+      "away": 0,
+      "scorer": "",
+      "value": 2,
+      "made": true
+    },
+    {
+      "t": 130.0,
+      "home": 0,
+      "away": 0,
+      "scorer": "",
+      "value": 2,
+      "made": false
+    },
+    {
+      "t": 141.0,
+      "home": 0,
+      "away": 0,
+      "scorer": "",
+      "value": 3,
+      "made": true
+    },
+    {
+      "t": 159.0,
+      "home": 0,
+      "away": 0,
+      "scorer": "",
+      "value": 3,
+      "made": true
+    },
+    {
+      "t": 171.0,
+      "home": 0,
+      "away": 0,
+      "scorer": "",
+      "value": 3,
+      "made": true
+    }
+  ],
+  "timeline": [
+    {
+      "t": 2.0,
+      "team": "",
+      "player_id": "",
+      "player": "",
+      "value": 2,
+      "made": true,
+      "result": "made",
+      "points": 0,
+      "counts_for_score": false,
+      "value_estimated": false,
+      "value_assumed": true,
+      "location_unknown": true,
+      "clip_start": 0.0,
+      "clip_end": 6.0,
+      "decision_t": null,
+      "release_source": "manual",
+      "x": 0.0,
+      "y": -1.57,
+      "zone": "位置未知",
+      "confidence": 1.0,
+      "source": "manual",
+      "period": 1,
+      "tags": [
+        "human_review",
+        "team_unknown",
+        "player_unknown",
+        "two",
+        "manual",
+        "value_assumed",
+        "location_unknown",
+        "scoreboard_unconfirmed"
+      ],
+      "evidence": "human_review",
+      "review_reason": "",
+      "crossing_t": null,
+      "review_t": null,
+      "suggested_made": null,
+      "index": 0,
+      "review_id": "lillard_01",
+      "shot_type": "field_goal",
+      "value_verified": false,
+      "review_note": "",
+      "is_replay": false,
+      "play_id": "lillard_01"
+    },
+    {
+      "t": 15.0,
+      "team": "",
+      "player_id": "",
+      "player": "",
+      "value": 2,
+      "made": false,
+      "result": "missed",
+      "points": 0,
+      "counts_for_score": false,
+      "value_estimated": false,
+      "value_assumed": true,
+      "location_unknown": true,
+      "clip_start": 13.0,
+      "clip_end": 19.0,
+      "decision_t": null,
+      "release_source": "manual",
+      "x": 0.0,
+      "y": -1.57,
+      "zone": "位置未知",
+      "confidence": 1.0,
+      "source": "manual",
+      "period": 1,
+      "tags": [
+        "human_review",
+        "team_unknown",
+        "player_unknown",
+        "two",
+        "manual",
+        "value_assumed",
+        "location_unknown",
+        "scoreboard_unconfirmed"
+      ],
+      "evidence": "human_review",
+      "review_reason": "",
+      "crossing_t": null,
+      "review_t": null,
+      "suggested_made": null,
+      "index": 1,
+      "review_id": "lillard_02",
+      "shot_type": "field_goal",
+      "value_verified": false,
+      "review_note": "",
+      "is_replay": false,
+      "play_id": "lillard_02"
+    },
+    {
+      "t": 21.0,
+      "team": "",
+      "player_id": "",
+      "player": "",
+      "value": 2,
+      "made": false,
+      "result": "missed",
+      "points": 0,
+      "counts_for_score": false,
+      "value_estimated": false,
+      "value_assumed": true,
+      "location_unknown": true,
+      "clip_start": 19.0,
+      "clip_end": 25.0,
+      "decision_t": null,
+      "release_source": "manual",
+      "x": 0.0,
+      "y": -1.57,
+      "zone": "位置未知",
+      "confidence": 1.0,
+      "source": "manual",
+      "period": 1,
+      "tags": [
+        "human_review",
+        "team_unknown",
+        "player_unknown",
+        "two",
+        "manual",
+        "value_assumed",
+        "location_unknown",
+        "scoreboard_unconfirmed"
+      ],
+      "evidence": "human_review",
+      "review_reason": "",
+      "crossing_t": null,
+      "review_t": null,
+      "suggested_made": null,
+      "index": 2,
+      "review_id": "lillard_03",
+      "shot_type": "field_goal",
+      "value_verified": false,
+      "review_note": "上篮被盖",
+      "is_replay": false,
+      "play_id": "lillard_03"
+    },
+    {
+      "t": 41.0,
+      "team": "",
+      "player_id": "",
+      "player": "",
+      "value": 1,
+      "made": false,
+      "result": "missed",
+      "points": 0,
+      "counts_for_score": false,
+      "value_estimated": false,
+      "value_assumed": false,
+      "location_unknown": true,
+      "clip_start": 39.0,
+      "clip_end": 45.0,
+      "decision_t": null,
+      "release_source": "manual",
+      "x": 0.0,
+      "y": -1.57,
+      "zone": "位置未知",
+      "confidence": 1.0,
+      "source": "manual",
+      "period": 1,
+      "tags": [
+        "human_review",
+        "team_unknown",
+        "player_unknown",
+        "free_throw",
+        "manual",
+        "location_unknown",
+        "scoreboard_unconfirmed"
+      ],
+      "evidence": "human_review",
+      "review_reason": "",
+      "crossing_t": null,
+      "review_t": null,
+      "suggested_made": null,
+      "index": 3,
+      "review_id": "lillard_04",
+      "shot_type": "free_throw",
+      "value_verified": true,
+      "review_note": "罚球",
+      "is_replay": false,
+      "play_id": "lillard_04"
+    },
+    {
+      "t": 47.0,
+      "team": "",
+      "player_id": "",
+      "player": "",
+      "value": 2,
+      "made": false,
+      "result": "missed",
+      "points": 0,
+      "counts_for_score": false,
+      "value_estimated": false,
+      "value_assumed": true,
+      "location_unknown": true,
+      "clip_start": 45.0,
+      "clip_end": 51.0,
+      "decision_t": null,
+      "release_source": "manual",
+      "x": 0.0,
+      "y": -1.57,
+      "zone": "位置未知",
+      "confidence": 1.0,
+      "source": "manual",
+      "period": 1,
+      "tags": [
+        "human_review",
+        "team_unknown",
+        "player_unknown",
+        "two",
+        "manual",
+        "value_assumed",
+        "location_unknown",
+        "scoreboard_unconfirmed"
+      ],
+      "evidence": "human_review",
+      "review_reason": "",
+      "crossing_t": null,
+      "review_t": null,
+      "suggested_made": null,
+      "index": 4,
+      "review_id": "lillard_05",
+      "shot_type": "field_goal",
+      "value_verified": false,
+      "review_note": "",
+      "is_replay": false,
+      "play_id": "lillard_05"
+    },
+    {
+      "t": 57.0,
+      "team": "",
+      "player_id": "",
+      "player": "",
+      "value": 2,
+      "made": true,
+      "result": "made",
+      "points": 0,
+      "counts_for_score": false,
+      "value_estimated": false,
+      "value_assumed": false,
+      "location_unknown": true,
+      "clip_start": 55.0,
+      "clip_end": 61.0,
+      "decision_t": null,
+      "release_source": "manual",
+      "x": 0.0,
+      "y": -1.57,
+      "zone": "位置未知",
+      "confidence": 1.0,
+      "source": "manual",
+      "period": 1,
+      "tags": [
+        "human_review",
+        "team_unknown",
+        "player_unknown",
+        "two",
+        "manual",
+        "location_unknown",
+        "scoreboard_unconfirmed"
+      ],
+      "evidence": "human_review",
+      "review_reason": "",
+      "crossing_t": null,
+      "review_t": null,
+      "suggested_made": null,
+      "index": 5,
+      "review_id": "lillard_06",
+      "shot_type": "field_goal",
+      "value_verified": true,
+      "review_note": "上篮",
+      "is_replay": false,
+      "play_id": "lillard_06"
+    },
+    {
+      "t": 67.0,
+      "team": "",
+      "player_id": "",
+      "player": "",
+      "value": 2,
+      "made": true,
+      "result": "made",
+      "points": 0,
+      "counts_for_score": false,
+      "value_estimated": false,
+      "value_assumed": true,
+      "location_unknown": true,
+      "clip_start": 65.0,
+      "clip_end": 71.0,
+      "decision_t": null,
+      "release_source": "manual",
+      "x": 0.0,
+      "y": -1.57,
+      "zone": "位置未知",
+      "confidence": 1.0,
+      "source": "manual",
+      "period": 1,
+      "tags": [
+        "human_review",
+        "team_unknown",
+        "player_unknown",
+        "two",
+        "manual",
+        "value_assumed",
+        "location_unknown",
+        "scoreboard_unconfirmed"
+      ],
+      "evidence": "human_review",
+      "review_reason": "",
+      "crossing_t": null,
+      "review_t": null,
+      "suggested_made": null,
+      "index": 6,
+      "review_id": "lillard_07",
+      "shot_type": "field_goal",
+      "value_verified": false,
+      "review_note": "",
+      "is_replay": false,
+      "play_id": "lillard_07"
+    },
+    {
+      "t": 76.0,
+      "team": "",
+      "player_id": "",
+      "player": "",
+      "value": 2,
+      "made": false,
+      "result": "missed",
+      "points": 0,
+      "counts_for_score": false,
+      "value_estimated": false,
+      "value_assumed": true,
+      "location_unknown": true,
+      "clip_start": 74.0,
+      "clip_end": 80.0,
+      "decision_t": null,
+      "release_source": "manual",
+      "x": 0.0,
+      "y": -1.57,
+      "zone": "位置未知",
+      "confidence": 1.0,
+      "source": "manual",
+      "period": 1,
+      "tags": [
+        "human_review",
+        "team_unknown",
+        "player_unknown",
+        "two",
+        "manual",
+        "value_assumed",
+        "location_unknown",
+        "scoreboard_unconfirmed"
+      ],
+      "evidence": "human_review",
+      "review_reason": "",
+      "crossing_t": null,
+      "review_t": null,
+      "suggested_made": null,
+      "index": 7,
+      "review_id": "lillard_08",
+      "shot_type": "field_goal",
+      "value_verified": false,
+      "review_note": "",
+      "is_replay": false,
+      "play_id": "lillard_08"
+    },
+    {
+      "t": 104.0,
+      "team": "",
+      "player_id": "",
+      "player": "",
+      "value": 3,
+      "made": true,
+      "result": "made",
+      "points": 0,
+      "counts_for_score": false,
+      "value_estimated": false,
+      "value_assumed": false,
+      "location_unknown": true,
+      "clip_start": 102.0,
+      "clip_end": 108.0,
+      "decision_t": null,
+      "release_source": "manual",
+      "x": 0.0,
+      "y": -1.57,
+      "zone": "位置未知",
+      "confidence": 1.0,
+      "source": "manual",
+      "period": 1,
+      "tags": [
+        "human_review",
+        "team_unknown",
+        "player_unknown",
+        "three",
+        "manual",
+        "location_unknown",
+        "scoreboard_unconfirmed"
+      ],
+      "evidence": "human_review",
+      "review_reason": "",
+      "crossing_t": null,
+      "review_t": null,
+      "suggested_made": null,
+      "index": 8,
+      "review_id": "lillard_09",
+      "shot_type": "field_goal",
+      "value_verified": true,
+      "review_note": "",
+      "is_replay": false,
+      "play_id": "lillard_09"
+    },
+    {
+      "t": 111.0,
+      "team": "",
+      "player_id": "",
+      "player": "",
+      "value": 2,
+      "made": true,
+      "result": "made",
+      "points": 0,
+      "counts_for_score": false,
+      "value_estimated": false,
+      "value_assumed": true,
+      "location_unknown": true,
+      "clip_start": 109.0,
+      "clip_end": 115.0,
+      "decision_t": null,
+      "release_source": "manual",
+      "x": 0.0,
+      "y": -1.57,
+      "zone": "位置未知",
+      "confidence": 1.0,
+      "source": "manual",
+      "period": 1,
+      "tags": [
+        "human_review",
+        "team_unknown",
+        "player_unknown",
+        "two",
+        "manual",
+        "value_assumed",
+        "location_unknown",
+        "scoreboard_unconfirmed"
+      ],
+      "evidence": "human_review",
+      "review_reason": "",
+      "crossing_t": null,
+      "review_t": null,
+      "suggested_made": null,
+      "index": 9,
+      "review_id": "lillard_10",
+      "shot_type": "field_goal",
+      "value_verified": false,
+      "review_note": "",
+      "is_replay": false,
+      "play_id": "lillard_10"
+    },
+    {
+      "t": 120.0,
+      "team": "",
+      "player_id": "",
+      "player": "",
+      "value": 2,
+      "made": true,
+      "result": "made",
+      "points": 0,
+      "counts_for_score": false,
+      "value_estimated": false,
+      "value_assumed": false,
+      "location_unknown": true,
+      "clip_start": 118.0,
+      "clip_end": 124.0,
+      "decision_t": null,
+      "release_source": "manual",
+      "x": 0.0,
+      "y": -1.57,
+      "zone": "位置未知",
+      "confidence": 1.0,
+      "source": "manual",
+      "period": 1,
+      "tags": [
+        "human_review",
+        "team_unknown",
+        "player_unknown",
+        "two",
+        "manual",
+        "location_unknown",
+        "scoreboard_unconfirmed"
+      ],
+      "evidence": "human_review",
+      "review_reason": "",
+      "crossing_t": null,
+      "review_t": null,
+      "suggested_made": null,
+      "index": 10,
+      "review_id": "lillard_11",
+      "shot_type": "field_goal",
+      "value_verified": true,
+      "review_note": "上篮",
+      "is_replay": false,
+      "play_id": "lillard_11"
+    },
+    {
+      "t": 130.0,
+      "team": "",
+      "player_id": "",
+      "player": "",
+      "value": 2,
+      "made": false,
+      "result": "missed",
+      "points": 0,
+      "counts_for_score": false,
+      "value_estimated": false,
+      "value_assumed": false,
+      "location_unknown": true,
+      "clip_start": 128.0,
+      "clip_end": 134.0,
+      "decision_t": null,
+      "release_source": "manual",
+      "x": 0.0,
+      "y": -1.57,
+      "zone": "位置未知",
+      "confidence": 1.0,
+      "source": "manual",
+      "period": 1,
+      "tags": [
+        "human_review",
+        "team_unknown",
+        "player_unknown",
+        "two",
+        "manual",
+        "location_unknown",
+        "scoreboard_unconfirmed"
+      ],
+      "evidence": "human_review",
+      "review_reason": "",
+      "crossing_t": null,
+      "review_t": null,
+      "suggested_made": null,
+      "index": 11,
+      "review_id": "lillard_12",
+      "shot_type": "field_goal",
+      "value_verified": true,
+      "review_note": "上篮",
+      "is_replay": false,
+      "play_id": "lillard_12"
+    },
+    {
+      "t": 141.0,
+      "team": "",
+      "player_id": "",
+      "player": "",
+      "value": 3,
+      "made": true,
+      "result": "made",
+      "points": 0,
+      "counts_for_score": false,
+      "value_estimated": false,
+      "value_assumed": false,
+      "location_unknown": true,
+      "clip_start": 139.0,
+      "clip_end": 145.0,
+      "decision_t": null,
+      "release_source": "manual",
+      "x": 0.0,
+      "y": -1.57,
+      "zone": "位置未知",
+      "confidence": 1.0,
+      "source": "manual",
+      "period": 1,
+      "tags": [
+        "human_review",
+        "team_unknown",
+        "player_unknown",
+        "three",
+        "manual",
+        "location_unknown",
+        "scoreboard_unconfirmed"
+      ],
+      "evidence": "human_review",
+      "review_reason": "",
+      "crossing_t": null,
+      "review_t": null,
+      "suggested_made": null,
+      "index": 12,
+      "review_id": "lillard_13",
+      "shot_type": "field_goal",
+      "value_verified": true,
+      "review_note": "绝杀首次播放",
+      "is_replay": false,
+      "play_id": "lillard_buzzer"
+    },
+    {
+      "t": 159.0,
+      "team": "",
+      "player_id": "",
+      "player": "",
+      "value": 3,
+      "made": true,
+      "result": "made",
+      "points": 0,
+      "counts_for_score": false,
+      "value_estimated": false,
+      "value_assumed": false,
+      "location_unknown": true,
+      "clip_start": 157.0,
+      "clip_end": 163.0,
+      "decision_t": null,
+      "release_source": "manual",
+      "x": 0.0,
+      "y": -1.57,
+      "zone": "位置未知",
+      "confidence": 1.0,
+      "source": "manual",
+      "period": 1,
+      "tags": [
+        "human_review",
+        "team_unknown",
+        "player_unknown",
+        "replay",
+        "three",
+        "manual",
+        "location_unknown",
+        "scoreboard_unconfirmed"
+      ],
+      "evidence": "human_review",
+      "review_reason": "",
+      "crossing_t": null,
+      "review_t": null,
+      "suggested_made": null,
+      "index": 13,
+      "review_id": "lillard_14",
+      "shot_type": "field_goal",
+      "value_verified": true,
+      "review_note": "同一次绝杀回放",
+      "is_replay": true,
+      "play_id": "lillard_buzzer"
+    },
+    {
+      "t": 171.0,
+      "team": "",
+      "player_id": "",
+      "player": "",
+      "value": 3,
+      "made": true,
+      "result": "made",
+      "points": 0,
+      "counts_for_score": false,
+      "value_estimated": false,
+      "value_assumed": false,
+      "location_unknown": true,
+      "clip_start": 169.0,
+      "clip_end": 175.0,
+      "decision_t": null,
+      "release_source": "manual",
+      "x": 0.0,
+      "y": -1.57,
+      "zone": "位置未知",
+      "confidence": 1.0,
+      "source": "manual",
+      "period": 1,
+      "tags": [
+        "human_review",
+        "team_unknown",
+        "player_unknown",
+        "replay",
+        "three",
+        "manual",
+        "location_unknown",
+        "scoreboard_unconfirmed"
+      ],
+      "evidence": "human_review",
+      "review_reason": "",
+      "crossing_t": null,
+      "review_t": null,
+      "suggested_made": null,
+      "index": 14,
+      "review_id": "lillard_15",
+      "shot_type": "field_goal",
+      "value_verified": true,
+      "review_note": "同一次绝杀回放",
+      "is_replay": true,
+      "play_id": "lillard_buzzer"
+    }
+  ],
+  "periods": 4,
+  "duration": 177.3105625,
+  "fps": 29.97001377174019,
+  "needs_review": [],
+  "possessions": 13,
+  "carry_in": {
+    "home": 0,
+    "away": 0
+  },
+  "carry_counted": false,
+  "base_period": 1,
+  "judgement": {
+    "state": "human_review",
+    "note": "人工逐球复核；重复回放单列。队别、出手人及未说明的分值待确认。"
+  },
+  "unmatched_goals": [
+    {
+      "t": 2.0,
+      "team": "",
+      "player_id": "",
+      "x": 0.0,
+      "y": -1.575,
+      "value": 2,
+      "made": true,
+      "counts_for_score": false,
+      "result": "made",
+      "period": 1,
+      "clock": 0.0,
+      "contest": 0.0,
+      "outcome_source": "manual",
+      "confidence": 1.0,
+      "release_frame": 0,
+      "rim_frame": null,
+      "clip_start": 0.0,
+      "clip_end": 6.0,
+      "tags": [
+        "human_review",
+        "team_unknown",
+        "player_unknown",
+        "two",
+        "manual",
+        "value_assumed",
+        "location_unknown",
+        "scoreboard_unconfirmed"
+      ],
+      "evidence": "human_review",
+      "review_reason": "",
+      "crossing_t": null,
+      "review_t": null,
+      "decision_t": null,
+      "release_source": "manual",
+      "suggested_made": null,
+      "points": 2,
+      "score_points": 0,
+      "distance": null,
+      "shot_type": "two_point"
+    },
+    {
+      "t": 57.0,
+      "team": "",
+      "player_id": "",
+      "x": 0.0,
+      "y": -1.575,
+      "value": 2,
+      "made": true,
+      "counts_for_score": false,
+      "result": "made",
+      "period": 1,
+      "clock": 0.0,
+      "contest": 0.0,
+      "outcome_source": "manual",
+      "confidence": 1.0,
+      "release_frame": 0,
+      "rim_frame": null,
+      "clip_start": 55.0,
+      "clip_end": 61.0,
+      "tags": [
+        "human_review",
+        "team_unknown",
+        "player_unknown",
+        "two",
+        "manual",
+        "location_unknown",
+        "scoreboard_unconfirmed"
+      ],
+      "evidence": "human_review",
+      "review_reason": "",
+      "crossing_t": null,
+      "review_t": null,
+      "decision_t": null,
+      "release_source": "manual",
+      "suggested_made": null,
+      "points": 2,
+      "score_points": 0,
+      "distance": null,
+      "shot_type": "two_point"
+    },
+    {
+      "t": 67.0,
+      "team": "",
+      "player_id": "",
+      "x": 0.0,
+      "y": -1.575,
+      "value": 2,
+      "made": true,
+      "counts_for_score": false,
+      "result": "made",
+      "period": 1,
+      "clock": 0.0,
+      "contest": 0.0,
+      "outcome_source": "manual",
+      "confidence": 1.0,
+      "release_frame": 0,
+      "rim_frame": null,
+      "clip_start": 65.0,
+      "clip_end": 71.0,
+      "tags": [
+        "human_review",
+        "team_unknown",
+        "player_unknown",
+        "two",
+        "manual",
+        "value_assumed",
+        "location_unknown",
+        "scoreboard_unconfirmed"
+      ],
+      "evidence": "human_review",
+      "review_reason": "",
+      "crossing_t": null,
+      "review_t": null,
+      "decision_t": null,
+      "release_source": "manual",
+      "suggested_made": null,
+      "points": 2,
+      "score_points": 0,
+      "distance": null,
+      "shot_type": "two_point"
+    },
+    {
+      "t": 104.0,
+      "team": "",
+      "player_id": "",
+      "x": 0.0,
+      "y": -1.575,
+      "value": 3,
+      "made": true,
+      "counts_for_score": false,
+      "result": "made",
+      "period": 1,
+      "clock": 0.0,
+      "contest": 0.0,
+      "outcome_source": "manual",
+      "confidence": 1.0,
+      "release_frame": 0,
+      "rim_frame": null,
+      "clip_start": 102.0,
+      "clip_end": 108.0,
+      "tags": [
+        "human_review",
+        "team_unknown",
+        "player_unknown",
+        "three",
+        "manual",
+        "location_unknown",
+        "scoreboard_unconfirmed"
+      ],
+      "evidence": "human_review",
+      "review_reason": "",
+      "crossing_t": null,
+      "review_t": null,
+      "decision_t": null,
+      "release_source": "manual",
+      "suggested_made": null,
+      "points": 3,
+      "score_points": 0,
+      "distance": null,
+      "shot_type": "three_point"
+    },
+    {
+      "t": 111.0,
+      "team": "",
+      "player_id": "",
+      "x": 0.0,
+      "y": -1.575,
+      "value": 2,
+      "made": true,
+      "counts_for_score": false,
+      "result": "made",
+      "period": 1,
+      "clock": 0.0,
+      "contest": 0.0,
+      "outcome_source": "manual",
+      "confidence": 1.0,
+      "release_frame": 0,
+      "rim_frame": null,
+      "clip_start": 109.0,
+      "clip_end": 115.0,
+      "tags": [
+        "human_review",
+        "team_unknown",
+        "player_unknown",
+        "two",
+        "manual",
+        "value_assumed",
+        "location_unknown",
+        "scoreboard_unconfirmed"
+      ],
+      "evidence": "human_review",
+      "review_reason": "",
+      "crossing_t": null,
+      "review_t": null,
+      "decision_t": null,
+      "release_source": "manual",
+      "suggested_made": null,
+      "points": 2,
+      "score_points": 0,
+      "distance": null,
+      "shot_type": "two_point"
+    },
+    {
+      "t": 120.0,
+      "team": "",
+      "player_id": "",
+      "x": 0.0,
+      "y": -1.575,
+      "value": 2,
+      "made": true,
+      "counts_for_score": false,
+      "result": "made",
+      "period": 1,
+      "clock": 0.0,
+      "contest": 0.0,
+      "outcome_source": "manual",
+      "confidence": 1.0,
+      "release_frame": 0,
+      "rim_frame": null,
+      "clip_start": 118.0,
+      "clip_end": 124.0,
+      "tags": [
+        "human_review",
+        "team_unknown",
+        "player_unknown",
+        "two",
+        "manual",
+        "location_unknown",
+        "scoreboard_unconfirmed"
+      ],
+      "evidence": "human_review",
+      "review_reason": "",
+      "crossing_t": null,
+      "review_t": null,
+      "decision_t": null,
+      "release_source": "manual",
+      "suggested_made": null,
+      "points": 2,
+      "score_points": 0,
+      "distance": null,
+      "shot_type": "two_point"
+    },
+    {
+      "t": 141.0,
+      "team": "",
+      "player_id": "",
+      "x": 0.0,
+      "y": -1.575,
+      "value": 3,
+      "made": true,
+      "counts_for_score": false,
+      "result": "made",
+      "period": 1,
+      "clock": 0.0,
+      "contest": 0.0,
+      "outcome_source": "manual",
+      "confidence": 1.0,
+      "release_frame": 0,
+      "rim_frame": null,
+      "clip_start": 139.0,
+      "clip_end": 145.0,
+      "tags": [
+        "human_review",
+        "team_unknown",
+        "player_unknown",
+        "three",
+        "manual",
+        "location_unknown",
+        "scoreboard_unconfirmed"
+      ],
+      "evidence": "human_review",
+      "review_reason": "",
+      "crossing_t": null,
+      "review_t": null,
+      "decision_t": null,
+      "release_source": "manual",
+      "suggested_made": null,
+      "points": 3,
+      "score_points": 0,
+      "distance": null,
+      "shot_type": "three_point"
+    },
+    {
+      "t": 159.0,
+      "team": "",
+      "player_id": "",
+      "x": 0.0,
+      "y": -1.575,
+      "value": 3,
+      "made": true,
+      "counts_for_score": false,
+      "result": "made",
+      "period": 1,
+      "clock": 0.0,
+      "contest": 0.0,
+      "outcome_source": "manual",
+      "confidence": 1.0,
+      "release_frame": 0,
+      "rim_frame": null,
+      "clip_start": 157.0,
+      "clip_end": 163.0,
+      "tags": [
+        "human_review",
+        "team_unknown",
+        "player_unknown",
+        "replay",
+        "three",
+        "manual",
+        "location_unknown",
+        "scoreboard_unconfirmed"
+      ],
+      "evidence": "human_review",
+      "review_reason": "",
+      "crossing_t": null,
+      "review_t": null,
+      "decision_t": null,
+      "release_source": "manual",
+      "suggested_made": null,
+      "points": 3,
+      "score_points": 0,
+      "distance": null,
+      "shot_type": "three_point"
+    },
+    {
+      "t": 171.0,
+      "team": "",
+      "player_id": "",
+      "x": 0.0,
+      "y": -1.575,
+      "value": 3,
+      "made": true,
+      "counts_for_score": false,
+      "result": "made",
+      "period": 1,
+      "clock": 0.0,
+      "contest": 0.0,
+      "outcome_source": "manual",
+      "confidence": 1.0,
+      "release_frame": 0,
+      "rim_frame": null,
+      "clip_start": 169.0,
+      "clip_end": 175.0,
+      "tags": [
+        "human_review",
+        "team_unknown",
+        "player_unknown",
+        "replay",
+        "three",
+        "manual",
+        "location_unknown",
+        "scoreboard_unconfirmed"
+      ],
+      "evidence": "human_review",
+      "review_reason": "",
+      "crossing_t": null,
+      "review_t": null,
+      "decision_t": null,
+      "release_source": "manual",
+      "suggested_made": null,
+      "points": 3,
+      "score_points": 0,
+      "distance": null,
+      "shot_type": "three_point"
+    }
+  ],
+  "meta": {
+    "source": "video",
+    "fps": 29.97001377174019,
+    "duration": 177.3105625,
+    "scoreboard": {
+      "source": "template",
+      "frames_hit": 0,
+      "frames_read": 1772,
+      "bug": {
+        "x": 1480,
+        "y": 870,
+        "w": 210,
+        "h": 80,
+        "row_top": 916,
+        "row_bottom": 923,
+        "home_cx": 0.0,
+        "away_cx": 0.0,
+        "period_cx": 0.0,
+        "field_half_w": 24.0,
+        "ok_frames": 0
+      },
+      "events": []
+    },
+    "shot_engine": "legacy",
+    "shot_engine_details": {
+      "version": "hoopai_legacy_v1",
+      "config": {
+        "detect": {
+          "imgsz": 640,
+          "ball_conf": 0.25,
+          "rim_min_conf": 0.35,
+          "ball_min_w_ratio": 0.012,
+          "ball_max_w_ratio": 0.24,
+          "ball_jump_px_per_frame": 90.0,
+          "rim_min_aspect": 1.2,
+          "center_lock_widths": 0.0,
+          "cand_window_s": 0.6,
+          "cand_rise_px": 25.0,
+          "cand_fall_px": 12.0,
+          "cand_near_rim_widths": 3.0,
+          "cand_dedupe_s": 1.2,
+          "cand_close_start_widths": 3.5,
+          "cand_match_tol_s": 1.5,
+          "cand_max": 40,
+          "rim_low_conf_guard": true,
+          "hint_first_scene_only": true
+        },
+        "score": {
+          "enable_three_point": false,
+          "make_radius_ratio": 0.65,
+          "make_exit_radius_ratio": 1.0,
+          "in_rim_below_ratio": 0.6,
+          "make_window_s": 0.9,
+          "make_allow_occluded_entry": false,
+          "make_window_from_crossing": false,
+          "approach_radius_ratio": 5.0,
+          "miss_timeout_s": 3.5,
+          "attempt_min_gap_s": 0.35,
+          "leave_radius_ratio": 3.0,
+          "ball_recent_s": 0.5,
+          "suspected_make_max_gap_s": 0.7,
+          "rim_max_jump_px": 0,
+          "rim_readopt_far_frames": 6,
+          "rim_stale_s": 1.5,
+          "rim_need_confirm": 2,
+          "ball_max_gap_frames": 5,
+          "release_lookback_s": 2.0,
+          "release_max_person_dist_ratio": 0.9
+        }
+      },
+      "model_path": "runs/detect/ball/weights/best.pt",
+      "model_sha256": "800dab7c265b4cf9e488f75eb293f659f34a6efa86300c4823563887329072d9",
+      "real_ball_frames": 1648,
+      "rim_frames": 2688,
+      "trace_schema": 2,
+      "rim_tracking": {
+        "schema": 2,
+        "center_hint": null,
+        "availability": {
+          "sampled_frames": 5314,
+          "usable_frames": 3821,
+          "usable_fraction": 0.7190440346255175,
+          "unavailable_ranges": [
+            {
+              "start": 6.507,
+              "end": 8.775
+            },
+            {
+              "start": 25.692,
+              "end": 28.128
+            },
+            {
+              "start": 37.437,
+              "end": 39.773
+            },
+            {
+              "start": 54.788,
+              "end": 58.158
+            },
+            {
+              "start": 85.352,
+              "end": 91.558
+            },
+            {
+              "start": 145.846,
+              "end": 154.755
+            },
+            {
+              "start": 156.89,
+              "end": 164.064
+            },
+            {
+              "start": 171.071,
+              "end": 173.14
+            }
+          ],
+          "min_gap_s": 2.0
+        },
+        "ball_visibility": {
+          "sampled_frames": 5314,
+          "observed_frames": 1648,
+          "observed_fraction": 0.3101242002258186,
+          "blind_ranges": [
+            {
+              "start": 34.801,
+              "end": 39.606
+            },
+            {
+              "start": 87.854,
+              "end": 89.89
+            },
+            {
+              "start": 160.527,
+              "end": 163.463
+            },
+            {
+              "start": 163.597,
+              "end": 166.099
+            }
+          ],
+          "longest_blind_s": 4.805,
+          "min_gap_s": 2.0,
+          "note": "按真实球观测统计；predicted 帧不计，缺证据不等于没有投篮。"
+        },
+        "lock_enabled": false,
+        "lock_requested": false,
+        "lock_widths": 0.0,
+        "lock_width": null,
+        "rejected_candidates": 0,
+        "rejected_frames": 0,
+        "frames": 5314,
+        "first_confirmed": {
+          "t": 0.10010005410237109,
+          "tracked_rim": {
+            "cx": 1649.9930419921875,
+            "cy": 308.6104431152344,
+            "w": 89.389892578125,
+            "h": 29.26849365234375,
+            "segment": 1,
+            "fresh": true,
+            "last_seen_t": 0.10010005410237109
+          },
+          "hint_relation": null
+        },
+        "last_tracked": null,
+        "transitions": [
+          {
+            "frame": 3,
+            "t": 0.10010005410237109,
+            "reason": "initialized",
+            "previous": null,
+            "current": {
+              "cx": 1649.9930419921875,
+              "cy": 308.6104431152344,
+              "w": 89.389892578125,
+              "h": 29.26849365234375,
+              "segment": 1,
+              "fresh": true,
+              "last_seen_t": 0.10010005410237109
+            },
+            "closed_attempts": 0
+          },
+          {
+            "frame": 52,
+            "t": 1.735067604441099,
+            "reason": "cut",
+            "previous": {
+              "cx": 1525.5679296690573,
+              "cy": 230.55558600199944,
+              "w": 95.46335334593121,
+              "h": 32.75896286478512,
+              "segment": 1,
+              "fresh": true,
+              "last_seen_t": 1.6683342350395183
+            },
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 53,
+            "t": 1.7684342891418894,
+            "reason": "cut",
+            "previous": null,
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 58,
+            "t": 1.935267712645841,
+            "reason": "initialized",
+            "previous": null,
+            "current": {
+              "cx": 1480.118408203125,
+              "cy": 234.99252319335938,
+              "w": 101.49609375,
+              "h": 32.11175537109375,
+              "segment": 2,
+              "fresh": true,
+              "last_seen_t": 1.935267712645841
+            },
+            "closed_attempts": 0
+          },
+          {
+            "frame": 263,
+            "t": 8.775438076307866,
+            "reason": "reacquired_far",
+            "previous": {
+              "cx": 1197.2593699700067,
+              "cy": 243.48934261925334,
+              "w": 122.24442305461437,
+              "h": 42.71339526268871,
+              "segment": 2,
+              "fresh": false,
+              "last_seen_t": 5.005002705118555
+            },
+            "current": {
+              "cx": 401.2447814941406,
+              "cy": 225.1120834350586,
+              "w": 111.10540771484375,
+              "h": 37.04310607910156,
+              "segment": 3,
+              "fresh": true,
+              "last_seen_t": 8.775438076307866
+            },
+            "closed_attempts": 0
+          },
+          {
+            "frame": 458,
+            "t": 15.281941592961987,
+            "reason": "cut",
+            "previous": {
+              "cx": 549.8407327528386,
+              "cy": 243.97335532212844,
+              "w": 86.16208038459231,
+              "h": 36.662676732945584,
+              "segment": 3,
+              "fresh": true,
+              "last_seen_t": 15.148474854158826
+            },
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 459,
+            "t": 15.315308277662778,
+            "reason": "cut",
+            "previous": null,
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 468,
+            "t": 15.615608439969892,
+            "reason": "initialized",
+            "previous": null,
+            "current": {
+              "cx": 632.4440002441406,
+              "cy": 294.8134460449219,
+              "w": 98.17694091796875,
+              "h": 37.32977294921875,
+              "segment": 4,
+              "fresh": true,
+              "last_seen_t": 15.615608439969892
+            },
+            "closed_attempts": 0
+          },
+          {
+            "frame": 555,
+            "t": 18.51851000893865,
+            "reason": "cut",
+            "previous": {
+              "cx": 553.4657976018909,
+              "cy": 222.76441843770726,
+              "w": 126.10772419118615,
+              "h": 39.09514566357828,
+              "segment": 4,
+              "fresh": true,
+              "last_seen_t": 17.41740941381257
+            },
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 556,
+            "t": 18.551876693639443,
+            "reason": "cut",
+            "previous": null,
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 557,
+            "t": 18.585243378340234,
+            "reason": "initialized",
+            "previous": null,
+            "current": {
+              "cx": 1569.2194213867188,
+              "cy": 208.62442016601562,
+              "w": 112.7679443359375,
+              "h": 33.36029052734375,
+              "segment": 5,
+              "fresh": true,
+              "last_seen_t": 18.585243378340234
+            },
+            "closed_attempts": 0
+          },
+          {
+            "frame": 625,
+            "t": 20.854177937993978,
+            "reason": "cut",
+            "previous": {
+              "cx": 1257.3839992637597,
+              "cy": 221.1068555654443,
+              "w": 95.73800576453559,
+              "h": 39.93909855006738,
+              "segment": 5,
+              "fresh": true,
+              "last_seen_t": 20.820811253293186
+            },
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 626,
+            "t": 20.88754462269477,
+            "reason": "cut",
+            "previous": null,
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 627,
+            "t": 20.92091130739556,
+            "reason": "initialized",
+            "previous": null,
+            "current": {
+              "cx": 1225.84423828125,
+              "cy": 221.24853515625,
+              "w": 96.81103515625,
+              "h": 40.99041748046875,
+              "segment": 6,
+              "fresh": true,
+              "last_seen_t": 20.92091130739556
+            },
+            "closed_attempts": 0
+          },
+          {
+            "frame": 631,
+            "t": 21.05437804619872,
+            "reason": "cut",
+            "previous": {
+              "cx": 1214.446216178894,
+              "cy": 223.60896775913238,
+              "w": 99.38925053405762,
+              "h": 39.644281930923455,
+              "segment": 6,
+              "fresh": true,
+              "last_seen_t": 21.02101136149793
+            },
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 632,
+            "t": 21.087744730899512,
+            "reason": "cut",
+            "previous": null,
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 633,
+            "t": 21.1211114156003,
+            "reason": "initialized",
+            "previous": null,
+            "current": {
+              "cx": 1190.181640625,
+              "cy": 227.70570373535156,
+              "w": 105.2197265625,
+              "h": 33.499786376953125,
+              "segment": 7,
+              "fresh": true,
+              "last_seen_t": 21.1211114156003
+            },
+            "closed_attempts": 0
+          },
+          {
+            "frame": 843,
+            "t": 28.128115202766278,
+            "reason": "reacquired_far",
+            "previous": {
+              "cx": 1847.398743124189,
+              "cy": 202.63039002954835,
+              "w": 114.94208119948036,
+              "h": 42.26673870848875,
+              "segment": 7,
+              "fresh": false,
+              "last_seen_t": 24.190846408073014
+            },
+            "current": {
+              "cx": 445.90899658203125,
+              "cy": 197.5858612060547,
+              "w": 103.2044677734375,
+              "h": 41.11944580078125,
+              "segment": 8,
+              "fresh": true,
+              "last_seen_t": 28.128115202766278
+            },
+            "closed_attempts": 0
+          },
+          {
+            "frame": 904,
+            "t": 30.16348296951449,
+            "reason": "cut",
+            "previous": {
+              "cx": 443.5833676156768,
+              "cy": 189.96179735351416,
+              "w": 112.6241433542279,
+              "h": 38.407159966100835,
+              "segment": 8,
+              "fresh": true,
+              "last_seen_t": 30.1301162848137
+            },
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 905,
+            "t": 30.19684965421528,
+            "reason": "cut",
+            "previous": null,
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 906,
+            "t": 30.230216338916073,
+            "reason": "initialized",
+            "previous": null,
+            "current": {
+              "cx": 433.4413299560547,
+              "cy": 189.4132537841797,
+              "w": 105.53921508789062,
+              "h": 35.594146728515625,
+              "segment": 9,
+              "fresh": true,
+              "last_seen_t": 30.230216338916073
+            },
+            "closed_attempts": 0
+          },
+          {
+            "frame": 1061,
+            "t": 35.402052467538574,
+            "reason": "reacquired_far",
+            "previous": {
+              "cx": 214.3811573474417,
+              "cy": 175.39233107200545,
+              "w": 140.56971824460948,
+              "h": 55.53962434207824,
+              "segment": 9,
+              "fresh": false,
+              "last_seen_t": 32.532517583270604
+            },
+            "current": {
+              "cx": 139.41737365722656,
+              "cy": 998.36865234375,
+              "w": 278.8347473144531,
+              "h": 163.2626953125,
+              "segment": 10,
+              "fresh": true,
+              "last_seen_t": 35.402052467538574
+            },
+            "closed_attempts": 0
+          },
+          {
+            "frame": 1192,
+            "t": 39.773088163342116,
+            "reason": "reacquired_far",
+            "previous": {
+              "cx": 322.66131163137123,
+              "cy": 889.7958878927489,
+              "w": 260.48437863383623,
+              "h": 114.01990023989292,
+              "segment": 10,
+              "fresh": false,
+              "last_seen_t": 35.935919422751226
+            },
+            "current": {
+              "cx": 780.3030700683594,
+              "cy": 230.5171661376953,
+              "w": 126.93597412109375,
+              "h": 36.575225830078125,
+              "segment": 11,
+              "fresh": true,
+              "last_seen_t": 39.773088163342116
+            },
+            "closed_attempts": 0
+          },
+          {
+            "frame": 1294,
+            "t": 43.17649000282273,
+            "reason": "cut",
+            "previous": {
+              "cx": 779.4956324894783,
+              "cy": 229.65045359245278,
+              "w": 124.69890624722566,
+              "h": 38.87801153556812,
+              "segment": 11,
+              "fresh": true,
+              "last_seen_t": 43.143123318121944
+            },
+            "current": null,
+            "closed_attempts": 1
+          },
+          {
+            "frame": 1295,
+            "t": 43.209856687523526,
+            "reason": "cut",
+            "previous": null,
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 1296,
+            "t": 43.243223372224314,
+            "reason": "initialized",
+            "previous": null,
+            "current": {
+              "cx": 779.8424377441406,
+              "cy": 229.5992431640625,
+              "w": 125.94671630859375,
+              "h": 40.734649658203125,
+              "segment": 12,
+              "fresh": true,
+              "last_seen_t": 43.243223372224314
+            },
+            "closed_attempts": 0
+          },
+          {
+            "frame": 1427,
+            "t": 47.61425906802785,
+            "reason": "reacquired_far",
+            "previous": {
+              "cx": 274.7790734307042,
+              "cy": 126.06251665509913,
+              "w": 126.9798696170937,
+              "h": 39.38203982337435,
+              "segment": 12,
+              "fresh": false,
+              "last_seen_t": 45.94592483298833
+            },
+            "current": {
+              "cx": 1530.8407592773438,
+              "cy": 194.53997039794922,
+              "w": 93.3228759765625,
+              "h": 34.43879699707031,
+              "segment": 13,
+              "fresh": true,
+              "last_seen_t": 47.61425906802785
+            },
+            "closed_attempts": 0
+          },
+          {
+            "frame": 1437,
+            "t": 47.94792591503575,
+            "reason": "cut",
+            "previous": {
+              "cx": 1463.9270015135048,
+              "cy": 206.84775789329086,
+              "w": 91.83288431337928,
+              "h": 32.52180664627862,
+              "segment": 13,
+              "fresh": true,
+              "last_seen_t": 47.914559230334966
+            },
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 1438,
+            "t": 47.98129259973655,
+            "reason": "cut",
+            "previous": null,
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 1455,
+            "t": 48.54852623964998,
+            "reason": "initialized",
+            "previous": null,
+            "current": {
+              "cx": 1277.4068603515625,
+              "cy": 388.6131591796875,
+              "w": 99.74560546875,
+              "h": 40.2498779296875,
+              "segment": 14,
+              "fresh": true,
+              "last_seen_t": 48.54852623964998
+            },
+            "closed_attempts": 0
+          },
+          {
+            "frame": 1588,
+            "t": 52.9862953048551,
+            "reason": "reacquired_near",
+            "previous": {
+              "cx": 1840.6828042845032,
+              "cy": 203.62612086757434,
+              "w": 109.64462513874336,
+              "h": 39.357317649591195,
+              "segment": 14,
+              "fresh": false,
+              "last_seen_t": 51.15112764631163
+            },
+            "current": {
+              "cx": 1778.810302734375,
+              "cy": 181.2718963623047,
+              "w": 108.06591796875,
+              "h": 34.667724609375,
+              "segment": 15,
+              "fresh": true,
+              "last_seen_t": 52.9862953048551
+            },
+            "closed_attempts": 0
+          },
+          {
+            "frame": 1737,
+            "t": 57.95793132527287,
+            "reason": "cut",
+            "previous": {
+              "cx": 1798.0790139770506,
+              "cy": 169.34110647201538,
+              "w": 106.34202697753906,
+              "h": 34.45061550140381,
+              "segment": 15,
+              "fresh": false,
+              "last_seen_t": 53.286595467162215
+            },
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 1738,
+            "t": 57.991298009973654,
+            "reason": "cut",
+            "previous": null,
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 1743,
+            "t": 58.15813143347761,
+            "reason": "initialized",
+            "previous": null,
+            "current": {
+              "cx": 777.0574645996094,
+              "cy": 206.26333618164062,
+              "w": 99.47064208984375,
+              "h": 31.53863525390625,
+              "segment": 16,
+              "fresh": true,
+              "last_seen_t": 58.15813143347761
+            },
+            "closed_attempts": 0
+          },
+          {
+            "frame": 1937,
+            "t": 64.63126826543093,
+            "reason": "reacquired_far",
+            "previous": {
+              "cx": 795.9453211989917,
+              "cy": 119.21998443384163,
+              "w": 159.0611603674622,
+              "h": 52.18604344424692,
+              "segment": 16,
+              "fresh": false,
+              "last_seen_t": 62.92956734569063
+            },
+            "current": {
+              "cx": 1487.9560546875,
+              "cy": 228.41008758544922,
+              "w": 82.36865234375,
+              "h": 32.58018493652344,
+              "segment": 17,
+              "fresh": true,
+              "last_seen_t": 64.63126826543093
+            },
+            "closed_attempts": 0
+          },
+          {
+            "frame": 1953,
+            "t": 65.16513522064358,
+            "reason": "cut",
+            "previous": {
+              "cx": 1474.464753112793,
+              "cy": 228.42610691070556,
+              "w": 89.39238586425782,
+              "h": 31.301718292236327,
+              "segment": 17,
+              "fresh": true,
+              "last_seen_t": 64.83146837363567
+            },
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 1954,
+            "t": 65.19850190534437,
+            "reason": "cut",
+            "previous": null,
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 1964,
+            "t": 65.53216875235228,
+            "reason": "initialized",
+            "previous": null,
+            "current": {
+              "cx": 1355.9826049804688,
+              "cy": 245.67362213134766,
+              "w": 98.9234619140625,
+              "h": 37.27250671386719,
+              "segment": 18,
+              "fresh": true,
+              "last_seen_t": 65.53216875235228
+            },
+            "closed_attempts": 0
+          },
+          {
+            "frame": 2214,
+            "t": 73.87383992754987,
+            "reason": "reacquired_far",
+            "previous": {
+              "cx": 1490.1368143267234,
+              "cy": 141.09475949830448,
+              "w": 129.23553513914558,
+              "h": 42.27277855758285,
+              "segment": 18,
+              "fresh": false,
+              "last_seen_t": 72.0386722690064
+            },
+            "current": {
+              "cx": 649.2023315429688,
+              "cy": 212.85733795166016,
+              "w": 105.1951904296875,
+              "h": 34.90809631347656,
+              "segment": 19,
+              "fresh": true,
+              "last_seen_t": 73.87383992754987
+            },
+            "closed_attempts": 0
+          },
+          {
+            "frame": 2228,
+            "t": 74.34097351336094,
+            "reason": "cut",
+            "previous": {
+              "cx": 729.6506662122817,
+              "cy": 215.69098896282645,
+              "w": 103.12314139107531,
+              "h": 36.40751302723352,
+              "segment": 19,
+              "fresh": true,
+              "last_seen_t": 74.30760682866014
+            },
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 2229,
+            "t": 74.37434019806173,
+            "reason": "cut",
+            "previous": null,
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 2230,
+            "t": 74.40770688276251,
+            "reason": "initialized",
+            "previous": null,
+            "current": {
+              "cx": 786.0424499511719,
+              "cy": 227.11795806884766,
+              "w": 108.33917236328125,
+              "h": 38.20472717285156,
+              "segment": 20,
+              "fresh": true,
+              "last_seen_t": 74.40770688276251
+            },
+            "closed_attempts": 0
+          },
+          {
+            "frame": 2271,
+            "t": 75.77574095549492,
+            "reason": "cut",
+            "previous": {
+              "cx": 1029.5744510267336,
+              "cy": 253.97805853589026,
+              "w": 109.36957433433756,
+              "h": 34.34076492113229,
+              "segment": 20,
+              "fresh": true,
+              "last_seen_t": 75.74237427079413
+            },
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 2272,
+            "t": 75.8091076401957,
+            "reason": "cut",
+            "previous": null,
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 2273,
+            "t": 75.8424743248965,
+            "reason": "initialized",
+            "previous": null,
+            "current": {
+              "cx": 1040.4483032226562,
+              "cy": 253.7428207397461,
+              "w": 123.1988525390625,
+              "h": 36.05195617675781,
+              "segment": 21,
+              "fresh": true,
+              "last_seen_t": 75.8424743248965
+            },
+            "closed_attempts": 0
+          },
+          {
+            "frame": 2744,
+            "t": 91.55818281896876,
+            "reason": "reacquired_near",
+            "previous": {
+              "cx": 738.2258719658822,
+              "cy": 125.68796542360658,
+              "w": 137.06213245059382,
+              "h": 46.31822382746979,
+              "segment": 21,
+              "fresh": false,
+              "last_seen_t": 83.85047865308618
+            },
+            "current": {
+              "cx": 432.86224365234375,
+              "cy": 267.7075653076172,
+              "w": 74.1822509765625,
+              "h": 32.351287841796875,
+              "segment": 22,
+              "fresh": true,
+              "last_seen_t": 91.55818281896876
+            },
+            "closed_attempts": 0
+          },
+          {
+            "frame": 3046,
+            "t": 101.63492159860745,
+            "reason": "cut",
+            "previous": {
+              "cx": 58.87744689950483,
+              "cy": 103.22564160206815,
+              "w": 106.46185996732106,
+              "h": 38.97710298360282,
+              "segment": 22,
+              "fresh": false,
+              "last_seen_t": 98.49845323673316
+            },
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 3047,
+            "t": 101.66828828330824,
+            "reason": "cut",
+            "previous": null,
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 3051,
+            "t": 101.80175502211141,
+            "reason": "initialized",
+            "previous": null,
+            "current": {
+              "cx": 1597.618896484375,
+              "cy": 268.20653533935547,
+              "w": 90.30908203125,
+              "h": 36.02272033691406,
+              "segment": 23,
+              "fresh": true,
+              "last_seen_t": 101.80175502211141
+            },
+            "closed_attempts": 0
+          },
+          {
+            "frame": 3141,
+            "t": 104.80475664518254,
+            "reason": "cut",
+            "previous": {
+              "cx": 1419.6559798053236,
+              "cy": 227.60372451519368,
+              "w": 91.29834877865505,
+              "h": 34.83260059278484,
+              "segment": 23,
+              "fresh": true,
+              "last_seen_t": 104.50445648287543
+            },
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 3142,
+            "t": 104.83812332988333,
+            "reason": "cut",
+            "previous": null,
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 3146,
+            "t": 104.9715900686865,
+            "reason": "initialized",
+            "previous": null,
+            "current": {
+              "cx": 1378.0907592773438,
+              "cy": 271.0634765625,
+              "w": 94.1781005859375,
+              "h": 36.22796630859375,
+              "segment": 24,
+              "fresh": true,
+              "last_seen_t": 104.9715900686865
+            },
+            "closed_attempts": 0
+          },
+          {
+            "frame": 3250,
+            "t": 108.4417252775687,
+            "reason": "reacquired_far",
+            "previous": {
+              "cx": 1243.632242963676,
+              "cy": 318.0397349965939,
+              "w": 118.04905587301765,
+              "h": 41.764710063993746,
+              "segment": 24,
+              "fresh": false,
+              "last_seen_t": 106.77339104252917
+            },
+            "current": {
+              "cx": 621.9129638671875,
+              "cy": 222.36978149414062,
+              "w": 88.604736328125,
+              "h": 36.74322509765625,
+              "segment": 25,
+              "fresh": true,
+              "last_seen_t": 108.4417252775687
+            },
+            "closed_attempts": 0
+          },
+          {
+            "frame": 3496,
+            "t": 116.64992971396312,
+            "reason": "reacquired_near",
+            "previous": {
+              "cx": 938.6805314431288,
+              "cy": 231.40577319489796,
+              "w": 128.51062611922345,
+              "h": 41.38801567432105,
+              "segment": 25,
+              "fresh": false,
+              "last_seen_t": 114.64792863191569
+            },
+            "current": {
+              "cx": 681.5095825195312,
+              "cy": 160.4077606201172,
+              "w": 135.7906494140625,
+              "h": 37.190216064453125,
+              "segment": 26,
+              "fresh": true,
+              "last_seen_t": 116.64992971396312
+            },
+            "closed_attempts": 0
+          },
+          {
+            "frame": 3595,
+            "t": 119.95323149934136,
+            "reason": "reacquired_far",
+            "previous": {
+              "cx": 597.3320699547083,
+              "cy": 150.13620109602184,
+              "w": 129.83631001409398,
+              "h": 44.580801241800486,
+              "segment": 26,
+              "fresh": false,
+              "last_seen_t": 117.18379666917576
+            },
+            "current": {
+              "cx": 1311.4013671875,
+              "cy": 215.2439727783203,
+              "w": 82.19482421875,
+              "h": 28.902374267578125,
+              "segment": 27,
+              "fresh": true,
+              "last_seen_t": 119.95323149934136
+            },
+            "closed_attempts": 0
+          },
+          {
+            "frame": 3603,
+            "t": 120.22016497694769,
+            "reason": "cut",
+            "previous": {
+              "cx": 1304.421307384759,
+              "cy": 214.70520814546796,
+              "w": 94.82066690231133,
+              "h": 32.225488180057525,
+              "segment": 27,
+              "fresh": true,
+              "last_seen_t": 120.18679829224689
+            },
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 3604,
+            "t": 120.25353166164848,
+            "reason": "cut",
+            "previous": null,
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 3605,
+            "t": 120.28689834634926,
+            "reason": "initialized",
+            "previous": null,
+            "current": {
+              "cx": 1298.8630981445312,
+              "cy": 216.8269271850586,
+              "w": 91.7545166015625,
+              "h": 34.68077087402344,
+              "segment": 28,
+              "fresh": true,
+              "last_seen_t": 120.28689834634926
+            },
+            "closed_attempts": 0
+          },
+          {
+            "frame": 3608,
+            "t": 120.38699840045163,
+            "reason": "cut",
+            "previous": {
+              "cx": 1297.2635272216796,
+              "cy": 216.63583322525022,
+              "w": 91.83617614746093,
+              "h": 34.06680835723877,
+              "segment": 28,
+              "fresh": true,
+              "last_seen_t": 120.35363171575085
+            },
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 3609,
+            "t": 120.42036508515243,
+            "reason": "cut",
+            "previous": null,
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 3614,
+            "t": 120.58719850865639,
+            "reason": "initialized",
+            "previous": null,
+            "current": {
+              "cx": 1288.1325073242188,
+              "cy": 218.6458969116211,
+              "w": 97.5120849609375,
+              "h": 36.56446838378906,
+              "segment": 29,
+              "fresh": true,
+              "last_seen_t": 120.58719850865639
+            },
+            "closed_attempts": 0
+          },
+          {
+            "frame": 3764,
+            "t": 125.59220121377494,
+            "reason": "cut",
+            "previous": {
+              "cx": 1476.7565222495914,
+              "cy": 297.0607455071629,
+              "w": 98.28231155834816,
+              "h": 34.703577378241995,
+              "segment": 29,
+              "fresh": true,
+              "last_seen_t": 125.52546784437335
+            },
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 3765,
+            "t": 125.62556789847572,
+            "reason": "cut",
+            "previous": null,
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 3766,
+            "t": 125.65893458317652,
+            "reason": "initialized",
+            "previous": null,
+            "current": {
+              "cx": 1515.0946044921875,
+              "cy": 306.40673828125,
+              "w": 97.196533203125,
+              "h": 32.673583984375,
+              "segment": 30,
+              "fresh": true,
+              "last_seen_t": 125.65893458317652
+            },
+            "closed_attempts": 0
+          },
+          {
+            "frame": 3867,
+            "t": 129.02896973795634,
+            "reason": "reacquired_far",
+            "previous": {
+              "cx": 1522.3394528198241,
+              "cy": 307.66396812438967,
+              "w": 96.79022644042968,
+              "h": 32.25466384887695,
+              "segment": 30,
+              "fresh": false,
+              "last_seen_t": 125.72566795257809
+            },
+            "current": {
+              "cx": 449.2649230957031,
+              "cy": 201.3035125732422,
+              "w": 104.34210205078125,
+              "h": 36.905914306640625,
+              "segment": 31,
+              "fresh": true,
+              "last_seen_t": 129.02896973795634
+            },
+            "closed_attempts": 0
+          },
+          {
+            "frame": 3906,
+            "t": 130.33027044128715,
+            "reason": "cut",
+            "previous": {
+              "cx": 560.523011748109,
+              "cy": 203.27173095418556,
+              "w": 106.27850204323687,
+              "h": 35.200968235011665,
+              "segment": 31,
+              "fresh": true,
+              "last_seen_t": 130.29690375658637
+            },
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 3907,
+            "t": 130.36363712598796,
+            "reason": "cut",
+            "previous": null,
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 3916,
+            "t": 130.66393728829507,
+            "reason": "initialized",
+            "previous": null,
+            "current": {
+              "cx": 757.0274658203125,
+              "cy": 205.490478515625,
+              "w": 107.718017578125,
+              "h": 32.081817626953125,
+              "segment": 32,
+              "fresh": true,
+              "last_seen_t": 130.66393728829507
+            },
+            "closed_attempts": 0
+          },
+          {
+            "frame": 4111,
+            "t": 137.17044080494918,
+            "reason": "reacquired_far",
+            "previous": {
+              "cx": 571.9576589962417,
+              "cy": 118.83962191421907,
+              "w": 153.9719216311488,
+              "h": 59.97302235153931,
+              "segment": 32,
+              "fresh": false,
+              "last_seen_t": 134.6679394523899
+            },
+            "current": {
+              "cx": 1553.9314575195312,
+              "cy": 256.8895492553711,
+              "w": 89.8316650390625,
+              "h": 28.726760864257812,
+              "segment": 33,
+              "fresh": true,
+              "last_seen_t": 137.17044080494918
+            },
+            "closed_attempts": 0
+          },
+          {
+            "frame": 4232,
+            "t": 141.20780965374482,
+            "reason": "cut",
+            "previous": {
+              "cx": 1558.4950992492923,
+              "cy": 234.46097937913137,
+              "w": 92.83762883598816,
+              "h": 30.94403986884897,
+              "segment": 33,
+              "fresh": true,
+              "last_seen_t": 140.77404275263456
+            },
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 4233,
+            "t": 141.24117633844563,
+            "reason": "initialized",
+            "previous": null,
+            "current": {
+              "cx": 1558.356201171875,
+              "cy": 234.7322235107422,
+              "w": 90.45703125,
+              "h": 32.175018310546875,
+              "segment": 34,
+              "fresh": true,
+              "last_seen_t": 141.24117633844563
+            },
+            "closed_attempts": 0
+          },
+          {
+            "frame": 4234,
+            "t": 141.2745430231464,
+            "reason": "cut",
+            "previous": {
+              "cx": 1558.356201171875,
+              "cy": 234.7322235107422,
+              "w": 90.45703125,
+              "h": 32.175018310546875,
+              "segment": 34,
+              "fresh": true,
+              "last_seen_t": 141.24117633844563
+            },
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 4235,
+            "t": 141.3079097078472,
+            "reason": "initialized",
+            "previous": null,
+            "current": {
+              "cx": 1556.0480346679688,
+              "cy": 234.58880615234375,
+              "w": 93.7738037109375,
+              "h": 30.9605712890625,
+              "segment": 35,
+              "fresh": true,
+              "last_seen_t": 141.3079097078472
+            },
+            "closed_attempts": 0
+          },
+          {
+            "frame": 4316,
+            "t": 144.0106111686112,
+            "reason": "cut",
+            "previous": {
+              "cx": 1326.776037558746,
+              "cy": 286.9206019549823,
+              "w": 108.41942825650881,
+              "h": 38.87348187216932,
+              "segment": 35,
+              "fresh": true,
+              "last_seen_t": 143.97724448391043
+            },
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 4317,
+            "t": 144.04397785331201,
+            "reason": "cut",
+            "previous": null,
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 4318,
+            "t": 144.0773445380128,
+            "reason": "initialized",
+            "previous": null,
+            "current": {
+              "cx": 1320.0455932617188,
+              "cy": 295.8200988769531,
+              "w": 112.3831787109375,
+              "h": 41.88897705078125,
+              "segment": 36,
+              "fresh": true,
+              "last_seen_t": 144.0773445380128
+            },
+            "closed_attempts": 0
+          },
+          {
+            "frame": 4536,
+            "t": 151.3512818027851,
+            "reason": "cut",
+            "previous": {
+              "cx": 1382.4660833852827,
+              "cy": 300.21855468637693,
+              "w": 152.23959067322454,
+              "h": 52.73652730940382,
+              "segment": 36,
+              "fresh": false,
+              "last_seen_t": 144.34427801561912
+            },
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 4542,
+            "t": 151.55148191098985,
+            "reason": "cut",
+            "previous": null,
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 4543,
+            "t": 151.58484859569063,
+            "reason": "cut",
+            "previous": null,
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 4621,
+            "t": 154.18745000235228,
+            "reason": "cut",
+            "previous": null,
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 4622,
+            "t": 154.22081668705306,
+            "reason": "cut",
+            "previous": null,
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 4638,
+            "t": 154.75468364226572,
+            "reason": "initialized",
+            "previous": null,
+            "current": {
+              "cx": 1866.71044921875,
+              "cy": 144.81456756591797,
+              "w": 102.286376953125,
+              "h": 44.87471008300781,
+              "segment": 37,
+              "fresh": true,
+              "last_seen_t": 154.75468364226572
+            },
+            "closed_attempts": 0
+          },
+          {
+            "frame": 4788,
+            "t": 159.75968634738427,
+            "reason": "cut",
+            "previous": {
+              "cx": 1866.8885096305846,
+              "cy": 145.70483270235061,
+              "w": 103.19720984802247,
+              "h": 43.6510598028183,
+              "segment": 37,
+              "fresh": false,
+              "last_seen_t": 155.38865065158072
+            },
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 4790,
+            "t": 159.82641971678584,
+            "reason": "cut",
+            "previous": null,
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 4872,
+            "t": 162.56248786225066,
+            "reason": "cut",
+            "previous": null,
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 4873,
+            "t": 162.59585454695144,
+            "reason": "cut",
+            "previous": null,
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 4917,
+            "t": 164.0639886737862,
+            "reason": "initialized",
+            "previous": null,
+            "current": {
+              "cx": 273.29266357421875,
+              "cy": 893.9706115722656,
+              "w": 546.5853271484375,
+              "h": 223.83197021484375,
+              "segment": 38,
+              "fresh": true,
+              "last_seen_t": 164.0639886737862
+            },
+            "closed_attempts": 0
+          },
+          {
+            "frame": 5067,
+            "t": 169.06899137890477,
+            "reason": "reacquired_near",
+            "previous": {
+              "cx": 132.39571712616655,
+              "cy": 908.6139831771166,
+              "w": 264.7914342523331,
+              "h": 154.69969402856358,
+              "segment": 38,
+              "fresh": false,
+              "last_seen_t": 166.2995565487392
+            },
+            "current": {
+              "cx": 697.6578979492188,
+              "cy": 428.0651550292969,
+              "w": 86.2796630859375,
+              "h": 31.9398193359375,
+              "segment": 39,
+              "fresh": true,
+              "last_seen_t": 169.06899137890477
+            },
+            "closed_attempts": 1
+          },
+          {
+            "frame": 5127,
+            "t": 171.0709924609522,
+            "reason": "cut",
+            "previous": {
+              "cx": 623.8754720501177,
+              "cy": 422.5153895017171,
+              "w": 85.29909298149407,
+              "h": 36.45560926321314,
+              "segment": 39,
+              "fresh": true,
+              "last_seen_t": 170.93752572214905
+            },
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 5128,
+            "t": 171.104359145653,
+            "reason": "cut",
+            "previous": null,
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 5129,
+            "t": 171.1377258303538,
+            "reason": "cut",
+            "previous": null,
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 5130,
+            "t": 171.17109251505457,
+            "reason": "cut",
+            "previous": null,
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 5189,
+            "t": 173.13972691240122,
+            "reason": "initialized",
+            "previous": null,
+            "current": {
+              "cx": 1204.6170043945312,
+              "cy": 349.36083984375,
+              "w": 254.6456298828125,
+              "h": 88.50128173828125,
+              "segment": 40,
+              "fresh": true,
+              "last_seen_t": 173.13972691240122
+            },
+            "closed_attempts": 0
+          },
+          {
+            "frame": 5303,
+            "t": 176.9435289682913,
+            "reason": "cut",
+            "previous": {
+              "cx": 1059.7197297666853,
+              "cy": 291.76843826036566,
+              "w": 260.5773402143677,
+              "h": 97.0672509981013,
+              "segment": 40,
+              "fresh": false,
+              "last_seen_t": 174.00726071462176
+            },
+            "current": null,
+            "closed_attempts": 0
+          },
+          {
+            "frame": 5304,
+            "t": 176.97689565299208,
+            "reason": "cut",
+            "previous": null,
+            "current": null,
+            "closed_attempts": 0
+          }
+        ],
+        "note": "跟踪段变化不等于物理换筐；候选为检测器阈值和 NMS 后输出。"
+      },
+      "shot_candidates": {
+        "count": 12,
+        "unmatched_count": 11,
+        "truncated": false,
+        "candidates": [
+          {
+            "release_t": 0.0,
+            "apex_t": 0.067,
+            "kind": "vanish",
+            "rise_px": 30,
+            "fall_px": 0,
+            "obs_frames": 4,
+            "blocks_in_window": 1,
+            "start_dist_rims": null,
+            "klass": "unknown",
+            "ball_obs": 4,
+            "ball_box_w_med": 47.8,
+            "ball_box_w_ratio": 0.67,
+            "tall_box_frac": 0.0,
+            "in_person_frac": 0.5,
+            "outside_person_run": 2,
+            "cut_truncated": false,
+            "evidence_flags": [
+              "few_ball_observations"
+            ],
+            "matched": false,
+            "matched_event_t": null,
+            "matched_event_release_t": null,
+            "matched_event_type": null,
+            "matched_delta_s": null
+          },
+          {
+            "release_t": 27.16,
+            "apex_t": 27.728,
+            "kind": "vanish",
+            "rise_px": 180,
+            "fall_px": 0,
+            "obs_frames": 11,
+            "blocks_in_window": 1,
+            "start_dist_rims": null,
+            "klass": "unknown",
+            "ball_obs": 11,
+            "ball_box_w_med": 61.9,
+            "ball_box_w_ratio": 0.86,
+            "tall_box_frac": 0.0,
+            "in_person_frac": 0.55,
+            "outside_person_run": 3,
+            "cut_truncated": false,
+            "evidence_flags": [],
+            "matched": false,
+            "matched_event_t": null,
+            "matched_event_release_t": null,
+            "matched_event_type": null,
+            "matched_delta_s": null
+          },
+          {
+            "release_t": 42.309,
+            "apex_t": 42.476,
+            "kind": "arc",
+            "rise_px": 27,
+            "fall_px": 376,
+            "obs_frames": 5,
+            "blocks_in_window": 1,
+            "start_dist_rims": 0.17,
+            "klass": "near",
+            "ball_obs": 5,
+            "ball_box_w_med": 56.7,
+            "ball_box_w_ratio": 0.79,
+            "tall_box_frac": 0.0,
+            "in_person_frac": 0.2,
+            "outside_person_run": 4,
+            "cut_truncated": true,
+            "evidence_flags": [
+              "cut_truncated"
+            ],
+            "matched": true,
+            "matched_event_t": 43.18,
+            "matched_event_release_t": 40.81,
+            "matched_event_type": "uncertain",
+            "matched_delta_s": 1.5
+          },
+          {
+            "release_t": 56.59,
+            "apex_t": 57.124,
+            "kind": "arc",
+            "rise_px": 93,
+            "fall_px": 24,
+            "obs_frames": 9,
+            "blocks_in_window": 1,
+            "start_dist_rims": null,
+            "klass": "unknown",
+            "ball_obs": 9,
+            "ball_box_w_med": 36.2,
+            "ball_box_w_ratio": 0.51,
+            "tall_box_frac": 0.33,
+            "in_person_frac": 0.11,
+            "outside_person_run": 8,
+            "cut_truncated": false,
+            "evidence_flags": [
+              "ball_box_shape"
+            ],
+            "matched": false,
+            "matched_event_t": null,
+            "matched_event_release_t": null,
+            "matched_event_type": null,
+            "matched_delta_s": null
+          },
+          {
+            "release_t": 59.76,
+            "apex_t": 60.327,
+            "kind": "arc",
+            "rise_px": 677,
+            "fall_px": 304,
+            "obs_frames": 15,
+            "blocks_in_window": 1,
+            "start_dist_rims": 9.38,
+            "klass": "far",
+            "ball_obs": 15,
+            "ball_box_w_med": 63.2,
+            "ball_box_w_ratio": 0.88,
+            "tall_box_frac": 0.0,
+            "in_person_frac": 0.0,
+            "outside_person_run": 15,
+            "cut_truncated": false,
+            "evidence_flags": [],
+            "matched": false,
+            "matched_event_t": null,
+            "matched_event_release_t": null,
+            "matched_event_type": null,
+            "matched_delta_s": null
+          },
+          {
+            "release_t": 90.857,
+            "apex_t": 91.391,
+            "kind": "arc",
+            "rise_px": 457,
+            "fall_px": 22,
+            "obs_frames": 6,
+            "blocks_in_window": 1,
+            "start_dist_rims": null,
+            "klass": "unknown",
+            "ball_obs": 6,
+            "ball_box_w_med": 44.2,
+            "ball_box_w_ratio": 0.62,
+            "tall_box_frac": 0.0,
+            "in_person_frac": 0.83,
+            "outside_person_run": 1,
+            "cut_truncated": false,
+            "evidence_flags": [
+              "ball_with_person"
+            ],
+            "matched": false,
+            "matched_event_t": null,
+            "matched_event_release_t": null,
+            "matched_event_type": null,
+            "matched_delta_s": null
+          },
+          {
+            "release_t": 100.334,
+            "apex_t": 100.901,
+            "kind": "arc",
+            "rise_px": 84,
+            "fall_px": 103,
+            "obs_frames": 16,
+            "blocks_in_window": 1,
+            "start_dist_rims": null,
+            "klass": "unknown",
+            "ball_obs": 16,
+            "ball_box_w_med": 40.7,
+            "ball_box_w_ratio": 0.57,
+            "tall_box_frac": 0.06,
+            "in_person_frac": 0.81,
+            "outside_person_run": 2,
+            "cut_truncated": false,
+            "evidence_flags": [
+              "ball_with_person"
+            ],
+            "matched": false,
+            "matched_event_t": null,
+            "matched_event_release_t": null,
+            "matched_event_type": null,
+            "matched_delta_s": null
+          },
+          {
+            "release_t": 108.242,
+            "apex_t": 108.408,
+            "kind": "vanish",
+            "rise_px": 85,
+            "fall_px": 0,
+            "obs_frames": 7,
+            "blocks_in_window": 1,
+            "start_dist_rims": 2.54,
+            "klass": "near",
+            "ball_obs": 7,
+            "ball_box_w_med": 39.1,
+            "ball_box_w_ratio": 0.55,
+            "tall_box_frac": 0.0,
+            "in_person_frac": 1.0,
+            "outside_person_run": 0,
+            "cut_truncated": false,
+            "evidence_flags": [
+              "ball_with_person"
+            ],
+            "matched": false,
+            "matched_event_t": null,
+            "matched_event_release_t": null,
+            "matched_event_type": null,
+            "matched_delta_s": null
+          },
+          {
+            "release_t": 128.629,
+            "apex_t": 128.829,
+            "kind": "vanish",
+            "rise_px": 96,
+            "fall_px": 0,
+            "obs_frames": 5,
+            "blocks_in_window": 1,
+            "start_dist_rims": null,
+            "klass": "unknown",
+            "ball_obs": 5,
+            "ball_box_w_med": 41.7,
+            "ball_box_w_ratio": 0.58,
+            "tall_box_frac": 0.2,
+            "in_person_frac": 0.8,
+            "outside_person_run": 1,
+            "cut_truncated": false,
+            "evidence_flags": [
+              "ball_with_person"
+            ],
+            "matched": false,
+            "matched_event_t": null,
+            "matched_event_release_t": null,
+            "matched_event_type": null,
+            "matched_delta_s": null
+          },
+          {
+            "release_t": 136.236,
+            "apex_t": 136.603,
+            "kind": "arc",
+            "rise_px": 193,
+            "fall_px": 190,
+            "obs_frames": 10,
+            "blocks_in_window": 1,
+            "start_dist_rims": null,
+            "klass": "unknown",
+            "ball_obs": 10,
+            "ball_box_w_med": 42.1,
+            "ball_box_w_ratio": 0.59,
+            "tall_box_frac": 0.0,
+            "in_person_frac": 0.6,
+            "outside_person_run": 3,
+            "cut_truncated": false,
+            "evidence_flags": [],
+            "matched": false,
+            "matched_event_t": null,
+            "matched_event_release_t": null,
+            "matched_event_type": null,
+            "matched_delta_s": null
+          },
+          {
+            "release_t": 153.72,
+            "apex_t": 153.987,
+            "kind": "rise_only",
+            "rise_px": 72,
+            "fall_px": 3,
+            "obs_frames": 5,
+            "blocks_in_window": 1,
+            "start_dist_rims": null,
+            "klass": "unknown",
+            "ball_obs": 5,
+            "ball_box_w_med": 106.0,
+            "ball_box_w_ratio": 1.48,
+            "tall_box_frac": 0.0,
+            "in_person_frac": 0.0,
+            "outside_person_run": 5,
+            "cut_truncated": true,
+            "evidence_flags": [
+              "cut_truncated"
+            ],
+            "matched": false,
+            "matched_event_t": null,
+            "matched_event_release_t": null,
+            "matched_event_type": null,
+            "matched_delta_s": null
+          },
+          {
+            "release_t": 158.125,
+            "apex_t": 158.692,
+            "kind": "arc",
+            "rise_px": 95,
+            "fall_px": 106,
+            "obs_frames": 16,
+            "blocks_in_window": 1,
+            "start_dist_rims": null,
+            "klass": "unknown",
+            "ball_obs": 16,
+            "ball_box_w_med": 47.2,
+            "ball_box_w_ratio": 0.66,
+            "tall_box_frac": 0.19,
+            "in_person_frac": 1.0,
+            "outside_person_run": 0,
+            "cut_truncated": false,
+            "evidence_flags": [
+              "ball_with_person"
+            ],
+            "matched": false,
+            "matched_event_t": null,
+            "matched_event_release_t": null,
+            "matched_event_type": null,
+            "matched_delta_s": null
+          }
+        ],
+        "review_offset_s": 1.0,
+        "match_tol_s": 1.5,
+        "cross_segment_count": 3,
+        "cross_segment": [
+          {
+            "release_t": 75.676,
+            "apex_t": 76.076,
+            "kind": "arc",
+            "rise_px": 196,
+            "fall_px": 71,
+            "obs_frames": 6,
+            "blocks_in_window": 2,
+            "start_dist_rims": 0.89,
+            "klass": "near",
+            "ball_obs": 6,
+            "ball_box_w_med": 56.3,
+            "ball_box_w_ratio": 0.79,
+            "tall_box_frac": 0.0,
+            "in_person_frac": 0.0,
+            "outside_person_run": 6,
+            "cut_truncated": false,
+            "evidence_flags": [],
+            "matched": true,
+            "matched_event_t": 76.94,
+            "matched_event_release_t": 76.08,
+            "matched_event_type": "uncertain",
+            "matched_delta_s": 0.4,
+            "cross_segment": true
+          },
+          {
+            "release_t": 108.242,
+            "apex_t": 108.442,
+            "kind": "arc",
+            "rise_px": 112,
+            "fall_px": 58,
+            "obs_frames": 13,
+            "blocks_in_window": 2,
+            "start_dist_rims": 2.54,
+            "klass": "near",
+            "ball_obs": 13,
+            "ball_box_w_med": 41.0,
+            "ball_box_w_ratio": 0.57,
+            "tall_box_frac": 0.0,
+            "in_person_frac": 1.0,
+            "outside_person_run": 0,
+            "cut_truncated": false,
+            "evidence_flags": [
+              "ball_with_person"
+            ],
+            "matched": false,
+            "matched_event_t": null,
+            "matched_event_release_t": null,
+            "matched_event_type": null,
+            "matched_delta_s": null,
+            "cross_segment": true
+          },
+          {
+            "release_t": 173.006,
+            "apex_t": 173.573,
+            "kind": "arc",
+            "rise_px": 75,
+            "fall_px": 371,
+            "obs_frames": 19,
+            "blocks_in_window": 2,
+            "start_dist_rims": null,
+            "klass": "unknown",
+            "ball_obs": 19,
+            "ball_box_w_med": 147.5,
+            "ball_box_w_ratio": 2.06,
+            "tall_box_frac": 0.0,
+            "in_person_frac": 0.0,
+            "outside_person_run": 13,
+            "cut_truncated": false,
+            "evidence_flags": [
+              "ball_box_size"
+            ],
+            "matched": false,
+            "matched_event_t": null,
+            "matched_event_release_t": null,
+            "matched_event_type": null,
+            "matched_delta_s": null,
+            "cross_segment": true
+          }
+        ],
+        "cross_segment_truncated": false,
+        "loose_only_same_segment": 2,
+        "evidence_flag_counts": {
+          "few_ball_observations": 1,
+          "cut_truncated": 2,
+          "ball_box_shape": 1,
+          "ball_with_person": 5
+        },
+        "note": "待核对的轨迹候选：轨迹像投篮。matched=true 表示该候选的**离手时刻与某条已有事件接近**（只说明时间上靠近，**不证明是同一次出手**，需人工确认）；matched=false 的是**离手时刻附近没有任何事件**、更需要回看的候选。两类都不计入出手次数与命中统计。cross_segment 是**另一份、单独计数**的列表：这些轨迹的证据**跨越了镜头切换或跟踪段边界**（上升段在一个镜头里、顶点在另一个镜头里），主列表为不跨段拼接而排除了它们；这不代表它们不真实，必须靠目视核对，同样不计入出手次数与命中统计，也不计入 count/unmatched_count。evidence_flags 是**证据描述**（球框形态/尺寸是否异常、球是否全程贴着人、球观测是否过少、证据是否被切镜截断），用来判断\"这条候选值不值得看、看的时候要注意什么\"，**不能**当成投篮与否的判定（实测真实投篮的窗口里也可能有竖长框）。cut_truncated=true 表示**观测刚结束画面就切走**：这一条的\"进没进\"要到下一个镜头里去找，不能因为本段看不到结果就说没进。"
+      }
+    },
+    "visual": {
+      "engine": "legacy",
+      "shots": 5,
+      "made": 0,
+      "missed": 0,
+      "unknown": 5,
+      "method": "逐帧跟踪球与篮筐，先记录出手，再区分命中、未中和未知"
+    },
+    "calibration_valid": false,
+    "calibration_method": "unavailable",
+    "calibration_rmse_m": 0.0,
+    "ball": {
+      "candidates": 2837,
+      "tracks": 136,
+      "tracks_ranked": 12,
+      "kept_points": 0,
+      "coverage": 0.0
+    },
+    "attempts": {
+      "total": 5,
+      "from_legacy": 5,
+      "from_scoreboard": 0,
+      "from_ball_track": 0,
+      "miss_candidates": 0
+    },
+    "teams": {
+      "method": "color-2means:hue",
+      "separability": 4.6,
+      "candidates": {
+        "hue": 4.6,
+        "sat": 3.42,
+        "val": 4.11
+      },
+      "confidence": "ok",
+      "players": 881,
+      "counts": {
+        "home": 372,
+        "away": 509
+      }
+    },
+    "player_track": {
+      "samples": 10525,
+      "players": 956,
+      "calibration_valid": false
+    },
+    "player_track_source": "sliding_calibration",
+    "sliding_calibration": {
+      "fps": 29.97001377174019,
+      "stride": 30,
+      "guarded_interpolation": true,
+      "invalid_anchors": 0,
+      "total_frames": 5314,
+      "half_court": true,
+      "median_ratio": 3.0,
+      "ok_ratio": 0.994,
+      "hot_refines": 60,
+      "full_scans": 62,
+      "reuses": 55,
+      "coverage": {
+        "analyzed_frames": 5314,
+        "paused_frames": 1798,
+        "paused_fraction": 0.3383515242754987,
+        "frame_ranges": [
+          [
+            121,
+            150
+          ],
+          [
+            151,
+            180
+          ],
+          [
+            181,
+            210
+          ],
+          [
+            211,
+            240
+          ],
+          [
+            241,
+            270
+          ],
+          [
+            601,
+            630
+          ],
+          [
+            691,
+            720
+          ],
+          [
+            751,
+            780
+          ],
+          [
+            811,
+            840
+          ],
+          [
+            961,
+            990
+          ],
+          [
+            991,
+            1020
+          ],
+          [
+            1021,
+            1050
+          ],
+          [
+            1051,
+            1080
+          ],
+          [
+            1081,
+            1110
+          ],
+          [
+            1111,
+            1140
+          ],
+          [
+            1141,
+            1170
+          ],
+          [
+            1171,
+            1200
+          ],
+          [
+            1321,
+            1350
+          ],
+          [
+            1501,
+            1530
+          ],
+          [
+            1591,
+            1620
+          ],
+          [
+            1861,
+            1890
+          ],
+          [
+            1891,
+            1920
+          ],
+          [
+            1921,
+            1950
+          ],
+          [
+            2011,
+            2040
+          ],
+          [
+            2491,
+            2520
+          ],
+          [
+            2521,
+            2550
+          ],
+          [
+            2551,
+            2580
+          ],
+          [
+            2581,
+            2610
+          ],
+          [
+            2641,
+            2670
+          ],
+          [
+            2671,
+            2700
+          ],
+          [
+            2701,
+            2730
+          ],
+          [
+            2791,
+            2820
+          ],
+          [
+            2911,
+            2940
+          ],
+          [
+            2941,
+            2970
+          ],
+          [
+            3361,
+            3390
+          ],
+          [
+            3391,
+            3420
+          ],
+          [
+            3421,
+            3450
+          ],
+          [
+            3451,
+            3480
+          ],
+          [
+            3481,
+            3510
+          ],
+          [
+            3571,
+            3600
+          ],
+          [
+            3601,
+            3630
+          ],
+          [
+            3751,
+            3780
+          ],
+          [
+            3961,
+            3990
+          ],
+          [
+            4021,
+            4050
+          ],
+          [
+            4081,
+            4110
+          ],
+          [
+            4321,
+            4350
+          ],
+          [
+            4351,
+            4380
+          ],
+          [
+            4441,
+            4470
+          ],
+          [
+            4501,
+            4530
+          ],
+          [
+            4591,
+            4620
+          ],
+          [
+            4651,
+            4680
+          ],
+          [
+            4861,
+            4890
+          ],
+          [
+            4891,
+            4920
+          ],
+          [
+            4951,
+            4980
+          ],
+          [
+            4981,
+            5010
+          ],
+          [
+            5101,
+            5130
+          ],
+          [
+            5131,
+            5160
+          ],
+          [
+            5161,
+            5190
+          ],
+          [
+            5191,
+            5220
+          ],
+          [
+            5221,
+            5250
+          ],
+          [
+            5251,
+            5280
+          ],
+          [
+            5281,
+            5310
+          ]
+        ],
+        "ranges_s": [
+          [
+            4.0373688487956345,
+            5.005002705118555
+          ],
+          [
+            5.038369389819345,
+            6.006003246142265
+          ],
+          [
+            6.039369930843056,
+            7.007003787165977
+          ],
+          [
+            7.040370471866767,
+            8.008004328189688
+          ],
+          [
+            8.041371012890478,
+            9.009004869213399
+          ],
+          [
+            20.05337750517501,
+            21.02101136149793
+          ],
+          [
+            23.056379128246142,
+            24.02401298456906
+          ],
+          [
+            25.058380210293564,
+            26.026014066616487
+          ],
+          [
+            27.060381292340985,
+            28.028015148663908
+          ],
+          [
+            32.06538399745954,
+            33.03301785378246
+          ],
+          [
+            33.066384538483256,
+            34.034018394806175
+          ],
+          [
+            34.06738507950696,
+            35.03501893582988
+          ],
+          [
+            35.06838562053068,
+            36.036019476853596
+          ],
+          [
+            36.069386161554384,
+            37.0370200178773
+          ],
+          [
+            37.0703867025781,
+            38.03802055890102
+          ],
+          [
+            38.071387243601805,
+            39.039021099924724
+          ],
+          [
+            39.07238778462552,
+            40.04002164094844
+          ],
+          [
+            44.077390489744076,
+            45.045024346066995
+          ],
+          [
+            50.08339373588634,
+            51.05102759220926
+          ],
+          [
+            53.08639535895747,
+            54.054029215280394
+          ],
+          [
+            62.09540022817087,
+            63.06303408449379
+          ],
+          [
+            63.09640076919458,
+            64.06403462551751
+          ],
+          [
+            64.09740131021829,
+            65.06503516654121
+          ],
+          [
+            67.10040293328943,
+            68.06803678961235
+          ],
+          [
+            83.1164115896688,
+            84.08404544599172
+          ],
+          [
+            84.11741213069251,
+            85.08504598701543
+          ],
+          [
+            85.11841267171623,
+            86.08604652803915
+          ],
+          [
+            86.11941321273993,
+            87.08704706906285
+          ],
+          [
+            88.12141429478736,
+            89.08904815111028
+          ],
+          [
+            89.12241483581107,
+            90.09004869213399
+          ],
+          [
+            90.12341537683477,
+            91.09104923315769
+          ],
+          [
+            93.12641699990591,
+            94.09405085622883
+          ],
+          [
+            97.13041916400076,
+            98.09805302032368
+          ],
+          [
+            98.13141970502447,
+            99.09905356134739
+          ],
+          [
+            112.14542727935641,
+            113.11306113567935
+          ],
+          [
+            113.14642782038013,
+            114.11406167670305
+          ],
+          [
+            114.14742836140384,
+            115.11506221772676
+          ],
+          [
+            115.14842890242755,
+            116.11606275875047
+          ],
+          [
+            116.14942944345127,
+            117.11706329977419
+          ],
+          [
+            119.1524310665224,
+            120.12006492284532
+          ],
+          [
+            120.15343160754611,
+            121.12106546386903
+          ],
+          [
+            125.15843431266467,
+            126.12606816898759
+          ],
+          [
+            132.16543809983062,
+            133.13307195615357
+          ],
+          [
+            134.16743918187805,
+            135.13507303820097
+          ],
+          [
+            136.16944026392548,
+            137.1370741202484
+          ],
+          [
+            144.17744459211517,
+            145.14507844843808
+          ],
+          [
+            145.17844513313887,
+            146.1460789894618
+          ],
+          [
+            148.18144675621002,
+            149.14908061253294
+          ],
+          [
+            150.18344783825742,
+            151.15108169458034
+          ],
+          [
+            153.18644946132858,
+            154.1540833176515
+          ],
+          [
+            155.18845054337598,
+            156.1560843996989
+          ],
+          [
+            162.19545433054196,
+            163.16308818686488
+          ],
+          [
+            163.19645487156566,
+            164.1640887278886
+          ],
+          [
+            165.1984559536131,
+            166.166089809936
+          ],
+          [
+            166.19945649463682,
+            167.16709035095974
+          ],
+          [
+            170.20345865873165,
+            171.17109251505457
+          ],
+          [
+            171.20445919975538,
+            172.1720930560783
+          ],
+          [
+            172.20545974077908,
+            173.173093597102
+          ],
+          [
+            173.20646028180278,
+            174.1740941381257
+          ],
+          [
+            174.2074608228265,
+            175.17509467914942
+          ],
+          [
+            175.2084613638502,
+            176.17609522017312
+          ],
+          [
+            176.20946190487393,
+            177.17709576119685
+          ]
+        ],
+        "scope": "analyzed_frames",
+        "range_end": "exclusive"
+      }
+    },
+    "sliding_anchors": 178,
+    "calibration_degeneracy": {
+      "degenerate": true,
+      "reason": "只有 0 组对应点 —— 单应矩阵至少要 4 组，而且 4 组时解是精确解、误差恒为 0，无法自证正确。",
+      "n_points": 0,
+      "src_tri_px2": 0.0,
+      "dst_tri_m2": 0.0,
+      "src_min_dist_px": 0.0,
+      "dst_min_dist_m": 0.0,
+      "src_frac": 0.0,
+      "dst_frac": 0.0
+    },
+    "calibration_rejected": "只有 0 组对应点 —— 单应矩阵至少要 4 组，而且 4 组时解是精确解、误差恒为 0，无法自证正确。",
+    "score_policy": "court",
+    "court_outputs_available": false,
+    "court_outputs_unverified": false,
+    "court_outputs_reason": "只有 0 组对应点 —— 单应矩阵至少要 4 组，而且 4 组时解是精确解、误差恒为 0，无法自证正确。",
+    "sample_review": {
+      "field_attempts": 14,
+      "field_made": 9,
+      "free_throw_attempts": 1,
+      "free_throw_made": 0,
+      "attempts": 15,
+      "made": 9,
+      "unknown": 0,
+      "unique_field_attempts": 12,
+      "unique_field_made": 7,
+      "replay_count": 2,
+      "source": "human_user",
+      "reviewed_at": "2026-10-11",
+      "teams_verified": false,
+      "players_verified": false,
+      "time_basis": "approximate_release_seconds",
+      "automatic_attempts": 5,
+      "automatic_made": 0,
+      "automatic_raw_sha256": "9bcecdcc0600550f6070f2284f1292ae9c9d3b46d48f5d271eb6bfbb82cf4d9a",
+      "truth_sha256": "514811280afba719c24e0e58b7faa24af51f7af7a2603d4dcd9224394d796562",
+      "unknown_field_values": 7,
+      "note": "人工逐球复核；重复回放单列。队别、出手人及未说明的分值待确认。"
+    }
+  },
+  "tactics": {
+    "available": true,
+    "possessions": 0,
+    "avg_passes": 0.0,
+    "passes": 0,
+    "turnovers": 0,
+    "attack_side": "right",
+    "formation": {
+      "away": {
+        "offense": "四外一内",
+        "defense": "-"
+      },
+      "home": {
+        "offense": "均衡落位",
+        "defense": "-"
+      }
+    },
+    "spacing": {
+      "away": {
+        "area": 15.44,
+        "mean_dist": 5.75,
+        "width": 5.92,
+        "depth": 5.28,
+        "radius": 6.6
+      },
+      "home": {
+        "area": 13.0,
+        "mean_dist": 6.48,
+        "width": 7.65,
+        "depth": 4.0,
+        "radius": 7.07
+      }
+    },
+    "coverage": {
+      "player_samples": 10525,
+      "players": 956,
+      "ball_samples": 0,
+      "frames": 24,
+      "duration": 177.31
+    },
+    "position_source": "sliding_calibration",
+    "position_unverified": true,
+    "position_note": "球员位置来自**自动逐帧标定**（178 个锚点，达标率 0.99，中位 ratio 3.00）—— 这份标定是按球场线自动拟合的，没有用画面里的真值点独立校验过，所以阵型/间距/位置请当参考值，建议对照原始画面核对；要更可信请重新手工标定这个机位。"
+  },
+  "highlights": [
+    {
+      "index": 1,
+      "t": 2,
+      "start": 0,
+      "end": 6,
+      "path": "highlights/review_01.mp4",
+      "made": true,
+      "result": "made",
+      "value": null,
+      "value_assumed": true,
+      "team": "",
+      "player_id": "",
+      "label": "运动战 · 命中",
+      "available": true,
+      "source": "manual",
+      "is_replay": false
+    },
+    {
+      "index": 2,
+      "t": 15,
+      "start": 13,
+      "end": 19,
+      "path": "highlights/review_02.mp4",
+      "made": false,
+      "result": "missed",
+      "value": null,
+      "value_assumed": true,
+      "team": "",
+      "player_id": "",
+      "label": "运动战 · 未中",
+      "available": true,
+      "source": "manual",
+      "is_replay": false
+    },
+    {
+      "index": 3,
+      "t": 21,
+      "start": 19,
+      "end": 25,
+      "path": "highlights/review_03.mp4",
+      "made": false,
+      "result": "missed",
+      "value": null,
+      "value_assumed": true,
+      "team": "",
+      "player_id": "",
+      "label": "运动战 · 未中",
+      "available": true,
+      "source": "manual",
+      "is_replay": false
+    },
+    {
+      "index": 4,
+      "t": 41,
+      "start": 39,
+      "end": 45,
+      "path": "highlights/review_04.mp4",
+      "made": false,
+      "result": "missed",
+      "value": 1,
+      "value_assumed": false,
+      "team": "",
+      "player_id": "",
+      "label": "罚球 · 未中",
+      "available": true,
+      "source": "manual",
+      "is_replay": false
+    },
+    {
+      "index": 5,
+      "t": 47,
+      "start": 45,
+      "end": 51,
+      "path": "highlights/review_05.mp4",
+      "made": false,
+      "result": "missed",
+      "value": null,
+      "value_assumed": true,
+      "team": "",
+      "player_id": "",
+      "label": "运动战 · 未中",
+      "available": true,
+      "source": "manual",
+      "is_replay": false
+    },
+    {
+      "index": 6,
+      "t": 57,
+      "start": 55,
+      "end": 61,
+      "path": "highlights/review_06.mp4",
+      "made": true,
+      "result": "made",
+      "value": 2,
+      "value_assumed": false,
+      "team": "",
+      "player_id": "",
+      "label": "运动战 · 命中",
+      "available": true,
+      "source": "manual",
+      "is_replay": false
+    },
+    {
+      "index": 7,
+      "t": 67,
+      "start": 65,
+      "end": 71,
+      "path": "highlights/review_07.mp4",
+      "made": true,
+      "result": "made",
+      "value": null,
+      "value_assumed": true,
+      "team": "",
+      "player_id": "",
+      "label": "运动战 · 命中",
+      "available": true,
+      "source": "manual",
+      "is_replay": false
+    },
+    {
+      "index": 8,
+      "t": 76,
+      "start": 74,
+      "end": 80,
+      "path": "highlights/review_08.mp4",
+      "made": false,
+      "result": "missed",
+      "value": null,
+      "value_assumed": true,
+      "team": "",
+      "player_id": "",
+      "label": "运动战 · 未中",
+      "available": true,
+      "source": "manual",
+      "is_replay": false
+    },
+    {
+      "index": 9,
+      "t": 104,
+      "start": 102,
+      "end": 108,
+      "path": "highlights/review_09.mp4",
+      "made": true,
+      "result": "made",
+      "value": 3,
+      "value_assumed": false,
+      "team": "",
+      "player_id": "",
+      "label": "运动战 · 命中",
+      "available": true,
+      "source": "manual",
+      "is_replay": false
+    },
+    {
+      "index": 10,
+      "t": 111,
+      "start": 109,
+      "end": 115,
+      "path": "highlights/review_10.mp4",
+      "made": true,
+      "result": "made",
+      "value": null,
+      "value_assumed": true,
+      "team": "",
+      "player_id": "",
+      "label": "运动战 · 命中",
+      "available": true,
+      "source": "manual",
+      "is_replay": false
+    },
+    {
+      "index": 11,
+      "t": 120,
+      "start": 118,
+      "end": 124,
+      "path": "highlights/review_11.mp4",
+      "made": true,
+      "result": "made",
+      "value": 2,
+      "value_assumed": false,
+      "team": "",
+      "player_id": "",
+      "label": "运动战 · 命中",
+      "available": true,
+      "source": "manual",
+      "is_replay": false
+    },
+    {
+      "index": 12,
+      "t": 130,
+      "start": 128,
+      "end": 134,
+      "path": "highlights/review_12.mp4",
+      "made": false,
+      "result": "missed",
+      "value": 2,
+      "value_assumed": false,
+      "team": "",
+      "player_id": "",
+      "label": "运动战 · 未中",
+      "available": true,
+      "source": "manual",
+      "is_replay": false
+    },
+    {
+      "index": 13,
+      "t": 141,
+      "start": 139,
+      "end": 145,
+      "path": "highlights/review_13.mp4",
+      "made": true,
+      "result": "made",
+      "value": 3,
+      "value_assumed": false,
+      "team": "",
+      "player_id": "",
+      "label": "运动战 · 命中",
+      "available": true,
+      "source": "manual",
+      "is_replay": false
+    },
+    {
+      "index": 14,
+      "t": 159,
+      "start": 157,
+      "end": 163,
+      "path": "highlights/review_14.mp4",
+      "made": true,
+      "result": "made",
+      "value": 3,
+      "value_assumed": false,
+      "team": "",
+      "player_id": "",
+      "label": "运动战 · 命中 · 重复回放",
+      "available": true,
+      "source": "manual",
+      "is_replay": true
+    },
+    {
+      "index": 15,
+      "t": 171,
+      "start": 169,
+      "end": 175,
+      "path": "highlights/review_15.mp4",
+      "made": true,
+      "result": "made",
+      "value": 3,
+      "value_assumed": false,
+      "team": "",
+      "player_id": "",
+      "label": "运动战 · 命中 · 重复回放",
+      "available": true,
+      "source": "manual",
+      "is_replay": true
+    }
+  ]
+}

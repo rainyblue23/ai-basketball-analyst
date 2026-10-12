@@ -38,6 +38,12 @@ set "TORCH_HOME=%~dp0_tmp\torch"
 if not exist "%YOLO_CONFIG_DIR%" mkdir "%YOLO_CONFIG_DIR%" >nul 2>&1
 if not exist "%TMP%" mkdir "%TMP%" >nul 2>&1
 
+rem ---- 2b) 上传页「用它」下拉里的**示例素材**目录（/api/samples 的「示例」组）。
+rem          不设的话下拉里只有 data/uploads 里已上传的东西，示例素材一个都不显示。
+rem          指向 aihoop_assets\samples\pick3：三段挑好的固定机位素材（硬链接，不额外占盘）。
+rem          想列全部素材就把下面这行改成 ..\aihoop_assets\samples（53 个，下拉会很长）。----
+if not defined AIHOOP_SAMPLES if exist "%~dp0..\aihoop_assets\samples\pick3" set "AIHOOP_SAMPLES=%~dp0..\aihoop_assets\samples\pick3"
+
 rem ---- 3) pick an interpreter: .venv first, then whatever `python` resolves to ----
 set "PY=%~dp0.venv\Scripts\python.exe"
 if not exist "%PY%" set "PY=python"
@@ -71,6 +77,7 @@ echo ------------------------------------------------------------
 echo   API docs : http://127.0.0.1:%PORT%/docs
 echo   Health   : http://127.0.0.1:%PORT%/api/health
 echo   Frontend : run the demo launcher, then re-probe if needed
+if defined AIHOOP_SAMPLES echo   Samples  : %AIHOOP_SAMPLES%
 echo ------------------------------------------------------------
 echo   AUTO-RESTART IS ON: editing src\aihoop\*.py reloads in ~2s.
 echo   Keep this window open - closing it stops the backend.

@@ -1,0 +1,430 @@
+{
+  "purpose": "Published reviewed demonstration outputs; not automated accuracy evidence",
+  "files": [
+    {
+      "path": "lillard/detection_overlay.json",
+      "bytes": 5065220,
+      "sha256": "e473dc82ac842e9dad0f56baaeb97c8127562e71fbdbb9b7af3cfe2e919b15ff"
+    },
+    {
+      "path": "lillard/events.jsonl",
+      "bytes": 10099,
+      "sha256": "70077130d01dbd72cfa7b540f7ef9874aac5621f1d950f99b57ff18760989b15"
+    },
+    {
+      "path": "lillard/game.json",
+      "bytes": 108240,
+      "sha256": "b3c8cc2d8fbd2c5f3129292a0e9785a4ee3cd42642a82ef6193f78a91afa7709"
+    },
+    {
+      "path": "lillard/human_review.json",
+      "bytes": 2800,
+      "sha256": "5c523a741b314647152bf6a5ef225611295a5c6dca3c51b16d66481c41a66f52"
+    },
+    {
+      "path": "lillard/passes.csv",
+      "bytes": 183,
+      "sha256": "f3822aa3247ac512a33c13c757c5826d0e277415bcae8ceafe85aa2e76022016"
+    },
+    {
+      "path": "lillard/players.json",
+      "bytes": 2176,
+      "sha256": "82796d97c3e41a1919ca2a2142c3665e8a0b189d942e718e59b9ba423e518edd"
+    },
+    {
+      "path": "lillard/poster.jpg",
+      "bytes": 124812,
+      "sha256": "2dc2fe518b850381a21fbd3c2070e2c9750822ea2b479447ccd496c9fa766596"
+    },
+    {
+      "path": "lillard/report.json",
+      "bytes": 14559,
+      "sha256": "25eedbb778b63f30159ab92d87216e0fbbafc62411137539f59f193cec49a9d0"
+    },
+    {
+      "path": "lillard/report.md",
+      "bytes": 822,
+      "sha256": "49c9bf8471453b20ded3934d21da65d047e065c27a61672915888ab170c050dc"
+    },
+    {
+      "path": "lillard/review_shots.csv",
+      "bytes": 677,
+      "sha256": "0256c9a40dbd0b4c936d7b35261a2932145af7748c5f7856d4bd28d45afe1d55"
+    },
+    {
+      "path": "lillard/shotchart.json",
+      "bytes": 297,
+      "sha256": "dec92129588a8756322c157c82e0007d582ad33b25f6425dd213399f23fda0fd"
+    },
+    {
+      "path": "lillard/shots.csv",
+      "bytes": 2513,
+      "sha256": "8adb958392f7f5d935c58807bbb26d73aa0bb0fb8a1a484907b44e881cc6dbbd"
+    },
+    {
+      "path": "lillard/spacing.csv",
+      "bytes": 1767,
+      "sha256": "39096442dad0f296751e34ecb230266d0e68e30b4e5ac76181a29377fd5bcd66"
+    },
+    {
+      "path": "lillard/stats.csv",
+      "bytes": 301,
+      "sha256": "79df8db10bb4a62a8e7f3b674bf2a18a29d3ca85a62c2380bde389a4ea647156"
+    },
+    {
+      "path": "lillard/tactics.json",
+      "bytes": 14125,
+      "sha256": "dee8c3717dcbd35a1164cbe1fc3e07da10b9957ead27d7589d65f59184324305"
+    },
+    {
+      "path": "lillard/tactics_frames.jsonl",
+      "bytes": 67030,
+      "sha256": "10e4d4eb51d4cf0bf674eee5dd043d791974ab1881106ac85e6e87238bb9a921"
+    },
+    {
+      "path": "lillard/video.mp4",
+      "bytes": 26023869,
+      "sha256": "6f68e49cedf90c1d3382a7fc7267b35195a06d6eb380365bd8ba1d18c11f8c4b"
+    },
+    {
+      "path": "lillard/highlights/index.json",
+      "bytes": 5695,
+      "sha256": "8138f7f60a3ef368455865dbddfc8e3a2b80e61358b69e6c108e43da0b747209"
+    },
+    {
+      "path": "lillard/highlights/review_01.mp4",
+      "bytes": 896299,
+      "sha256": "327039a23af56475a1121f623712d19f7d3ff2b85bca790ff3db757c80358564"
+    },
+    {
+      "path": "lillard/highlights/review_02.mp4",
+      "bytes": 794878,
+      "sha256": "e50d7e5c092a3d893569ef6c4e8516c3e7fd76485e55d11baf54b523c4eb1664"
+    },
+    {
+      "path": "lillard/highlights/review_03.mp4",
+      "bytes": 819029,
+      "sha256": "57373a7d4c3d5025f3ad9b5b0203445f30c52984483bc4b3067718be11b4b5c5"
+    },
+    {
+      "path": "lillard/highlights/review_04.mp4",
+      "bytes": 631642,
+      "sha256": "229c2818abd727b7f2bdae1f585e4fbe7c70a4f48d5b8bdcb009a912827d8c6b"
+    },
+    {
+      "path": "lillard/highlights/review_05.mp4",
+      "bytes": 938091,
+      "sha256": "6f7b5c4854dc756992b9b5e0b24349c536f394ed36cd5a471334e68ead2ea142"
+    },
+    {
+      "path": "lillard/highlights/review_06.mp4",
+      "bytes": 807768,
+      "sha256": "c894a94cb88a75b0c65a149dfeb03ef1e1c10874eaa38c77d3b2d9da3f57a8f9"
+    },
+    {
+      "path": "lillard/highlights/review_07.mp4",
+      "bytes": 781527,
+      "sha256": "3fdf4119a1a436f4eb6163f6f05aa194b98967331cec96b3ab3ae19e924f149d"
+    },
+    {
+      "path": "lillard/highlights/review_08.mp4",
+      "bytes": 872474,
+      "sha256": "d03c9a36a3047ecdc14f37d69b3e002e42a0b052bae90eadbb9bd416de9cde5a"
+    },
+    {
+      "path": "lillard/highlights/review_09.mp4",
+      "bytes": 877468,
+      "sha256": "015f8a3f223bf7e0bbc0a19038f269fd16c435b25a1e98e0e807ea93016889da"
+    },
+    {
+      "path": "lillard/highlights/review_10.mp4",
+      "bytes": 822819,
+      "sha256": "1643f7829259deb5be0f36d997f095e6ace2eb613f8488a849fdbd17ef45b8df"
+    },
+    {
+      "path": "lillard/highlights/review_11.mp4",
+      "bytes": 943104,
+      "sha256": "e181cf30c2a40c4a9a610485832f5ee9bf6c46a8a34a20297118e3f2193a7628"
+    },
+    {
+      "path": "lillard/highlights/review_12.mp4",
+      "bytes": 894427,
+      "sha256": "9f7ee4c3834d51c82df3e588974501a3574271d629c476ff860dfa6bf3ae308f"
+    },
+    {
+      "path": "lillard/highlights/review_13.mp4",
+      "bytes": 1027974,
+      "sha256": "bc746d06b9d2034105b485454a21ffd5d6dbae9f581ce1f1142f657d0fbc66c8"
+    },
+    {
+      "path": "lillard/highlights/review_14.mp4",
+      "bytes": 662772,
+      "sha256": "479e04b6e457c56075e0ec2f5a72f193b3556033ca56edaccd8fe9275f3d84d6"
+    },
+    {
+      "path": "lillard/highlights/review_15.mp4",
+      "bytes": 783501,
+      "sha256": "6f8467047ac425df1d1fef7925b271a3ee130c2da12c4bab4821fe7ae236b11d"
+    },
+    {
+      "path": "harden/detection_overlay.json",
+      "bytes": 12457342,
+      "sha256": "593b052e47c809c7c95596c8f152291ec3edeb23ad6ed524130b25db758089c4"
+    },
+    {
+      "path": "harden/events.jsonl",
+      "bytes": 22700,
+      "sha256": "23ec1b4d9768d4ac60b53fb197727d27fc2943f33cf204dace5be7cdf0b47ed6"
+    },
+    {
+      "path": "harden/game.json",
+      "bytes": 242332,
+      "sha256": "0eacb7addc19a5d9432fc70238a40ccc6dc79e2a409b28d74d435ea2d7fa5557"
+    },
+    {
+      "path": "harden/human_review.json",
+      "bytes": 5511,
+      "sha256": "4200cd14ca09f3d2f45a1ee667ce3b6214629b760d5b4435dbc778ffeee46367"
+    },
+    {
+      "path": "harden/passes.csv",
+      "bytes": 183,
+      "sha256": "f3822aa3247ac512a33c13c757c5826d0e277415bcae8ceafe85aa2e76022016"
+    },
+    {
+      "path": "harden/players.json",
+      "bytes": 4396,
+      "sha256": "8e80c4444e6346d41b0849cd5158537fe1a7b970bd932f35b3c86a8a71d01a30"
+    },
+    {
+      "path": "harden/poster.jpg",
+      "bytes": 131750,
+      "sha256": "2281c4458b4a9dd13a6068e61320803a71d9398c5020966e4b32173fb934a4f2"
+    },
+    {
+      "path": "harden/report.json",
+      "bytes": 28990,
+      "sha256": "1d819372ad60478d4ba46b4f5d2971982c7e5936ea7b318350fd1892aebbb7e5"
+    },
+    {
+      "path": "harden/report.md",
+      "bytes": 1262,
+      "sha256": "ea717f6fbe3614452178be5487451fc6b4d4510026de27f9db321f79b21b547e"
+    },
+    {
+      "path": "harden/review_shots.csv",
+      "bytes": 1212,
+      "sha256": "d0c27e170b09f761936c943f6d93c3ef4abd9497b686aafbe954d580680ff3de"
+    },
+    {
+      "path": "harden/shotchart.json",
+      "bytes": 297,
+      "sha256": "dec92129588a8756322c157c82e0007d582ad33b25f6425dd213399f23fda0fd"
+    },
+    {
+      "path": "harden/shots.csv",
+      "bytes": 5382,
+      "sha256": "b31e79088ea429efe1a77bbbdc96f12f8155a691a699166a276ba9197c8784dc"
+    },
+    {
+      "path": "harden/spacing.csv",
+      "bytes": 3368,
+      "sha256": "8b89fb0aa61cf1d277b4f0fef53a346bc5270803d4ba5c893587ff3b36cb40e6"
+    },
+    {
+      "path": "harden/stats.csv",
+      "bytes": 304,
+      "sha256": "f0ad83138a5c7f2e05218fb5681a7459ca12978ce183307c183559806c5c7310"
+    },
+    {
+      "path": "harden/tactics.json",
+      "bytes": 23993,
+      "sha256": "d01a889aba963070049aa6ecaac3fa27e4c729c0aab9288c32844ef64c189ec7"
+    },
+    {
+      "path": "harden/tactics_frames.jsonl",
+      "bytes": 124306,
+      "sha256": "8b5c14e72a12c5449368859c925e8e4b40a4e5cfab228279e2163e7d65432ccc"
+    },
+    {
+      "path": "harden/video.mp4",
+      "bytes": 47030346,
+      "sha256": "26286a83018f1ec1d49dd805f9a225e3ad1815426ebaa225f36f705c0a84313e"
+    },
+    {
+      "path": "harden/highlights/index.json",
+      "bytes": 12784,
+      "sha256": "2d2d2e7cad903c8f316ab75f626200c5e9dce1964da5ef96558dc6957956bcf4"
+    },
+    {
+      "path": "harden/highlights/review_01.mp4",
+      "bytes": 630948,
+      "sha256": "38667c5eea87ab6a114b452feeed4a9ad8f27bcabfcba7630d96cda767da9ace"
+    },
+    {
+      "path": "harden/highlights/review_02.mp4",
+      "bytes": 739640,
+      "sha256": "63b9a5631c4ee8d63129d445cb77a29e5092a194b71cac39068ec225a7df54be"
+    },
+    {
+      "path": "harden/highlights/review_03.mp4",
+      "bytes": 761904,
+      "sha256": "334c1461111a35354053ac0e0509349b619ec1689e77f607c5f5bcf1c6edc2ee"
+    },
+    {
+      "path": "harden/highlights/review_04.mp4",
+      "bytes": 708902,
+      "sha256": "64e22f51c431b2da9008a1e5cd2775ac901a9ca8db5acfc8fed264d2ebac38e1"
+    },
+    {
+      "path": "harden/highlights/review_05.mp4",
+      "bytes": 694478,
+      "sha256": "51e631ec4ab30d6efd9ef5704e0ba68f91fb4eaa5aabe2d84d22eb9fe4ade0ac"
+    },
+    {
+      "path": "harden/highlights/review_06.mp4",
+      "bytes": 937043,
+      "sha256": "8cb6b87a711251327f1b8e352b2aec3f912b9f7d32b225f93271968de2a8d75f"
+    },
+    {
+      "path": "harden/highlights/review_07.mp4",
+      "bytes": 715903,
+      "sha256": "ab074c1c097544457260302696c0657f9c3f325a53e2d334f35f2e9c1491749d"
+    },
+    {
+      "path": "harden/highlights/review_08.mp4",
+      "bytes": 822699,
+      "sha256": "50505163e6ec42b6a59a59717f814dd7ee1c3695b98cc5a9be9ce5fd196cc9e7"
+    },
+    {
+      "path": "harden/highlights/review_09.mp4",
+      "bytes": 748509,
+      "sha256": "dec1942e3f8276b56dccf9aff773af083fd9e8aaccb3721a8d596bfa727a5944"
+    },
+    {
+      "path": "harden/highlights/review_10.mp4",
+      "bytes": 846921,
+      "sha256": "5a6c047fab43f65b5854d6cb793fd1834588ba10d24fd13016207159a85a5f99"
+    },
+    {
+      "path": "harden/highlights/review_11.mp4",
+      "bytes": 765039,
+      "sha256": "c912da9158a2e03b2d54159b7210b90706f4bce12d422245d8f891178548187e"
+    },
+    {
+      "path": "harden/highlights/review_12.mp4",
+      "bytes": 799765,
+      "sha256": "9fd5a6fb7a5f727a17dc17202394f9e208bc230f2aaa4f60d43ea4eb5b18487a"
+    },
+    {
+      "path": "harden/highlights/review_13.mp4",
+      "bytes": 899333,
+      "sha256": "6eb5e9533b14ed5c6b4d120db8534d8b2fc48a0fc88aaff8e45e8002a066bd57"
+    },
+    {
+      "path": "harden/highlights/review_14.mp4",
+      "bytes": 915598,
+      "sha256": "cf3af205bfbe4ff89e8cfb34917616205ee1e1ff6c6ab30a52e97276fe9cbeef"
+    },
+    {
+      "path": "harden/highlights/review_15.mp4",
+      "bytes": 764056,
+      "sha256": "425787a74ee314e411ec3cb1a09d05472f96403135d2f649e6fc769940fe29a3"
+    },
+    {
+      "path": "harden/highlights/review_16.mp4",
+      "bytes": 865516,
+      "sha256": "5764dd6c5797edf0bb79495e501ee97fdb58983ee82688ec1e2657b8f065d966"
+    },
+    {
+      "path": "harden/highlights/review_17.mp4",
+      "bytes": 729594,
+      "sha256": "e5355e946b452d92a88ce190f1db04ac34b1ca82eed8e22ec9117106231ac1b9"
+    },
+    {
+      "path": "harden/highlights/review_18.mp4",
+      "bytes": 718750,
+      "sha256": "86184c5dba54d4d190882038c97eeb76e79928e8210b7112ab5c21208f026881"
+    },
+    {
+      "path": "harden/highlights/review_19.mp4",
+      "bytes": 806506,
+      "sha256": "d728032d56fe06c1440d04b8a30116bb4f675291803afe86d0b81a3fcf315681"
+    },
+    {
+      "path": "harden/highlights/review_20.mp4",
+      "bytes": 750227,
+      "sha256": "48418827d3ce4ad998e8d236e181f22647b3bd9dff738f2fac760ba063494b66"
+    },
+    {
+      "path": "harden/highlights/review_21.mp4",
+      "bytes": 789385,
+      "sha256": "a88a3b8bd702647a764df427ce62e616fd4d570e01b348e948bb323116ea4e92"
+    },
+    {
+      "path": "harden/highlights/review_22.mp4",
+      "bytes": 792525,
+      "sha256": "4f89f3be531a50774318504ca5f3d75e2f59ce00a2204259430d36c536133894"
+    },
+    {
+      "path": "harden/highlights/review_23.mp4",
+      "bytes": 698517,
+      "sha256": "2805e0a63732853d10d605e74eef17567a4ddddcc9b99420503564fdf9a41a9b"
+    },
+    {
+      "path": "harden/highlights/review_24.mp4",
+      "bytes": 803469,
+      "sha256": "c84b51ed7030ed397991c7ff995c488b32c8774e88d6a096437f3766733e90fa"
+    },
+    {
+      "path": "harden/highlights/review_25.mp4",
+      "bytes": 720121,
+      "sha256": "0fadc0656bd2c3ce02af5d735333ef743aeebe9f262bcb33da25801cf7349c7c"
+    },
+    {
+      "path": "harden/highlights/review_26.mp4",
+      "bytes": 762648,
+      "sha256": "2b59517a091fa5bd719d2b9326772a2760c6b44a7748ad0748f92d276d318cee"
+    },
+    {
+      "path": "harden/highlights/review_27.mp4",
+      "bytes": 650039,
+      "sha256": "3339a5fe760eb4be1395f01b3d0bb6360f4c468933995f91e52d4d6e53b7d7e5"
+    },
+    {
+      "path": "harden/highlights/review_28.mp4",
+      "bytes": 1020632,
+      "sha256": "7ae893180980aa7f314030e1a8b45aa9ecb6a71a8ee422ac7c145803d1305f02"
+    },
+    {
+      "path": "harden/highlights/review_29.mp4",
+      "bytes": 825483,
+      "sha256": "dacb6c5f029b3225eb07729040ab1165117e26ac38b3f58e9e3ddbbcedffecd3"
+    },
+    {
+      "path": "harden/highlights/review_30.mp4",
+      "bytes": 734842,
+      "sha256": "fca20a26475016fb8b33f121fb68929452d964b1381862cde039dcfd5451bd47"
+    },
+    {
+      "path": "harden/highlights/review_31.mp4",
+      "bytes": 863119,
+      "sha256": "e6ba878b3e54380da8eb6174806217a00c20e98845602c90baafd2bb0438dac5"
+    },
+    {
+      "path": "harden/highlights/review_32.mp4",
+      "bytes": 819363,
+      "sha256": "2e39a49978c65dbab5cab8af6aff3f0807472456afb9a2f57b7a074f5c1b8c30"
+    },
+    {
+      "path": "harden/highlights/review_33.mp4",
+      "bytes": 900868,
+      "sha256": "e883f5fa574505837b62da0b674cc29ef13cdf490bc8d1803f54e529edf5a885"
+    },
+    {
+      "path": "harden/highlights/review_34.mp4",
+      "bytes": 864068,
+      "sha256": "c4ed23c953ba116ad7f531e9b5e4b87e620857ac5e24be1c8a13b50dc9c20dde"
+    }
+  ]
+}

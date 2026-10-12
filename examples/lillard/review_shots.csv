@@ -1,0 +1,16 @@
+﻿id,release_t,result,value,is_free_throw,is_replay,play_id,note
+lillard_01,2,made,,False,,,
+lillard_02,15,missed,,False,,,
+lillard_03,21,missed,,False,,,上篮被盖
+lillard_04,41,missed,1,True,,,罚球
+lillard_05,47,missed,,False,,,
+lillard_06,57,made,2,False,,,上篮
+lillard_07,67,made,,False,,,
+lillard_08,76,missed,,False,,,
+lillard_09,104,made,3,False,,,
+lillard_10,111,made,,False,,,
+lillard_11,120,made,2,False,,,上篮
+lillard_12,130,missed,2,False,,,上篮
+lillard_13,141,made,3,False,False,lillard_buzzer,绝杀首次播放
+lillard_14,159,made,3,False,True,lillard_buzzer,同一次绝杀回放
+lillard_15,171,made,3,False,True,lillard_buzzer,同一次绝杀回放
