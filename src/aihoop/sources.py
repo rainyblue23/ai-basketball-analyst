@@ -1566,6 +1566,30 @@ class VideoSource:
         else:
             loc_tracks = rank_ball_tracks(tracks, cfg_ball)[:3]
             kept = sorted([c for tr in loc_tracks for c in tr], key=lambda c: c.t)
+        # ---- 3a) 静态标定不可用 -> 自动逐帧滑动标定（**必须早于球/球员投影**）----
+        # ⚠️ 这段原来放在下面（球投影之后），于是球的投影循环里 `self.sliding` 还是
+        #    None、`calibration_valid` 又为 False → 每个球候选都 `continue` →
+        #    **球轨迹恒为空**。实测（NBA 转播 91s）：球检出 97.5 万个候选、
+        #    `kept_points = 0`、`coverage 0.0`，控球/传球/出手全跟着没了。
+        #    球迷惑的是界面上一直显示"没有球轨迹"，看起来像球没检到。
+        if (self.sliding is None and self.auto_sliding
+                and not rt.detections_meta.get("calibration_valid")
+                and self._player_boxes):
+            step(0.55, "球场未标定：启用逐帧滑动标定（自动）")
+            try:
+                from .calibcheck import sliding_calibration
+                self.sliding = sliding_calibration(
+                    self.video_path, self.cal, half_court=self.half_court,
+                    stride=self.sliding_stride,
+                    max_seconds=self.sliding_max_seconds,
+                    progress=lambda p, m="": step(0.55 + 0.05 * p, m))
+                rt.detections_meta["sliding_calibration"] = {
+                    k: v for k, v in self.sliding.items() if k != "anchors"}
+                rt.detections_meta["sliding_anchors"] = len(
+                    self.sliding.get("anchors") or [])
+            except Exception as e:  # noqa: BLE001
+                rt.detections_meta["sliding_error"] = f"{type(e).__name__}: {e}"
+
         # ⚠️ 球必须和球员用**同一套坐标**。球员走的是逐帧滑动标定，
         # 如果球还用静态标定，两者会随镜头移动逐渐错开 ——
         # 表现就是"控球片段恒为 0、传球网络永远为空"，而且不报任何错。
@@ -1603,25 +1627,6 @@ class VideoSource:
         # ---- 3) 球员分队 ----
         step(0.60, "按球衣颜色分主客队")
         self._assign_teams(rt, jersey_sum)
-
-        # ---- 3a) 静态标定不可用 -> 自动逐帧滑动标定 ----
-        if (self.sliding is None and self.auto_sliding
-                and not rt.detections_meta.get("calibration_valid")
-                and self._player_boxes):
-            step(0.63, "球场未标定：启用逐帧滑动标定（自动）")
-            try:
-                from .calibcheck import sliding_calibration
-                self.sliding = sliding_calibration(
-                    self.video_path, self.cal, half_court=self.half_court,
-                    stride=self.sliding_stride,
-                    max_seconds=self.sliding_max_seconds,
-                    progress=lambda p, m="": step(0.63 + 0.06 * p, m))
-                rt.detections_meta["sliding_calibration"] = {
-                    k: v for k, v in self.sliding.items() if k != "anchors"}
-                rt.detections_meta["sliding_anchors"] = len(
-                    self.sliding.get("anchors") or [])
-            except Exception as e:  # noqa: BLE001
-                rt.detections_meta["sliding_error"] = f"{type(e).__name__}: {e}"
 
         rt.detections_meta["court_player_prefilter"] = {
             # enabled 表示"这道剪刀有没有真的在用" —— 标定不可信时它是关的
@@ -1681,6 +1686,7 @@ class VideoSource:
             #   offcourt_obs_dropped : 被这把剪刀删掉的越界观测数
             on_court_hits: dict = {}
             offcourt_obs_dropped = 0
+            skipped_no_sliding = 0
             # 逐帧人数上限：同一时刻场内最多 max_players 个人。
             # 按置信度保留最可信的那些 —— 宁可少画一个，也别把观众画进球场。
             dropped_by_cap = 0
@@ -1730,10 +1736,16 @@ class VideoSource:
                         from .calibcheck import homography_at
                         Hf = homography_at(self.sliding, int(round(tt * fps)),
                                            bool(self.sliding.get("half_court", True)))
-                        if Hf is not None:
-                            px, py = apply_homography(Hf, foot_x, foot_y)
-                            # sliding 的目标点本身就是折半坐标（half_court=True 时）
-                            px, py = fold_to_analysis(px, py, "half")
+                        if Hf is None:
+                            # 这一帧没有可用的滑窗标定（锚点无效/几何不合理/超出范围）
+                            # → **必须跳过**。⚠️ 这里不能只是不赋值：px/py 会留着
+                            # 上一帧的旧值，把球员位置写成上一帧的坐标（静默错位），
+                            # 第一次迭代时还会直接 NameError（实测踩到）。
+                            skipped_no_sliding += 1
+                            continue
+                        px, py = apply_homography(Hf, foot_x, foot_y)
+                        # sliding 的目标点本身就是折半坐标（half_court=True 时）
+                        px, py = fold_to_analysis(px, py, "half")
                         # ⚠️ 场内判定**不用滑窗标定**（_cc 留空 = 这一帧"判不了"）：
                         #    它的质量分只反映"线压到了亮脊上"，不能证明四角对
                         #    （实测 median_ratio 10.88 却把四角算到看台里）。
@@ -1809,6 +1821,8 @@ class VideoSource:
                 # 就能判断"这次到底是靠投影筛的，还是压根没筛"
                 "kept_unjudged": int(kept_without_trusted_cal),
                 "offcourt_observations_dropped": int(offcourt_obs_dropped),
+                # 因为"这一帧没有可用滑窗标定"而跳过的观测数（不跳会写错坐标）
+                "skipped_no_sliding": int(skipped_no_sliding),
                 "rule": ("player_box_bottom_center_inside_calibrated_court"
                          if strict_on_court else "not_trusted_no_filter")}
         rt.detections_meta["player_track"] = {
