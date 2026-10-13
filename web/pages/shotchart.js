@@ -8,12 +8,12 @@
      其中：
        points  每个出手点 {x,y,made,value,t,player_id,zone,distance}
        zones   分区聚合   {zone,att,made,pct,points,pps}（中文分区名来自后端 zone_of）
-       grid    网格热力   grid[iy][ix]，iy=floor((y+14)/bin)，ix=floor(|x|/bin)
+       grid    网格热力   grid[iy][ix]，按后端 shot_chart 的半场旋转与边界计算
      GET /api/games/{job_id}             game.json（兜底点集 + 球队名）
    绘制方式：court.js 手工绘制标准 FIBA 半场（底线 / 6.75m 三分弧 / 底角三分直线 /
              4.9m×5.8m 罚球区 / 1.8m 罚球圈 / 1.25m 合理冲撞区 / 篮筐），
              再叠加「出手散点」「分区热力」「网格热力」三种图层。
-   关键点：左右半场（x 正负）的出手全部镜像到同一个半场显示 —— 这是热区分析的标准做法。
+   关键点：两端进攻统一旋转到同一篮筐，横向左右保持原样；散点与网格共用同一坐标口径。
    ========================================================================== */
 window.PAGES = window.PAGES || {};
 
@@ -23,8 +23,8 @@ window.PAGES['shotchart'] = {
     return {
       S: window.STORE,
       team: 'all',            // all | home | away
-      layer: 'shots',         // shots | zones | grid
-      metric: 'pct',          // pct 命中率 | att 出手量（网格热力用）
+      layer: 'grid',          // 默认直接显示网格热区；另可切散点/分区
+      metric: 'att',          // 默认看出手量，避免稀疏小样本被 0%/100% 命中率误导
       useHeat: false,         // 散点模式下是否叠加密度云
       view: 'half',           // half 半场（镜像） | full 全场（原始分布）
       playerFilter: '',
@@ -35,8 +35,7 @@ window.PAGES['shotchart'] = {
     hiddenUnknownLocations: function () {
       var self=this;
       return ((this.game||{}).timeline||[]).filter(function(e){
-        return window.D.isUnknown(e) && !e.location_unknown && !(e.tags||[]).includes('location_unknown') &&
-          Number.isFinite(e.x) && Number.isFinite(e.y) &&
+        return (!!e.location_unknown || (e.tags||[]).includes('location_unknown')) &&
           (self.team==='all'||e.team===self.team) && (!self.playerFilter||e.player_id===self.playerFilter);
       }).length;
     },
@@ -50,7 +49,14 @@ window.PAGES['shotchart'] = {
      */
     unavailable: function () {
       var a = (this.sc && this.sc.all) || {};
-      return !!a.unavailable;
+      var m = (this.game && this.game.meta) || {};
+      return !!a.unavailable || m.calibration_valid === false || !!m.calibration_rejected ||
+        m.court_outputs_available === false;
+    },
+    unavailableTitle: function () {
+      var m = (this.game && this.game.meta) || {};
+      return (m.calibration_valid === false || m.calibration_rejected)
+        ? '球场标定校验未通过' : '缺少球场标定';
     },
     unavailableReason: function () {
       var a = (this.sc && this.sc.all) || {};
@@ -63,8 +69,18 @@ window.PAGES['shotchart'] = {
      *  篮筐判据放弃；球太小 → 追不到；也没有记分牌事件 → 出手数就是 0。 */
     emptyWhy: function () {
       var m = (this.game && this.game.meta) || {};
+      var timeline = (this.game && this.game.timeline) || [];
+      var attempts = timeline.filter(function(e){
+        return (this.team==='all'||e.team===this.team) && (!this.playerFilter||e.player_id===this.playerFilter);
+      }, this).length;
+      var missingLocations = this.hiddenUnknownLocations;
       var lines = [];
-      lines.push('出手次数：0（这次分析没有产生任何出手记录）');
+      lines.push('已记录出手：' + attempts + ' 次；有可信球场坐标：' + this.points.length + ' 次。');
+      if (missingLocations) {
+        lines.push('其中 ' + missingLocations + ' 次位置未确认，不能放到球场上；当前显示的 x/y 是占位值，不代表真实出手位置。');
+      } else if (!attempts) {
+        lines.push('这次分析没有产生出手记录。');
+      }
       if (m.court_outputs_unverified) {
         lines.push('另外提醒：热区用的是**你手动标的**球场标定，'
           + '自动校验没通过 —— 位置可能有偏差。');
@@ -89,6 +105,10 @@ window.PAGES['shotchart'] = {
       }
       var ve = m.visual_error || (m.hoopsight && m.hoopsight.reason);
       if (ve) { lines.push('为什么没出手：' + String(ve).slice(0, 160)); }
+      var engine = m.shot_engine_details || {};
+      if (!engine.model_path && Number(engine.real_ball_frames || 0) === 0) {
+        lines.push('篮球检测权重未加载，分析没有找到有效篮球帧，自动投篮识别无法工作。');
+      }
       var rej = m.calibration_rejected;
       if (rej) { lines.push('标定校验：' + String(rej).slice(0, 160)); }
       lines.push('');
@@ -248,15 +268,15 @@ window.PAGES['shotchart'] = {
       return mins[0];
     },
     reset: function () {
-      this.team = 'all'; this.layer = 'shots'; this.metric = 'pct';
+      this.team = 'all'; this.layer = 'grid'; this.metric = 'att';
       this.useHeat = false; this.view = 'half'; this.playerFilter = '';
     }
   },
   watch: {
     // 切换球队时清掉球员筛选（否则会筛出空集）
     team: function () { this.playerFilter = ''; },
-    // 分区热力只定义在半场（分区口径基于到篮筐距离），选分区时自动回到半场视图
-    layer: function (v) { if (v === 'zones') this.view = 'half'; }
+    // 分区与网格都只定义在半场，切换时自动回到相同视图
+    layer: function (v) { if (v === 'zones' || v === 'grid') this.view = 'half'; }
   },
   mounted: function () {
     var self = this;
@@ -277,21 +297,21 @@ window.PAGES['shotchart'] = {
   template: [
     '<div>',
     '  <calibration-gaps :game="game" />',
-    '  <p v-if="hiddenUnknownLocations" class="hint">另有 {{ hiddenUnknownLocations }} 次待确认</p>',
+    '  <p v-if="hiddenUnknownLocations" class="hint">已识别 {{ hiddenUnknownLocations }} 次出手，但位置未知；这些出手不会被画进热区。</p>',
     '  <div class="card" v-if="unavailable">',
     '    <h3 class="card-title">投篮热区 <span class="sub">不适用</span></h3>',
     '    <el-alert type="warning" :closable="false" show-icon',
-    '      title="缺少球场标定"',
+    '      :title="unavailableTitle"',
     '      ><copy-note label="说明">这段视频没有可用的球场标定，无法生成投篮热区。{{ unavailableReason + \'\\n\\n\' +',
     '        emptyWhy + \'\\n\\n\' +',
     '        \'（宁可不画，也不画错的：球场坐标整片错位时，热区图看起来正常但全是垃圾。\' +',
     '        \'要出热区请先用 calibrate 对这段视频做球场标定。）\' }}</copy-note></el-alert>',
     '  </div>',
     '  <div class="card" v-else-if="!points.length">',
-    '    <h3 class="card-title">投篮热区 <span class="sub"><copy-note label="标定说明">暂无出手点</copy-note></span></h3>',
+    '    <h3 class="card-title">投篮热区 <span class="sub">暂无可信位置数据</span></h3>',
     '    <el-alert type="info" :closable="false" show-icon',
-    '      title="缺少球场标定"',
-    '      >暂无符合条件的出手点 <copy-note label="说明">{{ emptyWhy }}</copy-note></el-alert>',
+    '      :title="hiddenUnknownLocations ? (\'有出手记录，但位置未确认\') : (\'没有可用出手点\')"',
+    '      ><copy-note label="为什么没有热区">{{ emptyWhy }}</copy-note></el-alert>',
     '  </div>',
     '  <div class="card" v-else-if="!points.length && !(S.game)">',
     '    <el-empty description="暂无投篮数据" />',
@@ -321,7 +341,7 @@ window.PAGES['shotchart'] = {
     '        </el-radio-group>',
     '        <el-radio-group v-model="view" size="small">',
     '          <el-radio-button label="half">半场</el-radio-button>',
-    '          <el-radio-button label="full" :disabled="layer===\'zones\'">全场</el-radio-button>',
+    '          <el-radio-button label="full" :disabled="layer===\'zones\'||layer===\'grid\'">全场</el-radio-button>',
     '        </el-radio-group>',
     '        <template v-if="layer===\'grid\'">',
     '          <el-select v-model="metric" size="small" style="width:120px">',

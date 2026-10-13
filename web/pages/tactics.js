@@ -75,6 +75,30 @@ window.PAGES['tactics'] = {
       if (this.tac && !this.tac.available) return this.tac.reason || '';
       return this.summary.reason || '';
     },
+    frameQuality: function () {
+      var frames=this.frames||[], valid=0;
+      frames.forEach(function(f){
+        if(f.population_quality && f.population_quality.valid===false)return;
+        var counts={};(f.players||[]).forEach(function(p){counts[p[1]]=(counts[p[1]]||0)+1;});
+        var n=(f.players||[]).length;
+        if(n>0 && n<=10 && !Object.keys(counts).some(function(k){return counts[k]>5;}))valid++;
+      });
+      return {valid:valid,total:frames.length,pct:frames.length?valid/frames.length:0};
+    },
+    spacingQuality: function () {
+      var rows=(this.tac && this.tac.spacing && this.tac.spacing.timeline)||[];
+      var times={}; rows.forEach(function(r){times[String(r.t)]=true;});
+      var observed=Object.keys(times).length;
+      var step=Number((this.tac && this.tac.config && this.tac.config.frame_step)||1);
+      var expected=this.duration>0?Math.floor(this.duration/step)+1:0;
+      return {observed:observed,expected:expected,pct:expected?observed/expected:0};
+    },
+    hasBallTrack: function () {
+      return !!(this.tac && this.tac.coverage && Number(this.tac.coverage.ball_samples)>0);
+    },
+    canInferAttack: function () {
+      return this.hasBallTrack && !!(this.tac && this.tac.possession && Number(this.tac.possession.total)>0);
+    },
 
     // ---------------- 播放器 ----------------
     frameIdx: function () {
@@ -183,11 +207,15 @@ window.PAGES['tactics'] = {
       // 直接整体按 i+=step 抽稀会让步长与球队交替同频，结果只剩一支球队
       // （后端也踩过同一个坑，见 tactics.py 里按球队分别抽稀的注释）。
       function pick(side) {
-        var rows = tl.filter(function (r) { return r.team === side; });
+        var rows = tl.filter(function (r) { return r.team === side; }).slice().sort(function(a,b){return a.t-b.t;});
         var st = rows.length > 600 ? Math.ceil(rows.length / 600) : 1;
-        var out = [];
+        var out = [], prev = null;
         for (var i = 0; i < rows.length; i += st) {
-          out.push([+rows[i].t.toFixed(1), rows[i][m]]);
+          var row=rows[i];
+          if(prev && row.t-prev.t > 1.5*((self.tac && self.tac.config && self.tac.config.frame_step)||1))
+            out.push([+((prev.t+row.t)/2).toFixed(1), null]);
+          out.push([+row.t.toFixed(1), row[m]]);
+          prev=row;
         }
         return out;
       }
@@ -198,11 +226,11 @@ window.PAGES['tactics'] = {
         xAxis: { type: 'value', name: '时间(秒)', min: 0, max: Math.ceil(this.duration) },
         yAxis: { type: 'value', name: this.METRICS.filter(function (x) { return x.key === m; })[0].label },
         series: [
-          { name: window.D.teamName(this.game, 'home'), type: 'line', showSymbol: false,
-            smooth: true, lineStyle: { width: 2, color: '#3D8BFF' }, itemStyle: { color: '#3D8BFF' },
+          { name: window.D.teamName(this.game, 'home'), type: 'line', showSymbol: true, symbolSize: 4,
+            smooth: false, connectNulls: false, lineStyle: { width: 2, color: '#3D8BFF' }, itemStyle: { color: '#3D8BFF' },
             data: pick('home') },
-          { name: window.D.teamName(this.game, 'away'), type: 'line', showSymbol: false,
-            smooth: true, lineStyle: { width: 2, color: '#FF7A33' }, itemStyle: { color: '#FF7A33' },
+          { name: window.D.teamName(this.game, 'away'), type: 'line', showSymbol: true, symbolSize: 4,
+            smooth: false, connectNulls: false, lineStyle: { width: 2, color: '#FF7A33' }, itemStyle: { color: '#FF7A33' },
             data: pick('away') }
         ]
       };
@@ -395,14 +423,25 @@ window.PAGES['tactics'] = {
     '      </copy-note></div>',
     '    </el-alert>',
     '    <el-alert v-if="populationNeedsRebuild" type="warning" :closable="false" title="旧结果含人数异常，战术统计暂停展示，请重新分析。" />',
+    '    <el-alert v-if="!canInferAttack" type="warning" :closable="false" show-icon title="没有足够的球轨迹与控球片段：传球和攻防阵型无法判断。">',
+    '      <span>下方球员位置与间距只反映检测到的片段；不能据此解释为完整战术或整场表现。</span>',
+    '    </el-alert>',
+    '    <el-alert v-if="frameQuality.total && frameQuality.pct < 0.5" type="warning" :closable="false" show-icon',
+    '      :title="\'俯视图中可用坐标仅覆盖 \' + frameQuality.valid + \' / \' + frameQuality.total + \' 帧\'">',
+    '      <span>人数异常或没有可信坐标的时刻已跳过；球场位置也没有通过独立校验，当前结果不能当作整场统计。</span>',
+    '    </el-alert>',
+    '    <el-alert v-if="spacingQuality.expected && spacingQuality.pct < 0.5" type="warning" :closable="false"',
+    '      :title="\'空间指标仅来自 \' + spacingQuality.observed + \' / \' + spacingQuality.expected + \' 个秒级采样点\'">',
+    '      <span>曲线会断开展示缺失时段，表格里的平均值也只基于这些有效采样点。</span>',
+    '    </el-alert>',
     '    <!-- ① KPI -->',
     '    <div class="kpi-row" v-if="!populationNeedsRebuild">',
-    '      <div class="kpi"><div class="v">{{ tac.possession.total }}</div><div class="k">回合数</div></div>',
-    '      <div class="kpi"><div class="v">{{ tac.passes.total }}</div><div class="k">成功传球</div></div>',
-    '      <div class="kpi"><div class="v">{{ tac.passes.turnovers }}</div><div class="k">球权转换</div></div>',
-    '      <div class="kpi"><div class="v">{{ tac.possession.avg_passes }}</div><div class="k">每回合传球</div></div>',
-    '      <div class="kpi"><div class="v">{{ tac.possession.avg_duration }}s</div><div class="k">平均回合时长</div></div>',
-    '      <div class="kpi"><div class="v">{{ attackSideText }}</div><div class="k">进攻方向</div></div>',
+    '      <div class="kpi"><div class="v">{{ canInferAttack ? tac.possession.total : "—" }}</div><div class="k">回合数</div></div>',
+    '      <div class="kpi"><div class="v">{{ canInferAttack ? tac.passes.total : "—" }}</div><div class="k">成功传球</div></div>',
+    '      <div class="kpi"><div class="v">{{ canInferAttack ? tac.passes.turnovers : "—" }}</div><div class="k">球权转换</div></div>',
+    '      <div class="kpi"><div class="v">{{ canInferAttack ? tac.possession.avg_passes : "—" }}</div><div class="k">每回合传球</div></div>',
+    '      <div class="kpi"><div class="v">{{ canInferAttack ? tac.possession.avg_duration + "s" : "—" }}</div><div class="k">平均回合时长</div></div>',
+    '      <div class="kpi"><div class="v">{{ canInferAttack ? attackSideText : "—" }}</div><div class="k">进攻方向</div></div>',
     '    </div>',
     '    <!-- ② 俯视战术图 + 战术亮点 -->',
     '    <el-card shadow="never" class="blk">',
@@ -433,11 +472,12 @@ window.PAGES['tactics'] = {
     '        <div>',
     '          <div class="blk-title">战术亮点</div>',
     '          <ul class="insight-list">',
-    '            <li v-for="(i,k) in (populationNeedsRebuild ? [] : tac.insights)" :key="k">',
+    '            <li v-for="(i,k) in (canInferAttack && !populationNeedsRebuild ? tac.insights : [])" :key="k">',
     '              <a href="javascript:void(0)" @click="jumpTo(i.t)">▶ {{ mmss(i.t) }}</a>',
     '              <span>{{ i.text }}</span>',
     '            </li>',
-    '            <li v-if="!tac.insights.length" class="muted">没有战术亮点</li>',
+    '            <li v-if="!canInferAttack" class="muted">球轨迹或控球数据不足，暂不生成战术亮点。</li>',
+    '            <li v-else-if="!tac.insights.length" class="muted">没有可报告的战术亮点</li>',
     '          </ul>',
     '          <div class="blk-title" style="margin-top:14px">口径说明</div>',
     '          <div class="muted small">',
@@ -448,7 +488,7 @@ window.PAGES['tactics'] = {
     '      </div>',
     '    </el-card>',
     '    <!-- ③ 传球网络 -->',
-    '    <el-card v-if="!populationNeedsRebuild" shadow="never" class="blk">',
+    '    <el-card v-if="!populationNeedsRebuild && canInferAttack" shadow="never" class="blk">',
     '      <template #header><b>② 传球网络</b>',
     '      </template>',
     '      <el-radio-group v-model="netTeam" size="small" style="margin-bottom:10px">',
@@ -465,22 +505,26 @@ window.PAGES['tactics'] = {
     '        </el-table>',
     '      </div>',
     '    </el-card>',
+    '    <el-card v-else-if="!populationNeedsRebuild" shadow="never" class="blk">',
+    '      <template #header><b>② 传球网络</b></template>',
+    '      <div class="muted">没有足够的球轨迹与控球片段，暂时无法生成可信的传球网络。</div>',
+    '    </el-card>',
     '    <!-- ④ 阵型识别 -->',
-    '    <el-card v-if="!populationNeedsRebuild" shadow="never" class="blk">',
+    '    <el-card v-if="!populationNeedsRebuild && canInferAttack" shadow="never" class="blk">',
     '      <template #header><b>③ 阵型识别</b>',
     '      </template>',
     '      <el-table :data="formationRows" size="small">',
     '        <el-table-column label="球队" width="110">',
     '          <template #default="s"><b>{{ s.row.name }}</b></template>',
     '        </el-table-column>',
-    '        <el-table-column label="主要进攻落位">',
+    '        <el-table-column :label="hasBallTrack ? \'主要进攻落位\' : \'球员落位形状（攻守未判）\'">',
     '          <template #default="s">',
     '            <el-tag v-for="x in s.row.offenseTop" :key="x.label" size="small"',
     '                    :color="colorOf(x.label)" effect="dark" class="tag-gap">',
     '              {{ x.label }} · {{ x.n }}</el-tag>',
     '          </template>',
     '        </el-table-column>',
-    '        <el-table-column label="主要防守阵型">',
+    '        <el-table-column :label="hasBallTrack ? \'主要防守阵型\' : \'防守阵型（无球轨迹）\'">',
     '          <template #default="s">',
     '            <el-tag v-for="x in s.row.defenseTop" :key="x.label" size="small"',
     '                    :color="colorOf(x.label)" effect="dark" class="tag-gap">',
@@ -497,9 +541,13 @@ window.PAGES['tactics'] = {
     '        <span class="bar-track" v-html="b.html"></span>',
     '      </div>',
     '    </el-card>',
+    '    <el-card v-else-if="!populationNeedsRebuild" shadow="never" class="blk">',
+    '      <template #header><b>③ 阵型识别</b></template>',
+    '      <div class="muted">球轨迹或控球片段不足，无法区分进攻与防守阵型。</div>',
+    '    </el-card>',
     '    <!-- ⑤ 间距曲线 -->',
     '    <el-card v-if="!populationNeedsRebuild" shadow="never" class="blk">',
-    '      <template #header><b>④ 空间/间距曲线</b>',
+    '      <template #header><b>④ 空间/间距曲线（仅有效采样）</b>',
     '      </template>',
     '      <el-radio-group v-model="metric" size="small" style="margin-bottom:8px">',
     '        <el-radio-button v-for="m in METRICS" :key="m.key" :label="m.key">',

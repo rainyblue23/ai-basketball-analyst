@@ -10,9 +10,8 @@
      * 出手可能落在左半场（x<0）或右半场（x>0）
    --------------------------------------------------------------------------
    两种视图：
-     half 半场视图 —— 把所有出手「镜像」到同一个半场（右侧篮筐），
-                      这是热区分析的标准做法，左右底角三分重合显示。
-                      归一化坐标：u = |x| ∈ [0,15]（0 是边线，篮筐在 1.575）
+   half 半场视图 —— 把两端的进攻方向旋转到同一篮筐，保留横向左右分布。
+                      归一化坐标：y<0 时 x 翻转；u = x + 7.5 ∈ [0,15]
                                   v = |y| ∈ [0,14]（0 是底线，14 是中圈）
      full 全场视图 —— u = x + 7.5 ∈ [0,15]，v = y + 14 ∈ [0,28]，
                       左右半场各一个篮筐，用于展示原始出手分布。
@@ -63,14 +62,19 @@
       };
   }
 
-  /** 球场真实坐标 -> 画布坐标（米）。半场视图把两侧叠到一起。 */
+  /** 球场真实坐标 -> 画布坐标（米）。半场视图按进攻方向翻转到同一篮筐。 */
   function mapXY(view, x, y) {
-    if (view === 'full') return { u: Number(x) + C.COURT_W / 2, v: Number(y) + C.COURT_L / 2 };
-    // 半场：|x| 镜像到「篮筐所在的半场」（u 从边线量起），|y| 把两侧底线都叠到底部。
-    // 说明：严格的手性镜像应该是 (x,y) -> (-x,-y)，这里用了 (|x|,|y|)。
-    // 对热区图没有影响，因为分区判据（底角看 |x|、距离看勾股）与镜像都对称，
-    // 点的「到篮筐距离」和「分区」完全一致，只是在半场里的朝向略有差别。
-    return { u: Math.abs(Number(x)), v: Math.abs(Number(y)) };
+    if (view === 'full') {
+      // 输入 y 是带进攻端符号的底线距离，先还原为全场位置。
+      var fullY = Number(y);
+      return { u: Number(x) + C.COURT_W / 2,
+               v: fullY < 0 ? -fullY : C.COURT_L - fullY };
+    }
+    // 把两端的进攻方向统一到同一个篮筐，同时保留横向左右位置：
+    // y<0 的半场旋转 180°，所以 x 也要翻转。u=x+7.5 与球场线框一致。
+    var xx = Number(x), yy = Number(y);
+    if (yy < 0) xx = -xx;
+    return { u: xx + C.COURT_W / 2, v: Math.abs(yy) };
   }
 
   // ---------------------------------------------------------------- 工具
@@ -181,18 +185,20 @@
 
     hoops.forEach(function (hp) {
       var hv = hp.hv, dir = hp.dir;        // dir=1 表示罚球区朝 v 增大方向（中场）
+      var baseline = dir > 0 ? 0 : C.COURT_L;
+      var ftLine = baseline + dir * C.PAINT_L;
 
       function p(u, w) { return f(u + v.pad) + ' ' + f(w + v.pad); }
 
       // 罚球区（KEY）：宽 4.90m、长 5.80m，以篮筐横向中心为中轴
-      s.push('<path d="M ' + p(HU - C.PAINT_W / 2, hv) +
-        ' L ' + p(HU + C.PAINT_W / 2, hv) +
-        ' L ' + p(HU + C.PAINT_W / 2, hv + dir * C.PAINT_L) +
-        ' L ' + p(HU - C.PAINT_W / 2, hv + dir * C.PAINT_L) + ' Z"' +
+      s.push('<path d="M ' + p(HU - C.PAINT_W / 2, baseline) +
+        ' L ' + p(HU + C.PAINT_W / 2, baseline) +
+        ' L ' + p(HU + C.PAINT_W / 2, ftLine) +
+        ' L ' + p(HU - C.PAINT_W / 2, ftLine) + ' Z"' +
         ' fill="#f6efe1" stroke="#c9b48f" stroke-width="0.05"/>');
 
       // 罚球圈（半径 1.80m，圆心在罚球线中点）
-      s.push('<circle cx="' + f(HU + v.pad) + '" cy="' + f(hv + dir * C.PAINT_L + v.pad) +
+      s.push('<circle cx="' + f(HU + v.pad) + '" cy="' + f(ftLine + v.pad) +
         '" r="' + C.FT_R + '" fill="none" stroke="#c9b48f" stroke-width="0.05"/>');
 
       // 合理冲撞区（半圆，半径 1.25m，朝中场一侧开口）

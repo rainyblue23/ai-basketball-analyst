@@ -26,7 +26,7 @@ window.PAGES['review'] = {
       showAll: false,           // 是否把高置信度出手也列出来
       busyIdx: -1,
       localLog: [],             // 改判记录（用于答辩演示时说明写回口径）
-      manual: { t: 0, team: '', value: 2, result: 'unknown' },  // 手动补录漏掉的出手
+      manual: { t: 0, team: '', value: 2, result: 'unknown', x: null, y: null },  // 坐标为空时只补录事件，不进入热区
       adding: false
     };
   },
@@ -76,9 +76,15 @@ window.PAGES['review'] = {
         this.$message.warning('请输入出手时间（秒）');
         return;
       }
+      var x = this.manual.x === null || this.manual.x === '' ? null : Number(this.manual.x);
+      var y = this.manual.y === null || this.manual.y === '' ? null : Number(this.manual.y);
+      if ((x === null) !== (y === null)) {
+        this.$message.warning('要进入投篮热区，请同时填写球场 X、Y 坐标');
+        return;
+      }
       this.adding = true;
       window.API.addManualShot(this.S.jobId, {
-        t: t, team: this.manual.team, value: Number(this.manual.value), result: this.manual.result
+        t: t, team: this.manual.team, value: Number(this.manual.value), result: this.manual.result, x: x, y: y
       }).then(function (r) {
         self.adding = false;
         self.$message.success('已补录：' + (r.summary || ''));
@@ -330,8 +336,11 @@ window.PAGES['review'] = {
     '    <!-- ①.5 手动补录 -->',
     '    <div class="card" v-if="!isExample">',
     '      <h3 class="card-title">补录漏掉的出手 </h3>',
+    '      <div class="muted" style="margin-bottom:8px">填写半场坐标（米）后才会进入热区：X 为 -7.5 到 7.5，Y 为 -14 到 0；留空则只补事件。</div>',
     '      <div class="row" style="gap:12px;flex-wrap:wrap">',
     '        <el-input-number v-model="manual.t" :min="0" :max="36000" :step="0.1" controls-position="right" style="width:160px" />',
+    '        <el-input-number v-model="manual.x" :min="-7.5" :max="7.5" :step="0.5" :precision="1" controls-position="right" placeholder="X (m)" style="width:140px" />',
+    '        <el-input-number v-model="manual.y" :min="-14" :max="0" :step="0.5" :precision="1" controls-position="right" placeholder="Y (m)" style="width:140px" />',
     '        <el-select v-model="manual.team" style="width:120px">',
     '          <el-option label="球队未知" value="" /><el-option label="主队" value="home" /><el-option label="客队" value="away" />',
     '        </el-select>',

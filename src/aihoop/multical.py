@@ -46,6 +46,7 @@ class Segment:
     method: str = "web-keypoints-multi"
     n_points: int = 0
     note: str = ""
+    diagnostic: Optional[dict] = None
 
     def calibration(self, for_video: str = "", frame_size=None) -> Calibration:
         cal = Calibration(name="seg", method=self.method, src_px=self.src_px,
@@ -66,7 +67,7 @@ class Segment:
                 "rmse_m": round(float(self.rmse_m), 4),
                 "ratio": round(float(self.ratio), 3),
                 "method": self.method, "n_points": int(self.n_points),
-                "note": self.note}
+                "note": self.note, "diagnostic": self.diagnostic}
 
     @classmethod
     def from_dict(cls, d: dict) -> "Segment":
@@ -94,6 +95,7 @@ class Segment:
         rmse = float(d.get("rmse_m") or ver.get("rmse_m") or 0.0)
         ratio = float(d.get("ratio") or fit.get("ratio") or 0.0)
         note = d.get("note") or ""
+        diagnostic = d.get("diagnostic")
 
         # Older web calibration files included the hoop center among ground-plane
         # landmarks. It is 3.05m above the court, so that correspondence bends the
@@ -128,7 +130,7 @@ class Segment:
                    names=names, rmse_m=rmse,
                    ratio=ratio,
                    method=d.get("method") or "web-keypoints-multi",
-                   n_points=n_points, note=note)
+                   n_points=n_points, note=note, diagnostic=diagnostic)
 
 
 class MultiCal:
@@ -245,7 +247,8 @@ class MultiCal:
         return {"multi_shot": True, "n_segments": len(self.segments),
                 "segments": [{"t_start": s.t_start, "t_end": s.t_end,
                               "n_points": s.n_points, "rmse_m": s.rmse_m,
-                              "ratio": s.ratio, "frame": s.frame}
+                              "ratio": s.ratio, "frame": s.frame,
+                              "diagnostic": s.diagnostic}
                              for s in self.segments]}
 
 
@@ -280,7 +283,8 @@ def weak_segments(mc, rmse_max: float = RMSE_MAX,
         why = segment_is_weak(s, rmse_max, ratio_min)
         if why:
             out.append({"t_start": s.t_start, "t_end": s.t_end,
-                        "rmse_m": s.rmse_m, "ratio": s.ratio, "why": why})
+                        "rmse_m": s.rmse_m, "ratio": s.ratio, "why": why,
+                        "diagnostic": s.diagnostic})
     return out
 
 
@@ -567,9 +571,39 @@ def _solve_one(group_frames: list, W: int, H: int):
             ratio = float(d.get("ratio") or 0.0)
         except Exception:                               # noqa: BLE001
             pass
+    # 5 点及以上时做逐点留一体检：每次只移除一个人工对应点，用剩余点
+    # 重算 H，再独立比较投影线与白线吻合度。只提示疑点，不自动删点。
+    diagnostic = None
+    if bgr_ref is not None and len(src) >= 5:
+        loo = []
+        for i in range(len(src)):
+            try:
+                keep = [j for j in range(len(src)) if j != i]
+                H_i = find_homography([src[j] for j in keep],
+                                      [dst[j] for j in keep])
+                cal_i = Calibration(name="loo", method="web-keypoints-multi",
+                                    src_px=[src[j] for j in keep],
+                                    dst_m=[dst[j] for j in keep], H=H_i,
+                                    frame="full", frame_size=[W, H])
+                cal_i.fit()
+                score = float(frame_fit_detail(bgr_ref, cal_i).get("ratio") or 0.0)
+                loo.append((score, i))
+            except Exception:                           # noqa: BLE001
+                continue
+        if loo:
+            best_ratio, best_i = max(loo)
+            if ratio < 1.25 <= best_ratio and best_ratio - ratio >= 0.15:
+                diagnostic = {
+                    "suspect_name": (names[best_i] if best_i < len(names)
+                                     else "第%d个点" % (best_i + 1)),
+                    "ratio_with_point": round(ratio, 2),
+                    "ratio_without_point": round(best_ratio, 2),
+                    "note": "去掉这个点后白线吻合度明显提高；请核对它是否点在对应的地面交点。"
+                }
     seg = Segment(t_start=0.0, t_end=0.0, src_px=src, dst_m=dst, H=list(Hm),
                   frame="full", names=names, rmse_m=rmse, ratio=ratio,
                   method="web-keypoints-multi", n_points=len(src),
+                  diagnostic=diagnostic,
                   note="%s 解算，%d 个点" % (via, len(src)))
     return seg, ""
 

@@ -297,10 +297,10 @@
     return out;
   };
 
-  /** 前端自算网格热力（1m 网格，镜像到同一半场），与后端 grid 口径一致 */
+  /** 前端自算网格热力（1m 网格），与后端 shot_chart 的半场折叠口径一致 */
   D.buildGrid = function (points, bin) {
     bin = bin || 1.0;
-    var nx = Math.round(15 / bin), ny = Math.round(14 / bin);
+    var nx = Math.floor(15 / bin), ny = Math.floor(14 / bin);
     var grid = [];
     for (var iy = 0; iy < ny; iy++) {
       var row = [];
@@ -308,9 +308,11 @@
       grid.push(row);
     }
     (points || []).forEach(function (p) {
-      var x = Math.abs(Number(p.x));                        // 镜像到右半场
-      var iy = Math.floor((Number(p.y) + 14) / bin);        // y: -14..0 -> 0..14
-      var ix = Math.floor(x / bin);
+      var x = Number(p.x), y = Number(p.y);
+      // y<0 时将进攻方向旋转 180°，和后端一样保留镜像后的左右侧。
+      if (y < 0) x = -x;
+      var iy = Math.floor(Math.abs(y) / bin);
+      var ix = Math.floor((x + 7.5) / bin);
       if (iy < 0 || iy >= ny) return;
       if (ix < 0 || ix >= nx) return;
       grid[iy][ix].att++;

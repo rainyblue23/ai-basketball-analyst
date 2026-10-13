@@ -90,7 +90,7 @@ def fold_to_analysis(x: float, y: float, mode: str = "full"
     if mode == "right":
         return x, COURT_LENGTH / 2 - y
     # full：按点落在哪个半场分别折
-    if y >= 0:
+    if math.copysign(1.0, y) > 0:
         return x, COURT_LENGTH / 2 - y
     return x, -(COURT_LENGTH / 2 + y)
 
@@ -107,7 +107,8 @@ def unfold_from_analysis(x: float, y: float, mode: str = "full"
         return x, -COURT_LENGTH / 2 - y
     if mode == "right":
         return x, COURT_LENGTH / 2 - y
-    if y >= 0:
+    # -0.0 表示 B 端底线，不能被 y>=0 归到 A 端。
+    if math.copysign(1.0, y) > 0:
         return x, COURT_LENGTH / 2 - y
     return x, -COURT_LENGTH / 2 - y
 
@@ -194,6 +195,16 @@ def calibration_degeneracy(cal, min_src_frac: float = 0.008,
         out["degenerate"] = True
         out["reason"] = "没有解出单应矩阵。"
         return out
+
+    if len(dst) == 4:
+        from itertools import combinations
+        if any(max_triangle_area(triple) < 1e-8
+               for triple in combinations(dst, 3)):
+            out["degenerate"] = True
+            out["reason"] = (
+                "这幅画面只有 4 个点，其中 3 个地标在同一条线上（例如罚球线两角与中点）。"
+                "它们不能独立确定平面矩阵；请再标一个底线角、篮下地面角或中线交点。")
+            return out
 
     size = list(getattr(cal, "frame_size", None) or [])
     if len(size) >= 2 and float(size[0]) > 0 and float(size[1]) > 0:

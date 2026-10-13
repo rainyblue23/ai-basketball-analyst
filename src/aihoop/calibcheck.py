@@ -131,7 +131,7 @@ def camera_motion(video_path: str, sample_fps: float = 1.0,
 # 2) 标定与画面的吻合度
 # --------------------------------------------------------------------------
 # 半场（分析坐标）里要检查的球场线。y=0 是底线、|y|=14 是中圈。
-def _court_polylines(half: float = 1.0) -> dict:
+def _court_polylines(half: float = 1.0, standard: str = "fiba") -> dict:
     W = COURT_WIDTH / 2
     out = {
         "bottom": [(-W, 0.0), (W, 0.0)],
@@ -141,7 +141,10 @@ def _court_polylines(half: float = 1.0) -> dict:
     if half < 1.0:
         out["halfcourt_line"] = [(-W, -COURT_LENGTH / 2), (W, -COURT_LENGTH / 2)]
     # 罚球区（5.8m x 4.9m）
-    out["paint"] = [(-2.45, 0.0), (-2.45, -5.8), (2.45, -5.8), (2.45, 0.0)]
+    from .court_geometry import geometry
+    g = geometry(standard)
+    lw, ft = g["lane_half"], g["ft"]
+    out["paint"] = [(-lw, 0.0), (-lw, -ft), (lw, -ft), (lw, 0.0)]
     return out
 
 
@@ -185,12 +188,21 @@ def frame_fit_detail(bgr, cal: Calibration, n_samples: int = 40) -> dict:
     gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
     h, w = gray.shape
     W = COURT_WIDTH / 2
+    # 每份矩阵只校验它标定的那一端。A端全场地标的 y>0，B端 y<0；
+    # 之前固定检查负半场，会拿 A 端矩阵去投 B 端的线。
+    anchor_y = [float(p[1]) for p in (cal.dst_m or []) if len(p) >= 2]
+    half_sign = 1.0 if anchor_y and sum(anchor_y) > 0 else -1.0
+    def to_pixel(mx, my):
+        # B端底线必须保留 -0.0；+0.0 在全场反变换中属于 A 端底线。
+        return cal.to_pixel(mx, half_sign * abs(my))
     detail = {}
     on = []
-    for name, pts in _court_polylines(half=0.5).items():
+    from .court_geometry import infer_standard
+    standard = infer_standard(cal.dst_m)
+    for name, pts in _court_polylines(half=0.5, standard=standard).items():
         vals = []
         for (mx, my) in _sample_polyline(pts, n_samples):
-            px, py = cal.to_pixel(mx, my)
+            px, py = to_pixel(mx, my)
             xi, yi = int(round(px)), int(round(py))
             if 6 <= xi < w - 6 and 6 <= yi < h - 6:
                 vals.append(_ridge_strength(gray, xi, yi))
@@ -198,8 +210,8 @@ def frame_fit_detail(bgr, cal: Calibration, n_samples: int = 40) -> dict:
             detail[name] = round(float(np.median(vals)), 1)
             on.extend(vals)
     poly = np.array([[int(a), int(b)] for a, b in [
-        cal.to_pixel(-W, 0.0), cal.to_pixel(W, 0.0),
-        cal.to_pixel(W, -COURT_LENGTH / 2), cal.to_pixel(-W, -COURT_LENGTH / 2)]],
+        to_pixel(-W, 0.0), to_pixel(W, 0.0),
+        to_pixel(W, -COURT_LENGTH / 2), to_pixel(-W, -COURT_LENGTH / 2)]],
         np.int32)
     x0, x1 = max(0, poly[:, 0].min()), min(w - 1, poly[:, 0].max())
     y0, y1 = max(0, poly[:, 1].min()), min(h - 1, poly[:, 1].max())

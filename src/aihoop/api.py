@@ -215,8 +215,8 @@ class ManualShot(BaseModel):
     player_id: str = "MANUAL"
     value: Literal[1, 2, 3] = 2
     result: Literal["made", "missed", "unknown"] = "made"
-    x: float = 0.0
-    y: float = 0.0
+    x: Optional[float] = None
+    y: Optional[float] = None
     period: int = 1
 
 
@@ -895,6 +895,13 @@ async def add_manual_shot(job_id: str, body: ManualShot) -> Any:
         raise HTTPException(400, "时间必须是有效的非负数")
     if body.team not in ("", "home", "away"):
         raise HTTPException(400, "球队无效")
+    # 手工球场坐标使用分析半场坐标系：x ∈ [-7.5, 7.5]，y ∈ [-14, 0]。
+    # 未提供坐标时保留位置未知，不能把 (0, 0) 的篮筐占位点画成出手点。
+    has_location = body.x is not None and body.y is not None
+    if (body.x is None) != (body.y is None):
+        raise HTTPException(400, "出手坐标需要同时填写 X 和 Y")
+    if has_location and not (-7.5 <= body.x <= 7.5 and -14.0 <= body.y <= 0.0):
+        raise HTTPException(400, "出手坐标超出半场范围：x 为 -7.5 到 7.5，y 为 -14 到 0 米")
     from .sources import RawTrack
     rt = RawTrack.load(str(rt_path))
     if rt.duration and body.t >= rt.duration:
@@ -906,8 +913,8 @@ async def add_manual_shot(job_id: str, body: ManualShot) -> Any:
         "team": body.team,
         "team_unknown": not bool(body.team),
         "player_id": body.player_id or "MANUAL",
-        "x": float(body.x or 0.0),
-        "y": float(body.y or 0.0),
+        "x": float(body.x) if has_location else 0.0,
+        "y": float(body.y) if has_location else 0.0,
         "period": int(body.period or 1),
         "clock": 0.0,
         "is_free_throw": value == 1,
@@ -917,7 +924,7 @@ async def add_manual_shot(job_id: str, body: ManualShot) -> Any:
         "conf": 1.0,
         "forced_value": value,
         "source": "manual",
-        "location_source": "rim_placeholder",
+        "location_source": "manual" if has_location else "rim_placeholder",
         "location_estimated": False,
         "counts_for_score": bool(body.team) and body.result != "unknown",
         "value_source": "manual",
@@ -1500,6 +1507,10 @@ COURT_LANDMARKS = {
     # 三分弧半径从**篮筐**量（篮筐离底线 1.575m），因此弧顶距中线 5.675m
     "arc_far":           (0.0, 14.0 - 1.575 - 6.75),
     "arc_near":          (0.0, -14.0 + 1.575 + 6.75),
+    "paint_base_far_left": (-2.45, 14.0),
+    "paint_base_far_right": (2.45, 14.0),
+    "paint_base_near_left": (-2.45, -14.0),
+    "paint_base_near_right": (2.45, -14.0),
 }
 
 
@@ -1706,10 +1717,10 @@ def _minimal_quad_models():
 
 
 def solve_minimal_quad(src4, bgr, W, H):
-    """4 个**未命名**的点 -> 自动挑出最合理的球场地物对应。
+    """4 个按固定顺序点出的罚球区四角 -> 仅生成诊断预览。
 
-    把候选模型全部试一遍，每个解一份 H，用 frame_fit_detail 量
-    "投影线是否压在画面里的白线上"，取 ratio 最高者。
+    不再让白线亮度评分在 10 种语义映射里猜选。四点拟合本身没有冗余，
+    任何一组配对都能得到零重投影误差；白线评分也会被看台、球员和广告误导。
     """
     from .calibcheck import frame_fit_detail
     from .court import Calibration, find_homography
@@ -1717,7 +1728,9 @@ def solve_minimal_quad(src4, bgr, W, H):
     if len(src4) != 4:
         return {"ok": False, "note": "需要正好 4 个点"}
     ranked = []
-    for desc, dst in _minimal_quad_models():
+    lane_models = [(desc, dst) for desc, dst in _minimal_quad_models()
+                   if desc.startswith("罚球区四角")]
+    for desc, dst in lane_models:
         try:
             Hm = find_homography([list(p) for p in src4],
                                  [list(p) for p in dst])
@@ -1738,10 +1751,10 @@ def solve_minimal_quad(src4, bgr, W, H):
     return {"ok": True, "dst": best["dst"], "ratio": best["ratio"],
             "which": best["desc"], "H": best["H"], "lines": best["lines"],
             "ranked": [{"desc": x["desc"], "ratio": x["ratio"]}
-                       for x in ranked[:5]],
-            "note": ("4 点自动定向：选中「%s」，吻合度 %.2f（正常 1.3~2.3，越高越好）；"
-                     "共试了 %d 种地物组合。"
-                     % (best["desc"], best["ratio"], len(ranked)))}
+                       for x in ranked],
+            "note": ("按固定顺序将四点映射为罚球区四角：罚球线左角、罚球线右角、"
+                     "篮下右角、篮下左角。当前仅为未校验预览，吻合度 %.2f 不能证明映射正确；"
+                     "正式标定请使用命名地标并至少标 6 点。" % best["ratio"])}
 
 
 def _frames_same_camera(goods: list, tol_m: float = 0.25) -> bool:
@@ -2985,6 +2998,64 @@ async def post_calibrate_auto(req: AutoCalibRequest) -> Any:
             "calibration": out.name}
 
 
+def _preview_marked_frames(vp: Path, per_frame: dict, W: int, H: int) -> dict:
+    """只解用户正在看的各帧，不为一次预览扫描整段视频的切镜。
+
+    每幅画面独立拟合并返回自己的 H；退化帧不返回可绘制矩阵。
+    保存时仍走完整的时段与质量校验。这一函数在线程中运行，健康接口不会被占住。
+    """
+    from .calibcheck import frame_fit_detail
+    from .court import Calibration, calibration_degeneracy
+
+    fits, readings, weak = [], [], []
+    for fr in per_frame.values():
+        tt = float(fr["t"])
+        item = {"t": tt, "n": len(fr["px"]), "ok": False, "H": None,
+                "rmse_m": None, "note": "", "ratio": None}
+        reason = ""
+        try:
+            cal = Calibration(name=vp.stem, method="web-keypoints-preview",
+                              src_px=fr["px"], dst_m=fr["dst"],
+                              frame="full", frame_size=[W, H]).fit()
+            item["rmse_m"] = cal.reproj_error_m
+            deg = calibration_degeneracy(cal)
+            item["degeneracy"] = deg
+            if deg["degenerate"]:
+                reason = deg["reason"]
+            else:
+                item["H"] = cal.H
+                item["ok"] = True
+                bgr = _frame_bgr(vp, tt)
+                fit = frame_fit_detail(bgr, cal) if bgr is not None else {}
+                item["ratio"] = fit.get("ratio")
+                if item["ratio"] is None:
+                    reason = "这一帧未能完成球场线校验"
+                elif item["ratio"] < 1.25 or cal.reproj_error_m > 1.5:
+                    reason = "投影仍需核对：吻合度 %s，平均误差 %.3fm" % (
+                        item["ratio"], cal.reproj_error_m)
+        except Exception as exc:
+            reason = "这一帧解算失败：%s" % exc
+        item["note"] = reason or "当前标点帧的球场线校验通过"
+        from .court_geometry import infer_standard, geometry
+        item["court_geometry"] = geometry(infer_standard(fr["dst"]))
+        row = {"t_start": tt, "t_end": tt, "n_points": item["n"],
+               "ratio": item["ratio"] if item["ratio"] is not None else 0.0,
+               "rmse_m": item["rmse_m"], "reason": reason}
+        readings.append(row)
+        if reason:
+            weak.append(row)
+        fits.append(item)
+    rmses = [float(f["rmse_m"]) for f in fits if f["rmse_m"] is not None]
+    return {"ok": bool(fits) and not weak, "preview_only": True, "saved": False,
+            "via": "per-frame-preview", "H": None, "n_points": sum(f["n"] for f in fits),
+            "rmse_m": round(max(rmses), 3) if rmses else None,
+            "per_frame_fit": fits, "segments_H": [],
+            "calibration_fit": {"ratio": min(r["ratio"] for r in readings) if readings else 0.0,
+                                "by_segment": readings, "weak_segments": weak},
+            "position_unverified": bool(weak),
+            "note": "已分别生成标点帧的投影；未扫描镜头时段，尚未保存。"}
+
+
 @app.post("/api/calibrate_multi")
 async def post_calibrate_multi(req: MultiCalibRequest) -> Any:
     """用**多个画面**上点的场地特征点解一份标定，并逐点报误差。"""
@@ -3020,6 +3091,9 @@ async def post_calibrate_multi(req: MultiCalibRequest) -> Any:
         landmark_table = full_landmarks()
         if req.confirm and not getattr(req, "fixed_camera", False):
             raise HTTPException(400, "旧版球场标定仅用于全程固定机位，请先确认或跳过标定")
+    elif model == "nba":
+        from .court_geometry import landmark_table as profile_landmarks
+        landmark_table = profile_landmarks(COURT_LANDMARKS, "nba")
     elif model != "full":
         raise HTTPException(400, "未知球场模型")
     src, dst, tags = [], [], []
@@ -3076,6 +3150,9 @@ async def post_calibrate_multi(req: MultiCalibRequest) -> Any:
     hoop_note = (("你标的 %d 个篮筐点不参与地面标定（篮圈离地 3.05m，不是地面点），"
                   "已跳过" % hoop_excluded) if hoop_excluded else "")
 
+    if not req.confirm and not req.compensate and not req.mini:
+        return await asyncio.to_thread(_preview_marked_frames, vp, per_frame, W, H)
+
     # ---- 多机位：按镜头分别解算（绝不跨镜头合并）---------------------------
     #
     # 用户的原话："一个镜头怎么可能看到全场啊，就是两个镜头标点，按照标出来的点
@@ -3099,6 +3176,48 @@ async def post_calibrate_multi(req: MultiCalibRequest) -> Any:
                                  frame_grab=lambda tt: _frame_bgr(vp, tt))
             mc = got.get("multical")
             if mc is not None and len(mc.segments) >= 2:
+                # 预览/保存必须使用同一条质量门槛。此前 confirm=true 在分段
+                # 路径里会先落盘，即使某一段 ratio < 1.25；之后分析端又拒绝
+                # 这份文件，用户看到的就是“保存成功但热区/战术校验不过”。
+                fit_result = _fit_with_segments(
+                    dict(worst_readings(mc),
+                         weak_segments=weak_segments(mc)), mc)
+                from .multical import RMSE_MAX, RATIO_MIN
+                failed_segments = []
+                for s in (fit_result.get("by_segment") or []):
+                    ratio = s.get("ratio")
+                    rmse = s.get("rmse_m")
+                    if (ratio is None or float(ratio or 0.0) < RATIO_MIN
+                            or rmse is None or float(rmse or 0.0) > RMSE_MAX):
+                        failed_segments.append(s)
+                if bool(getattr(req, "confirm", False)) and failed_segments:
+                    details = []
+                    for s in failed_segments:
+                        line = "%.1f–%.1fs " % (
+                            float(s.get("t_start") or 0.0),
+                            float(s.get("t_end") or 0.0))
+                        reasons = []
+                        ratio = s.get("ratio")
+                        rmse = s.get("rmse_m")
+                        if ratio is None or float(ratio or 0.0) < RATIO_MIN:
+                            reasons.append("吻合度 %s（门槛 %.2f）" % (
+                                "—" if ratio is None else "%.2f" % float(ratio),
+                                RATIO_MIN))
+                        if rmse is None or float(rmse or 0.0) > RMSE_MAX:
+                            reasons.append("重投影误差 %s m（上限 %.1f m）" % (
+                                "—" if rmse is None else "%.3f" % float(rmse),
+                                RMSE_MAX))
+                        line += "、".join(reasons)
+                        diag = s.get("diagnostic") or {}
+                        if diag.get("suspect_name"):
+                            line += "；疑点「%s」移除后吻合度升到 %s" % (
+                                diag["suspect_name"], diag.get("ratio_without_point"))
+                        details.append(line)
+                    detail = "；".join(details)
+                    raise HTTPException(
+                        422,
+                        "这份标定没有保存：以下镜头段的球场质量校验未通过："
+                        + detail + "。请只重标这些时段；重投影误差和投影线吻合度都要合格。")
                 rev_out = None
                 if bool(getattr(req, "confirm", False)):
                     out_p = _calibration_path_for(str(vp))
@@ -3142,13 +3261,7 @@ async def post_calibrate_multi(req: MultiCalibRequest) -> Any:
                     # 界面据此解释"我明明点了它，怎么没算"。
                     "hoop_excluded": hoop_excluded,
                     "saved": rev_out is not None, "revision": rev_out,
-                    "calibration_fit": _fit_with_segments(
-                        dict(
-                            # ⚠️ 取**最差**那一段的读数，**不能取 max**：
-                            # 用户实测两段是 ratio 0.34 / 3.12，取 max 报 3.12
-                            # 就把"半个视频坐标全错"这件事盖住了（我第一版就是这么写的）。
-                            worst_readings(mc),
-                            weak_segments=weak_segments(mc)), mc),
+                    "calibration_fit": fit_result,
                     # 任一段弱就算未校验 —— 半份标定不可信时，位置结论整体不可信
                     "position_unverified": bool(weak_segments(mc)),
                 }
@@ -3633,6 +3746,20 @@ async def post_calibrate_multi(req: MultiCalibRequest) -> Any:
                                 t_hint=(pick.get("t") if pick.get("t") is not None
                                         else comp_ref_t))
     deg, hoop_check = qual["metrics"], qual["hoop_check"]
+    if bool(getattr(req, "confirm", False)):
+        from .multical import RMSE_MAX, RATIO_MIN
+        fit_check = qual.get("calibration_fit") or {}
+        fit_ratio = fit_check.get("ratio")
+        quality_reasons = []
+        if rmse > RMSE_MAX:
+            quality_reasons.append("重投影误差 %.3fm 超过 %.1fm" % (rmse, RMSE_MAX))
+        if fit_ratio is None or float(fit_ratio or 0.0) < RATIO_MIN:
+            quality_reasons.append("球场线吻合度 %s 低于 %.2f" % (
+                "—" if fit_ratio is None else "%.2f" % float(fit_ratio), RATIO_MIN))
+        if quality_reasons:
+            raise HTTPException(
+                422, "这份标定没有保存：" + "；".join(quality_reasons)
+                + "。请先检查投影线并修正地面点；低重投影误差不能代替球场线校验。")
     hoop_err2 = None
     if hoop_check.get("checked"):
         try:
@@ -3806,6 +3933,26 @@ async def post_calibrate_multi(req: MultiCalibRequest) -> Any:
                 "多镜头标定构造失败：%s" % _e
         if _mc2 is not None and len(_mc2.segments) >= 2:
             rev2 = None
+            from .multical import RMSE_MAX, RATIO_MIN
+            _fit2 = _fit_with_segments(
+                dict(worst_readings(_mc2), weak_segments=weak_segments(_mc2)), _mc2)
+            _bad2 = []
+            for _s in (_fit2.get("by_segment") or []):
+                _r, _e = _s.get("ratio"), _s.get("rmse_m")
+                if (_r is None or float(_r or 0.0) < RATIO_MIN
+                        or _e is None or float(_e or 0.0) > RMSE_MAX):
+                    _bad2.append(_s)
+            if bool(getattr(req, "confirm", False)) and _bad2:
+                _details = []
+                for _s in _bad2:
+                    _details.append("%.1f–%.1fs：吻合度 %s，重投影误差 %s m" % (
+                        float(_s.get("t_start") or 0.0),
+                        float(_s.get("t_end") or 0.0),
+                        "—" if _s.get("ratio") is None else "%.2f" % float(_s["ratio"]),
+                        "—" if _s.get("rmse_m") is None else "%.3f" % float(_s["rmse_m"])))
+                raise HTTPException(
+                    422, "这份标定没有保存：镜头段未通过校验（吻合度需 ≥%.2f、重投影误差需 ≤%.1fm）：%s。请重标失败时段的地面点。"
+                    % (RATIO_MIN, RMSE_MAX, "；".join(_details)))
             if bool(getattr(req, "confirm", False)):
                 out_p2 = _calibration_path_for(str(vp))
                 old_rev2 = 0
@@ -3834,9 +3981,7 @@ async def post_calibrate_multi(req: MultiCalibRequest) -> Any:
                 # 界面靠它们如实说明"哪个镜头那段不可信"。漏了它们，
                 # 一份标定里就算有一半是错的，界面也只能显示"可用"
                 # —— 用户"战术图不对"就是这么来的。
-                "calibration_fit": _fit_with_segments(
-                    dict(worst_readings(_mc2),
-                         weak_segments=weak_segments(_mc2)), _mc2),
+                "calibration_fit": _fit2,
                 "position_unverified": bool(weak_segments(_mc2)),
                 # 被跳过的篮筐点数（与 per-shot 路径一致）
                 "hoop_excluded": hoop_excluded,
@@ -4373,6 +4518,26 @@ async def get_calibration(video_path: str) -> Any:
                 "revision": 0}
     # revision 要回给前端：保存时带回去做乐观锁（避免两个页面互相覆盖，移植自旧版）；
     # hoop_error / position_unverified 也回：界面要能一眼看出"这份标定没通过独立校验"。
+    hoop_check = d.get("hoop_check") or {}
+    position_unverified = bool(
+        d.get("position_unverified") or not hoop_check.get("checked"))
+    segments = []
+    for seg in d.get("segments") or []:
+        src = seg.get("src_px") or []
+        dst = seg.get("dst_m") or []
+        names = seg.get("names") or d.get("point_names") or []
+        points = [{"name": names[i] if i < len(names) else "未知点",
+                   "px": [round(float(p[0]), 1), round(float(p[1]), 1)]}
+                  for i, p in enumerate(src) if len(p) >= 2]
+        segments.append({
+            "t_start": seg.get("t_start"), "t_end": seg.get("t_end"),
+            "ratio": seg.get("ratio"), "rmse_m": seg.get("rmse_m"),
+            "n_points": seg.get("n_points", len(src)), "points": points})
+    ratios = [float(s["ratio"]) for s in segments
+              if s.get("ratio") is not None]
+    fit_ok = (all(r >= 1.25 for r in ratios) if ratios else None)
+    calibration_ok = (fit_ok is not False and not position_unverified
+                      and bool(hoop_check.get("ok", False)))
     return {"exists": True, "path": str(cp),
             "for_video": d.get("for_video", ""),
             "reproj_error_m": d.get("reproj_error_m"),
@@ -4383,9 +4548,11 @@ async def get_calibration(video_path: str) -> Any:
             "court_model": d.get("court_model", "full"),
             "normalized_points": d.get("normalized_points"),
             "hoop_error_m": d.get("hoop_error_m"),
-            "hoop_check": d.get("hoop_check"),
-            "hoop_checked": bool((d.get("hoop_check") or {}).get("checked")),
-            "position_unverified": bool(d.get("position_unverified") or not (d.get("hoop_check") or {}).get("checked")),
+            "hoop_check": hoop_check,
+            "hoop_checked": bool(hoop_check.get("checked")),
+            "position_unverified": position_unverified,
+            "fit_ok": fit_ok, "calibration_ok": calibration_ok,
+            "segments": segments,
             "revision": int(d.get("revision") or 0)}
 
 

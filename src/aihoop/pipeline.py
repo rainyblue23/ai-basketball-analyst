@@ -221,16 +221,21 @@ def run_pipeline(rt: RawTrack, cfg: Optional[PipelineConfig] = None,
         cal_reason = (_cal.get("reason") or meta.get("calibration_rejected")
                       or "这份球场标定不适用于这段视频（机位/分辨率不匹配）")
 
-    # 但"用户手动标过、且自洽"的标定不该直接扔掉 —— 用户实测：标了好几轮、
-    # 界面存下了 0.693m 的标定，结果热区/战术图一个都不出，只会看到
-    # "机位/分辨率不匹配"，完全无从判断。
-    # 折中（并且**不掩盖事实**）：热区/战术图这类**展示性**产物允许用
-    # 用户手动标的标定来算，但在 meta 里显式标记"未通过自动校验"并给出原因；
-    # 计分/球员位置这类影响结论的仍然严格按 cal_usable 走。
+    # 用户手动标的标定在没有明确反证时可以用于展示性产物，并显式标成未校验。
+    # 一旦独立检查已经明确判定机位/投影不匹配，就不能靠低重投影误差放行：
+    # 少量点击点即使彼此拟合得很好，也可能来自错误的画面区域。
     cal_source = str(getattr(_cal, "method", "") or
                      meta.get("calibration_method", "") or "")
     manual_cal = bool(meta.get("calibration_is_manual")) or \
         cal_source.startswith(("web-keypoints", "auto-identify", "manual"))
+    # A low reprojection error only says the clicked points fit each other; it
+    # cannot override an explicit rejection from the independent court/hoop
+    # validation.  In particular, a five-point manual fit can be numerically
+    # neat while belonging to another camera view.
+    calibration_explicitly_rejected = (
+        meta.get("calibration_valid") is False or
+        bool(meta.get("calibration_rejected"))
+    )
     # 退化（近共线/重合）标定**不能**走"手动标定就放行"这条口子：它的重投影误差
     # 也是 0.00m，但坐标整片是错的（实测篮筐被投到 33m 外）。
     # 同理，"独立校验（画面里那个真篮筐）没过"也必须一票否决 —— 那份标定连真值点
@@ -248,7 +253,8 @@ def run_pipeline(rt: RawTrack, cfg: Optional[PipelineConfig] = None,
     # （同样的坑在 sources.py 里也踩过一次）。
     _rmse = meta.get("calibration_rmse_m")
     _rmse = 99.0 if _rmse is None else float(_rmse)
-    cal_charts = cal_usable or (manual_cal and not cal_degenerate
+    cal_charts = cal_usable or (manual_cal and not calibration_explicitly_rejected
+                                and not cal_degenerate
                                 and not hoop_check_bad and _rmse < 1.5)
 
     if cal_charts:
@@ -519,8 +525,8 @@ def _evidence_meta(rt: RawTrack) -> dict:
         meta["hoop"] = {k: v for k, v in d["hoop"].items() if k != "samples"}
     if "calibration_valid" in d:
         meta["calibration_valid"] = d["calibration_valid"]
-    # 标定的来源与误差：判断"是不是用户手动标的"（手动标定即使自动校验没过，
-    # 也允许出热区/战术图，并显式标注未校验 —— 见下面的 court_outputs_* 逻辑）
+    # 标定来源与误差：手动标定可在没有明确反证时用于展示性产物，
+    # 但独立校验明确拒绝后不能再由低重投影误差放行。
     meta["calibration_method"] = d.get("calibration_method", "")
     meta["calibration_rmse_m"] = d.get("calibration_rmse_m", 99.0)
     if d.get("visual_error"):
