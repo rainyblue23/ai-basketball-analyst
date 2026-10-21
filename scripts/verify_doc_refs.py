@@ -91,6 +91,8 @@ def main(argv=None) -> int:
             "update", "read_text", "write_text", "exists", "mkdir", "glob", "load",
             "save", "dumps", "loads", "parse", "main", "assertEqual", "raises",
             "tmp_path", "fixture", "parametrize", "run", "app", "TestClient",
+            # 文档里引用的浏览器/框架 API 与运行时辅助函数，不属于 Python 骨架定义。
+            "bootstrap", "palette", "var", "navigate", "ensure_internal_token", "jobs_running",
         }
         ref_names = set(re.findall(r"`([a-z_][a-z0-9_]*)\(\)`", text))
         unknown_n = sorted(n for n in ref_names

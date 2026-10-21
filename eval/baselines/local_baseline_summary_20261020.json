@@ -1,0 +1,70 @@
+{
+  "truth_sha256": "0e8e2e4be0c6a6c1f9d2e8ce1184cd447e210df950013d38f3ecea9821937e82",
+  "baseline": "eval\\baselines\\events_players_off_split2_20261011.json",
+  "parameters": {
+    "detect_players": false,
+    "scoreboard": false,
+    "auto_sliding": false,
+    "profile": "standard",
+    "roi": false
+  },
+  "event_detection": {
+    "tp": 26,
+    "fp": 7,
+    "fn": 5,
+    "precision": 0.7879,
+    "recall": 0.8387,
+    "f1": 0.8125
+  },
+  "made_end_to_end": {
+    "tp": 7,
+    "fp": 3,
+    "fn": 3,
+    "precision": 0.7,
+    "recall": 0.7,
+    "f1": 0.7
+  },
+  "matched_outcome_confusion": {
+    "made->made": 7,
+    "made->missed": 1,
+    "made->unknown": 1,
+    "missed->made": 2,
+    "missed->missed": 2,
+    "missed->unknown": 13
+  },
+  "per_sample": [
+    {
+      "id": "s2_fixedcam_7shots",
+      "truth_shots": 7,
+      "engine_events": 7,
+      "matched": 7,
+      "missed": 0,
+      "extra": 0,
+      "unknown_matched": 4
+    },
+    {
+      "id": "s2_hs_game01",
+      "truth_shots": 14,
+      "engine_events": 16,
+      "matched": 10,
+      "missed": 4,
+      "extra": 6,
+      "unknown_matched": 6
+    },
+    {
+      "id": "s2_hs_game03",
+      "truth_shots": 10,
+      "engine_events": 10,
+      "matched": 9,
+      "missed": 1,
+      "extra": 1,
+      "unknown_matched": 4
+    }
+  ],
+  "limits": [
+    "时段被精确重编码为CRF18，检测可能与原片有轻微差异",
+    "全自动结果，无人工回填",
+    "无球员检测，未评测出手人关联",
+    "不根据此结果自动改参数"
+  ]
+}

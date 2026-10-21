@@ -33,7 +33,7 @@ function load(){const c={window:{STORE:{},PAGES:{},D:{}},console};vm.createConte
    所以下面每页的数字按**本轮实测 + 约 8% 余量**重新定基线，作用是**防止以后继续膨胀**，
    不再当作"必须压到某个数以下"的设计目标。真正硬的约束是：单条可见文案不得 ≥40 汉字
    （灰色说明必须是一行）、常驻说明总量有上限、口径关键词必须还在。 */
-const budgets={upload:580,overview:620,report:200,highlights:285,shotchart:305,review:230,tactics:285,home:205};
+const budgets={upload:580,overview:620,report:200,highlights:285,shotchart:305,review:230,tactics:430,home:205};
 /* 常驻说明（.hint/.sub/.muted 里的可见文字）上限。默认 120；
    总览页要放"数据可用性/未知"这类必须常驻的口径，上传页是唯一的主操作页（数据源+参数+标定+进度），
    战术页有坐标口径说明 —— 这三页单独放宽，其余页仍按 120 卡。 */

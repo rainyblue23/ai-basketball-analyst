@@ -428,7 +428,7 @@ window.PAGES['tactics'] = {
     '    </el-alert>',
     '    <el-alert v-if="frameQuality.total && frameQuality.pct < 0.5" type="warning" :closable="false" show-icon',
     '      :title="\'俯视图中可用坐标仅覆盖 \' + frameQuality.valid + \' / \' + frameQuality.total + \' 帧\'">',
-    '      <span>人数异常或没有可信坐标的时刻已跳过；球场位置也没有通过独立校验，当前结果不能当作整场统计。</span>',
+      '      <span>已跳过人数或坐标异常时刻。球场位置未经独立校验，本结果不代表整场。</span>',
     '    </el-alert>',
     '    <el-alert v-if="spacingQuality.expected && spacingQuality.pct < 0.5" type="warning" :closable="false"',
     '      :title="\'空间指标仅来自 \' + spacingQuality.observed + \' / \' + spacingQuality.expected + \' 个秒级采样点\'">',

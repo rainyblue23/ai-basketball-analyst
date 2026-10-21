@@ -1,0 +1,69 @@
+{
+  "root": "D:\\dsh_folder\\aihoop",
+  "os": "Windows-11-10.0.26200-SP0",
+  "python": "3.13.0",
+  "python_executable": "E:\\python\\python.exe",
+  "disk_free_gb": 6.47,
+  "ffmpeg": "E:\\ffmpeg-7.1-essentials_build\\bin\\ffmpeg.EXE",
+  "node": "C:\\Program Files\\nodejs\\node.EXE",
+  "modules": {
+    "torch": "2.14.0+cu126",
+    "cv2": "5.0.0",
+    "ultralytics": "8.4.146",
+    "numpy": "2.5.2",
+    "fastapi": "0.141.1",
+    "uvicorn": "0.52.4",
+    "pydantic": "2.13.5",
+    "httpx": "0.28.1",
+    "pytest": "missing: ModuleNotFoundError"
+  },
+  "cuda": {
+    "available": true,
+    "torch_cuda": "12.6",
+    "device": "NVIDIA GeForce RTX 4060 Laptop GPU"
+  },
+  "weights": [
+    {
+      "path": "D:\\dsh_folder\\aihoop\\runs\\detect\\ball\\weights\\best.pt",
+      "exists": true,
+      "size_mb": 21.45,
+      "sha256": "800dab7c265b4cf9e488f75eb293f659f34a6efa86300c4823563887329072d9"
+    },
+    {
+      "path": "D:\\dsh_folder\\aihoop\\runs\\detect\\rim\\weights\\best.pt",
+      "exists": true,
+      "size_mb": 21.45,
+      "sha256": "800dab7c265b4cf9e488f75eb293f659f34a6efa86300c4823563887329072d9"
+    },
+    {
+      "path": "D:\\dsh_folder\\aihoop_assets\\models\\rim_ball_v6.pt",
+      "exists": true,
+      "size_mb": 21.45,
+      "sha256": "800dab7c265b4cf9e488f75eb293f659f34a6efa86300c4823563887329072d9"
+    },
+    {
+      "path": "D:\\dsh_folder\\aihoop_assets\\models\\rim_ball.pt",
+      "exists": true,
+      "size_mb": 5.93,
+      "sha256": "b9d9c3d1c1db87b4788185cc422b67596e96a3058be843b494be02cfeebd4ba8"
+    },
+    {
+      "path": "D:\\dsh_folder\\aihoop_assets\\models\\yolov8s.pt",
+      "exists": true,
+      "size_mb": 21.54,
+      "sha256": "1f47a78bf100391c2a140b7ac73a1caae18c32779be7d310658112f7ac9aa78a"
+    }
+  ],
+  "missing_handover_reports": [
+    "CV_SUMMARY_2026-10-16_2126_TO_2026-10-18.md",
+    "CV_DELIVERY_2026-10-18_1946_TO_2135.md",
+    "CV_GENERAL_STAGE1_2026-10-16.md",
+    "CV_STAGE2_PART1_2026-10-18.md",
+    "CV_REVIEW_SPARSE_2026-10-18.md",
+    "CV_TACTICS_CONTINUITY_2026-10-18.md",
+    "CV_CURRENT_JOB_A099_2026-10-17.md",
+    "CV_ANNOTATION_PROTOCOL.md"
+  ],
+  "legacy_server_path_hits": [],
+  "git_head": "56b9317d8cc561199786811069d54c40d2e47da5"
+}

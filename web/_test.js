@@ -168,8 +168,9 @@ layers.forEach(l => {
       : C.shotLayer(win.STORE.shotchart.all.points, {});
   ok('图层 ' + l + ' 正常生成', html.length > 200 && html.indexOf('NaN') < 0, html.length + ' 字符');
 });
-// 镜像：x 与 -x 的出手必须落在同一个 u
-const mirror = C.mapXY('half', -5.2, -9.3), orig = C.mapXY('half', 5.2, -9.3);
+// 镜像：相反进攻端的对应位置必须落在同一个半场坐标。
+// 同一进攻端的 x 与 -x 是左右两侧，本来就不应重合。
+const mirror = C.mapXY('half', -5.2, -9.3), orig = C.mapXY('half', 5.2, 9.3);
 ok('左右半场出手镜像到同一半场', mirror.u === orig.u && mirror.v === orig.v,
   '(-5.2,-9.3)->u' + mirror.u + ' (5.2,-9.3)->u' + orig.u);
 

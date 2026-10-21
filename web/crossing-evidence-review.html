@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>穿筐证据审核</title>
+<style>
+:root{font:16px/1.6 system-ui,"Microsoft YaHei",sans-serif;color:#172334;background:#f2f5f8;font-variant-numeric:tabular-nums}
+*{box-sizing:border-box}body{max-width:1380px;margin:auto;padding:24px}h1{font-size:26px;margin:0}p{margin:8px 0}
+section{background:white;border:1px solid #dce2e9;border-radius:12px;padding:18px;margin-top:16px}
+button,select,input,textarea{font:inherit;border:1px solid #9ba9b9;border-radius:6px;padding:8px;color:inherit;background:white}
+button{cursor:pointer;min-height:44px}button:focus-visible,select:focus-visible{outline:3px solid #2563eb}
+button:active{transform:scale(.96)}button.primary{background:#164d8e;color:white}
+.bar{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.screen{position:relative;background:#101820;line-height:0;margin:12px 0}
+video{width:100%;display:block}canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+canvas.marking{pointer-events:auto;cursor:crosshair;touch-action:none}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+label{display:inline-flex;gap:8px;align-items:center}textarea{width:100%;min-height:80px}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px}
+.notice{border-left:4px solid #d88d16;padding-left:12px;color:#714800}.muted{color:#526073;font-size:14px}
+@media(max-width:760px){body{padding:12px}.grid{grid-template-columns:1fr}}
+</style>
+<h1>穿筐证据审核</h1><p>先看原画，再核对模型依据。看不清可选「未知」。</p>
+<section><div class="bar"><label>任务 <select id="task"></select></label><button id="export" class="primary">导出审核记录</button><span id="saved" role="status"></span></div>
+<p id="purpose"></p><p class="notice">本页是独立审核草稿，不改已有人工真值、不改模型结果。模型“实测”框也可能框错物体。</p>
+<details id="exportResult" hidden><summary>导出内容（下载失败时可复制）</summary><textarea id="exportText" readonly aria-label="导出内容"></textarea></details></section>
+<section>
+<div class="bar"><label>画面 <select id="mode"><option value="original">原视频（无模型框）</option><option value="evidence">推理输入画面与证据</option></select></label>
+<label>速度 <select id="speed"><option>1</option><option>0.5</option><option>0.25</option></select></label>
+<button id="prev">前一帧</button><button id="play">播放 / 暂停</button><button id="next">后一帧</button><strong id="time"></strong>
+<label>原视频秒数 <input id="seek" type="number" step="0.001" style="width:100px"></label><button id="jump">定位</button></div>
+<div class="screen"><video id="video" controls playsinline preload="metadata"></video><canvas id="overlay"></canvas></div>
+<div class="bar"><label><input type="checkbox" id="boxes" checked>显示模型框（证据画面）</label>
+<label><input type="checkbox" id="marking">暂停后人工框选</label><label>标记 <select id="kind"><option value="ball">真实篮球</option><option value="rim_opening">篮圈开口</option></select></label><button id="undo">撤销本时刻标记</button></div>
+<p class="muted">绿：球检测实测；紫虚线：预测球；橙：本帧筐检测；蓝：跟踪筐（过期时虚线）。人工框：白色。框选保存归一化坐标与来源画面。</p>
+<details><summary>模型逐帧状态（A原版 / B窗口实验）</summary><pre id="state"></pre></details>
+<p class="muted">exit_t 若为空表示引擎未独立记录该字段；geometric_exit_sample只是几何条件，不表示进球。逐帧定位按采样帧率，边界可能有一帧差，准确索引见trace。</p>
+</section>
+<section><h2>人工判断</h2><div class="grid" id="fields"></div>
+<p>画面现象（可多选；未选不等于已排除）</p><div id="phenomena" class="bar"></div>
+<p><label>备注 / 关键画面时间</label><textarea id="note" placeholder="例如：球在篮圈前方掠过；这一帧开口被遮挡"></textarea></p>
+<label><input id="complete" type="checkbox">这一条已审核（仍可保留未知结论）</label>
+<p id="markcount"></p></section>
+<section><details><summary>来源、旧标签与审核问题</summary><pre id="source"></pre></details></section>
+<script>
+const $=id=>document.getElementById(id),ctx=$('overlay').getContext('2d');
+let tasks=[],item,frames=[],drafts={},drag=null,loading=false,pendingSeek=null;
+const key='crossing-evidence-human-20261020-v1';
+try{drafts=JSON.parse(localStorage.getItem(key)||'{}')}catch(e){}
+const specs=[
+ ['visual_outcome','真正进球的画面证据',[['unknown','未知 / 看不清'],['made','明确进球'],['missed','明确未进']]],
+ ['event_identity','事件身份',[['unknown','待确认'],['same','与人工出手是同一次'],['different','不是同一次']]],
+ ['selected_ball_correct','模型选中的球',[['unknown','未知'],['yes','是真球'],['no','选错物体'],['intermittent','间歇选错']]],
+ ['opening_correct','模型筐位与篮圈开口',[['unknown','未知'],['yes','相符'],['no','不符']]]];
+for(const [name,title,options] of specs){const label=document.createElement('label');label.textContent=title+' ';
+ const select=document.createElement('select');select.id=name;for(const [v,text] of options){select.add(new Option(text,v))}
+ select.onchange=save;label.append(select);$('fields').append(label)}
+for(const name of ['篮板接触','弹框反弹','可能前后掠过','遮挡','球选错','筐开口不准','轨迹断裂','穿网后连续下落']){
+ const label=document.createElement('label'),box=document.createElement('input');box.type='checkbox';box.value=name;box.onchange=save;label.append(box,name);$('phenomena').append(label)}
+function emptyRecord(t){return {task_id:t.id,source_sha256:t.source_sha256,status:'pending',visual_outcome:'unknown',event_identity:'unknown',selected_ball_correct:'unknown',opening_correct:'unknown',phenomena:[],marks:[],note:''}}
+function record(){return drafts[item.id]||(drafts[item.id]=emptyRecord(item))}
+function save(){if(!item||loading)return;const d=record();for(const [name] of specs)d[name]=$(name).value;
+ d.phenomena=[...$('phenomena').querySelectorAll('input:checked')].map(x=>x.value);d.note=$('note').value;d.status=$('complete').checked?'reviewed':'pending';
+ d.saved_at=new Date().toISOString();localStorage.setItem(key,JSON.stringify(drafts));$('saved').textContent='草稿已存本机；完成后请导出';draw()}
+function current(){return item.start_s+$('video').currentTime}
+function nearest(){const t=current();let row=null,delta=Infinity;for(const f of frames){const d=Math.abs(f.t-t);if(d<delta){delta=d;row=f}}return delta<=.75/item.fps?row:null}
+function rect(box,color,dash=false,label=''){const c=$('overlay');ctx.strokeStyle=color;ctx.fillStyle=color;ctx.lineWidth=3;ctx.setLineDash(dash?[10,6]:[]);
+ ctx.strokeRect(box[0],box[1],box[2]-box[0],box[3]-box[1]);ctx.font='22px system-ui';ctx.fillText(label,box[0],Math.max(25,box[1]-5));ctx.setLineDash([])}
+function draw(){if(!item)return;const c=$('overlay');c.width=item.width;c.height=item.height;ctx.clearRect(0,0,c.width,c.height);
+ const f=nearest();$('time').textContent=current().toFixed(3)+' 秒';$('state').textContent=f?JSON.stringify({frame:f.frame,t:f.t,cut:f.cut,ball:f.ball,tracker_reason:f.tracker_reason,A:f.states.A,B:f.states.B},null,2):'此时无精确对应采样，未沿用旧框';
+ if($('mode').value==='evidence'&&$('boxes').checked&&f){if(f.ball)rect(f.ball.xyxy,f.ball.predicted?'#dd9bff':'#42ed8f',f.ball.predicted,f.ball.predicted?'PRED':'OBS');
+ if(f.rim)rect(f.rim.xyxy,'#ffb14d',false,'DETECT');
+ const r=f.tracked_rim;if(r&&r.w>0)rect([r.cx-r.w/2,r.cy-r.h/2,r.cx+r.w/2,r.cy+r.h/2],'#52bbff',!r.fresh,r.fresh?'TRACK':'STALE')}
+ for(const m of record().marks||[]){if(m.image_source===$('mode').value&&Math.abs(m.t-current())<.75/item.fps)rect(m.xyxy.map((x,i)=>x*(i%2?c.height:c.width)),'white',false,m.kind)}
+ if(drag?.end)rect([Math.min(drag.start[0],drag.end[0]),Math.min(drag.start[1],drag.end[1]),Math.max(drag.start[0],drag.end[0]),Math.max(drag.start[1],drag.end[1])].map((x,i)=>x*(i%2?c.height:c.width)),'white');
+ $('markcount').textContent=`人工框 ${record().marks.length} 个（各自记录时间与来源画面）`}
+async function load(id){loading=true;$('task').disabled=true;try{item=tasks.find(t=>t.id===id);frames=await fetch(item.trace).then(r=>{if(!r.ok)throw Error('依据加载失败');return r.json()});
+ const d=record();for(const [name] of specs)$(name).value=d[name]||'unknown';$('note').value=d.note||'';$('complete').checked=d.status==='reviewed';
+ $('phenomena').querySelectorAll('input').forEach(x=>x.checked=(d.phenomena||[]).includes(x.value));
+ $('purpose').textContent=item.purpose+' · 审核片段 '+item.start_s+'–'+item.end_s+'秒';$('source').textContent=JSON.stringify(item,null,2);
+ $('mode').value='original';pendingSeek=null;$('video').onloadedmetadata=null;$('video').src=item.original_clip;$('seek').value=item.truth_release_s;$('saved').textContent='先看原画；不确定可以保留未知';draw()}finally{loading=false;$('task').disabled=false}}
+$('task').onchange=()=>load($('task').value).catch(e=>$('saved').textContent=e.message);
+$('jump').onclick=()=>{const t=Number($('seek').value);if(!Number.isFinite(t)||t<item.start_s||t>=item.end_s){$('saved').textContent='请输入本片段范围内的秒数';return}$('video').pause();pendingSeek=t-item.start_s;if($('video').readyState>=1){$('video').currentTime=pendingSeek;pendingSeek=null}else{$('video').onloadedmetadata=()=>{$('video').currentTime=pendingSeek??0;pendingSeek=null;draw()}}};
+$('mode').onchange=()=>{pendingSeek=$('video').currentTime;$('video').src=$('mode').value==='original'?item.original_clip:item.evidence_clip;$('video').onloadedmetadata=()=>{$('video').currentTime=pendingSeek??0;pendingSeek=null;draw()}};
+$('video').ontimeupdate=draw;$('video').onseeked=draw;$('video').onerror=()=>{$('saved').textContent='视频加载失败，请通过本地审核地址打开'};
+$('prev').onclick=()=>{$('video').pause();$('video').currentTime=Math.max(0,$('video').currentTime-1/item.fps)};
+$('next').onclick=()=>{$('video').pause();$('video').currentTime=Math.min($('video').duration,$('video').currentTime+1/item.fps)};
+$('play').onclick=()=>{$('video').paused?$('video').play():$('video').pause()};$('speed').onchange=()=>{$('video').playbackRate=Number($('speed').value)};
+$('boxes').onchange=draw;$('marking').onchange=()=>{$('video').pause();$('overlay').classList.toggle('marking',$('marking').checked)};
+function point(e){const r=$('overlay').getBoundingClientRect();return [Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)),Math.max(0,Math.min(1,(e.clientY-r.top)/r.height))]}
+$('overlay').onpointerdown=e=>{if(!$('video').paused)return;drag={start:point(e)};$('overlay').setPointerCapture(e.pointerId)};
+$('overlay').onpointermove=e=>{if(drag){drag.end=point(e);draw()}};
+$('overlay').onpointerup=e=>{if(drag?.end){const a=drag.start,b=drag.end;if(Math.abs(a[0]-b[0])>.002&&Math.abs(a[1]-b[1])>.002)record().marks.push({t:current(),frame:nearest()?.frame??null,image_source:$('mode').value,kind:$('kind').value,xyxy:[Math.min(a[0],b[0]),Math.min(a[1],b[1]),Math.max(a[0],b[0]),Math.max(a[1],b[1])]})}drag=null;save()};
+$('overlay').onpointercancel=()=>{drag=null;draw()};
+$('undo').onclick=()=>{const a=record().marks;for(let i=a.length-1;i>=0;i--){if(a[i].image_source===$('mode').value&&Math.abs(a[i].t-current())<.75/item.fps){a.splice(i,1);break}}save()};
+$('note').oninput=save;$('complete').onchange=save;
+$('export').onclick=()=>{save();const payload={schema_version:1,purpose:'human_crossing_evidence_review',not_imported_to_truth:true,records:tasks.map(t=>({...emptyRecord(t),...(drafts[t.id]||{})}))};
+ $('exportResult').hidden=false;$('exportResult').open=true;$('exportText').value=JSON.stringify(payload,null,2);
+ const url=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='crossing_human_review_'+Date.now()+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
+if($('video').requestVideoFrameCallback){const tick=()=>{draw();$('video').requestVideoFrameCallback(tick)};$('video').requestVideoFrameCallback(tick)}
+(async()=>{try{const r=await fetch('tasks.json');if(!r.ok)throw Error('任务加载失败');tasks=await r.json();for(const t of tasks)$('task').add(new Option(t.id,t.id));await load(tasks[0].id)}catch(e){$('saved').textContent=e.message+'。请使用本地HTTP审核地址。'}})();
+</script></html>
