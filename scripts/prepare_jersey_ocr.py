@@ -1,9 +1,12 @@
 """Explicit model setup. Analysis itself always uses download_enabled=False."""
-import argparse,json,hashlib
+import argparse,json,hashlib,sys
 from pathlib import Path
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('--model-dir',default=str(Path(__file__).resolve().parents[2]/'aihoop_assets/models/easyocr'));args=p.parse_args()
+    root=Path(__file__).resolve().parents[1]
+    sys.path.insert(0,str(root/'src'))
+    from aihoop.ocr_assets import ocr_model_directory
+    p=argparse.ArgumentParser();p.add_argument('--model-dir',default=str(ocr_model_directory(root)));args=p.parse_args()
     import easyocr
     directory=Path(args.model_dir);directory.mkdir(parents=True,exist_ok=True)
     easyocr.Reader(['en'],gpu=False,model_storage_directory=str(directory),download_enabled=True)

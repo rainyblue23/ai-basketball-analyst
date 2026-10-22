@@ -25,9 +25,15 @@ const tpl = upload.template;
 const countOf = (s, sub) => s.split(sub).length - 1;
 
 // 只数**按钮**，不数弹窗标题（弹窗标题里也有「在画面上标篮筐」，那是正常的）
-assert.equal(countOf(tpl, '>标球场（点场地特征点）</el-button>'), 1,
-  '「标球场」按钮只能出现一次（原来篮筐标点行 + 球场标定行各一个）');
-assert.equal(countOf(tpl, '>在画面上标篮筐</el-button>'), 1, '「在画面上标篮筐」按钮应恰好一个');
+assert.ok(!tpl.includes('上手引导') && !tpl.includes('重新打开上手引导'),
+  '顶部不应保留「上手引导」标签或收起后的占位入口');
+assert.ok(tpl.includes('4 步完成视频分析') && tpl.includes('grid grid-4'),
+  '上传主流程应固定显示为四步');
+assert.equal(countOf(tpl, '>选取本地文件</el-button>'), 1, '本地文件入口应只在顶部出现一次');
+assert.ok(!tpl.includes('label="文件路径"'), '视频路径输入不应与顶部选取视频重复');
+assert.ok(!tpl.includes('label="球场标定"'), '球场标定不应在下方分析参数里重复出现');
+assert.ok(!tpl.includes('label="比分牌（可选）"'), '比分牌应自动检测，不再占用主流程表单');
+assert.ok(!tpl.includes('label="后端状态"'), '后端状态不应占用分析参数表单');
 assert.ok(!tpl.includes('进球标注'), '上传页不该再有「进球标注」输入框');
 assert.ok(!tpl.includes('随机种子'), '上传页不该再有「随机种子 seed」输入框');
 assert.ok(!tpl.includes('form.labels_path'), 'labels_path 不该再绑到界面控件上');
@@ -107,29 +113,34 @@ assert.equal(vm2.reviewCount, 1);
 // 首页模板里跳到「上传与分析」的主按钮必须在（这是首页唯一的主行动）
 assert.ok(home.template.includes('开始分析一段视频'), '首页要有明确的主行动按钮');
 
-// ---- 篮筐标点：只点中心即可（用户 2026-09-27）----
+// ---- 篮筐标点：拖动框出篮筐，中心和尺寸同时可用 ----
 global.window.STORE = {};
 require(path.join(ROOT, 'web/pages/upload.js'));
 const up = window.PAGES.upload;
-assert.equal(up.computed.markItems.call({}).length, 1,
-  '篮筐标点只有「篮筐中心」一项是必点的');
-assert.equal(up.computed.markItems.call({})[0].name, 'rim_center');
-assert.equal(up.computed.markItemsOptional.call({}).length, 4,
-  '左右缘/上下沿要保留为可选步骤（想自己量半径的人要用）');
+const flowVm = { ...up.data(), calInfo: null, savedMarks: null, S: { job: {} } };
+Object.keys(up.computed).forEach(function (k) {
+  Object.defineProperty(flowVm, k, { configurable: true, get: up.computed[k].bind(flowVm) });
+});
+assert.deepEqual(flowVm.guideSteps.map(s => s.key), ['video', 'calib', 'hoop', 'run']);
+assert.deepEqual(up.computed.markItems.call({}).map(x => x.name),
+  ['rim_box_tl', 'rim_box_br'], '拖动结果应保存为矩形的两个角');
+assert.equal(up.computed.markItemsOptional.call({}).length, 0,
+  '框选流程不应再要求中心或可选四边');
 assert.ok(!up.template.includes('未标点'), '「未标点（走自动检测）」标签应已删除');
 
 const hoopOf = (pts) => up.computed.markHoop.call({ markPts: pts });
-const onlyCenter = hoopOf([{ name: 'rim_center', x: 0.5, y: 0.3 }]);
-assert.equal(onlyCenter.rx, 0, '只点中心时不该编一个半径出来（交 0 = 不知道，由后端检测器量）');
-assert.equal(onlyCenter.ry, 0);
-assert.equal(onlyCenter.measured, false);
-const centerAndLeft = hoopOf([
-  { name: 'rim_center', x: 0.5, y: 0.3 }, { name: 'rim_left', x: 0.47, y: 0.3 }]);
-assert.ok(centerAndLeft.rx > 0 && centerAndLeft.measured === true,
-  '点了中心 + 左缘 → 半径是量出来的');
-assert.ok(Math.abs(centerAndLeft.rx - 0.03) < 1e-9, 'rx 应等于中心到左缘的距离');
+assert.equal(hoopOf([{ name: 'rim_box_tl', x: 0.47, y: 0.28 }]), null,
+  '只点一个角不能生成篮筐');
+const boxed = hoopOf([
+  { name: 'rim_box_tl', x: 0.47, y: 0.28 }, { name: 'rim_box_br', x: 0.53, y: 0.32 }]);
+assert.ok(boxed.rx > 0 && boxed.ry > 0 && boxed.measured === true,
+  '两个角必须得到可直接使用的中心和尺寸');
+assert.ok(Math.abs(boxed.cx - 0.5) < 1e-9 && Math.abs(boxed.rx - 0.03) < 1e-9);
 assert.ok(!read('web/pages/upload.js').includes('rx = 0.02'),
   '不该再有"画面宽 2%"这种假精度默认值（真实 rx 可能是它的 2 倍，会让真进球被判成贴筐）');
-assert.ok('hoopOptTarget' in up.data(), '可选四边要有一个选中目标（hoopOptTarget）');
+assert.ok('hoopSide' in up.data(), '左右半场篮筐要分别保存');
+assert.ok(up.template.includes('@mousedown="onMarkDown"') &&
+          up.template.includes('@mouseup="onMarkUp"'), '篮筐画面必须支持按住拖动框选');
+assert.ok(up.template.includes('按住鼠标拖动，框住篮筐'), '界面应直接说明拖动框选');
 
-console.log('UI dedup & home: 27 checks passed');
+console.log('UI dedup & home checks passed');

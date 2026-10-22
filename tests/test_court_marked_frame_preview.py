@@ -79,3 +79,74 @@ def test_quick_preview_never_scans_shot_boundaries(tmp_path, monkeypatch):
         video_path=str(video),frames=frames,compensate=False,confirm=False)))
     assert result['preview_only']
     assert set(captured[0][0]) == {55.5,0.5}
+
+
+def test_quality_scope_uses_exact_selected_frame_even_with_no_saved_segments(tmp_path):
+    assert api._applies_to_times(tmp_path / 'new.mp4', 37.25) == [37.25]
+    assert api._applies_to_times(tmp_path / 'new.mp4', None) is None
+
+
+def test_line_quality_decodes_only_requested_frames_without_whole_video_conversion(monkeypatch):
+    from aihoop import calibcheck, video_compat
+    def forbidden(*_a, **_k):
+        raise AssertionError('Do not convert an entire video to check one screenshot')
+    monkeypatch.setattr(video_compat, 'ensure_cv2_decodable', forbidden)
+    observed=[]
+    def frame(vp,t):
+        observed.append(t)
+        return np.zeros((10,10,3),dtype=np.uint8)
+    monkeypatch.setattr(api, '_frame_bgr', frame)
+    monkeypatch.setattr(calibcheck, 'frame_fit_detail',lambda *_a: {'ratio':2.0})
+    score=calibcheck.court_fit_score('av1.mp4',Calibration(),times=[37.25])
+    assert observed==[37.25]
+    assert score['ok'] and score['frames'][0]['t']==37.25
+
+
+def test_manual_save_preserves_passing_preview_matrices_and_scores(tmp_path, monkeypatch):
+    import json
+    video=tmp_path/'video.mp4';video.write_bytes(b'placeholder')
+    output=tmp_path/'calibration.json'
+    class Capture:
+        def __init__(self,*_a): pass
+        def get(self,prop): return 1920 if prop==cv2.CAP_PROP_FRAME_WIDTH else 1080
+        def release(self): pass
+    monkeypatch.setattr(cv2,'VideoCapture',Capture)
+    monkeypatch.setattr(api,'_calibration_path_for',lambda _v: output)
+    monkeypatch.setattr(api,'_video_duration',lambda _v: 90)
+    monkeypatch.setattr(api,'_split_marks_by_shot',lambda *_a: ([[1],[11.25]],[5]))
+    h_a=[[.01,0,-5],[0,.01,2],[0,0,1]]
+    h_b=[[.02,0,-6],[0,-.02,-1],[0,0,1]]
+    def preview(*_a):
+        return {'ok':True,'per_frame_fit':[
+            {'t':1.,'n':4,'ok':True,'H':h_a,'rmse_m':.1176,'ratio':1.6},
+            {'t':11.25,'n':4,'ok':True,'H':h_b,'rmse_m':.1629,'ratio':2.2}],
+            'calibration_fit':{'ratio':1.6,'weak_segments':[]}}
+    monkeypatch.setattr(api,'_preview_marked_frames',preview)
+    a=['paint_base_far_left','paint_base_far_right','lane_far_left','lane_far_right']
+    b=['paint_base_near_left','paint_base_near_right','lane_near_left','lane_near_right']
+    req=api.MultiCalibRequest(video_path=str(video),confirm=True,compensate=False,
+        frames=[{'t':1.,'landmarks':{n:[.2,.3] for n in a}},
+                {'t':11.25,'landmarks':{n:[.5,.6] for n in b}}])
+    result=asyncio.run(api.post_calibrate_multi(req))
+    saved=json.loads(output.read_text())
+    assert result['saved'] and saved['revision']==1
+    assert [s['H'] for s in saved['segments']]==[h_a,h_b]
+    assert [s['ratio'] for s in saved['segments']]==[1.6,2.2]
+
+
+def test_saved_ground_calibration_does_not_require_airborne_hoop(tmp_path, monkeypatch):
+    import json
+    from aihoop.multical import MultiCal, Segment
+    segments=[]
+    for sign in [1,-1]:
+        src=[[100,50],[500,50],[500,400],[100,400]]
+        dst=[[-7.5,sign*14],[7.5,sign*14],[7.5,0],[-7.5,0]]
+        cal=Calibration(src_px=src,dst_m=dst,frame='full',frame_size=[640,480]).fit()
+        segments.append(Segment(t_start=0 if sign==1 else 5,t_end=5 if sign==1 else 10,
+            src_px=src,dst_m=dst,H=cal.H,ratio=2.0,rmse_m=0.,n_points=4))
+    output=tmp_path/'verified.json'
+    output.write_text(json.dumps(MultiCal(segments,for_video='sample.mp4',frame_size=[640,480]).to_dict()))
+    monkeypatch.setattr(api,'_calibration_path_for',lambda _v: output)
+    result=asyncio.run(api.get_calibration('sample.mp4'))
+    assert result['calibration_ok'] and not result['position_unverified']
+    assert not result['hoop_checked']

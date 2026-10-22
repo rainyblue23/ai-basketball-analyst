@@ -6,6 +6,7 @@ import mimetypes
 import os
 import re
 import threading
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, unquote
@@ -16,7 +17,7 @@ def validate(data, item):
     if not isinstance(data,dict):raise ValueError('标注格式不正确')
     for key in ('shots','frames'):
         if not isinstance(data.get(key),list):raise ValueError('缺少标注列表')
-    if len(data['shots'])>500 or len(data['frames'])>100:raise ValueError('标注条数过多')
+    if len(data['shots'])>500 or len(data['frames'])>500:raise ValueError('标注条数过多')
     def number(value):
         if isinstance(value,bool) or not isinstance(value,(int,float)) or not math.isfinite(value):
             raise ValueError('时间和坐标必须是有效数字')
@@ -35,7 +36,8 @@ def validate(data, item):
         boxes=frame.get('boxes',[])
         if len(boxes)>20:raise ValueError('框选数量过多')
         for box in boxes:
-            if box['kind'] not in ('ball','decoy'):raise ValueError('框类型不正确')
+            if box['kind'] not in ('ball','decoy','rim','person'):raise ValueError('框类型不正确')
+            if box.get('role','UNKNOWN') not in ('PLAYER','REFEREE','SPECTATOR','UNKNOWN'):raise ValueError('人员角色不正确')
             coords=box['xyxy']
             if len(coords)!=4 or any(not 0<=number(v)<=1 for v in coords):raise ValueError('框坐标超出画面')
             if coords[2]<=coords[0] or coords[3]<=coords[1]:raise ValueError('框选范围无效')
@@ -43,6 +45,28 @@ def validate(data, item):
         if frame['visibility'] in ('not_visible','unclear') and any(b['kind']=='ball' for b in boxes):raise ValueError('看不见或看不清时请删除篮球框')
     if data.get('frames_complete') and (len(seen)!=len(item['images']) or any(f['visibility']=='pending' for f in data['frames'])):
         raise ValueError('还有核对帧未标注')
+    review=data.get('review')
+    if review is not None:
+        if not isinstance(review,dict):raise ValueError('审核字段不正确')
+        if review.get('status') not in ('pending','in_progress','completed'):raise ValueError('审核状态不正确')
+        for key in ('is_shot','is_replay'):
+            if review.get(key) not in ('pending','yes','no','unknown'):raise ValueError('请明确出手和回放状态')
+        if review.get('result') not in ('pending','made','missed','unknown','not_applicable'):raise ValueError('结果不正确')
+        interval=review.get('release_interval')
+        if interval is not None:
+            if not isinstance(interval,list) or len(interval)!=2 or not item['start_s']<=number(interval[0])<=number(interval[1])<item['end_s']:
+                raise ValueError('离手区间超出原片审核范围')
+        if review.get('is_shot')=='no' and (data['shots'] or review.get('result') in ('made','missed')):
+            raise ValueError('无出手不能同时记录出手或命中结果')
+        if review.get('status')=='completed':
+            if not str(review.get('reviewer','')).strip() or not data.get('shots_complete'):
+                raise ValueError('完成审核需填写审核人并确认出手记录完整')
+            if any(review.get(k)=='pending' for k in ('is_shot','is_replay','result')):
+                raise ValueError('请先完成出手、结果和回放判断；看不清选未知')
+            if review.get('is_shot')=='yes' and not data['shots']:raise ValueError('请添加已确认的出手记录')
+        if any(len(str(v))>4000 for v in review.values()):raise ValueError('审核说明过长')
+    data['training_approved']=False
+    data['review_status']='human_completed' if (review or {}).get('status')=='completed' else 'pending_human_review'
     return data
 
 def main():
@@ -85,6 +109,13 @@ def main():
             if len(parts)<2 or parts[1] not in items:return self.reply(404,{'error':'标注任务不存在'})
             item=items[parts[1]];folder=batch/item['id']
             if parts[0]=='video' and len(parts)==2:return self.file(Path(item['video']))
+            if parts[0]=='original' and len(parts)==2:return self.file(Path(item.get('original_video',item['video'])))
+            if parts[0]=='evidence' and len(parts)==2:
+                target=folder/'evidence.json'
+                return self.reply(200,json.loads(target.read_text()) if target.exists() else {})
+            if parts[0]=='evidence' and len(parts)==3 and parts[2] in ('640','1280'):
+                target=folder/f'evidence{parts[2]}.json'
+                return self.reply(200,json.loads(target.read_text()) if target.exists() else {})
             if parts[0]=='image' and len(parts)==3 and parts[2] in item['images']:return self.file(folder/parts[2])
             if parts[0]=='annotations' and len(parts)==2:
                 with LOCK:
@@ -102,6 +133,13 @@ def main():
                 data=validate(json.loads(self.rfile.read(size)),items[parts[1]])
                 data['source']='human_user';data['video']=items[parts[1]]['video']
                 data['coordinate_units']='normalized_original_frame';data['time_basis']='original_video_seconds'
+                data['video_sha256']=items[parts[1]].get('video_sha256')
+                data['original_sha256']=items[parts[1]].get('original_sha256')
+                data['source_match_id']=items[parts[1]].get('source_match_id')
+                for row in data['frames']:
+                    row['image_sha256']=items[parts[1]].get('frame_sha256',{}).get(row['image'])
+                    row['timestamp']=items[parts[1]].get('frame_times',{}).get(row['image'])
+                data['saved_at']=datetime.now(timezone.utc).isoformat()
                 target=batch/parts[1]/'annotations.json'
                 with LOCK:
                     temp=target.with_suffix('.json.tmp');temp.write_text(json.dumps(data,ensure_ascii=False,indent=2),encoding='utf-8');os.replace(temp,target)

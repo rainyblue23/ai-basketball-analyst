@@ -14,10 +14,28 @@ class FeedbackTests(unittest.TestCase):
    self.assertNotEqual(a['id'],b['id'])
    record=json.loads((Path(d)/a['id']/'record.json').read_text(encoding='utf-8'))
    self.assertFalse(record['training_approved']);self.assertEqual(record['boxes'],body['boxes']);self.assertEqual(record['frame_index'],30)
+   self.assertEqual(record['frame_sha256'],m.hashlib.sha256(b'PNG').hexdigest())
+   self.assertIsNone(record['source_video_sha256'])
+   self.assertEqual(record['annotation_scope'],'partial_correction')
+   self.assertEqual(record['review_status'],'pending');self.assertFalse(record['frame_complete'])
+ def test_review_requires_complete_frame_before_training(self):
+  with tempfile.TemporaryDirectory() as d,patch.object(m,'read_frame',return_value=(b'PNG',{'frame_index':30,'frame_t':1.,'fps':30,'width':100,'height':100})):
+   body={'t':1.,'boxes':[{'kind':'ball','xyxy':[.2,.2,.3,.3]}],'conditions':['far_small']}
+   saved=m.save_feedback(d,'video.mp4',body,'job')
+   with self.assertRaisesRegex(ValueError,'整帧'):
+    m.review_feedback(d,saved['id'],decision='approved',reviewer='reviewer',frame_complete=False)
+   with self.assertRaisesRegex(ValueError,'比赛来源'):
+    m.review_feedback(d,saved['id'],decision='approved',reviewer='reviewer',frame_complete=True)
+   row=m.review_feedback(d,saved['id'],decision='approved',reviewer='reviewer',frame_complete=True,note='checked full frame',source_match_id='match-001')
+   self.assertTrue(row['training_approved']);self.assertTrue(row['frame_complete'])
+   self.assertEqual(row['review_status'],'approved');self.assertEqual(row['conditions'],['far_small'])
+   self.assertEqual(row['source_match_id'],'match-001')
+   self.assertEqual(len(m.list_feedback(d)),1)
  def test_bad_save_creates_nothing(self):
   with tempfile.TemporaryDirectory() as d:
    with self.assertRaises(ValueError):m.save_feedback(d,'x',{'t':-1,'boxes':[]},'job')
    self.assertEqual(list(Path(d).iterdir()),[])
+  with self.assertRaises(ValueError):m.validate_feedback({'t':0,'boxes':[{'kind':'ball','xyxy':[.1,.1,.2,.2]}],'conditions':['unknown_tag']})
  def test_real_frame_roundtrip(self):
   import cv2,numpy as np
   with tempfile.TemporaryDirectory() as d:
@@ -27,4 +45,5 @@ class FeedbackTests(unittest.TestCase):
    self.assertEqual(meta['frame_index'],3);self.assertAlmostEqual(meta['frame_t'],.3)
    im=cv2.imdecode(np.frombuffer(png,np.uint8),1);self.assertEqual(im.shape[:2],(24,32));self.assertAlmostEqual(float(im.mean()),60,delta=3)
    with self.assertRaises(ValueError):m.read_frame(p,1)
+   self.assertEqual(m.file_sha256(p),m.hashlib.sha256(p.read_bytes()).hexdigest())
 if __name__=='__main__':unittest.main()

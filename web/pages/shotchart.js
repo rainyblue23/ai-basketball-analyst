@@ -286,6 +286,7 @@ window.PAGES['shotchart'] = {
     Promise.resolve().then(function () {
       return window.APP_WAIT_READY ? window.APP_WAIT_READY() : null;
     }).then(function () {
+      if (window.APP_REFRESH_RESULTS) return window.APP_REFRESH_RESULTS();
       var id = self.S.jobId;
       if (!self.S.backendOk || !id) return null;
       return window.API.shotchart(id).then(function (chart) {

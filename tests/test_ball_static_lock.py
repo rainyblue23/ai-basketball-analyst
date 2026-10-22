@@ -139,3 +139,16 @@ def test_update_resets_static_run_when_ball_moves():
     s.static_run = 12
     s.update(1, 0.03, [ball(0.50, 1030, 500)], persons=(), image=None)   # 走了 30 px
     assert s.static_run == 0, "球在动，静止计数要归零"
+
+
+def test_predictions_do_not_keep_a_false_identity_alive_forever():
+    s = make_stream()
+    s.update(0, 0, [ball(.7, 100, 100)], persons=())
+    measured_frame = s.last_frame
+    for frame in range(1, 20):
+        s.update(frame, frame / FPS, [], persons=())
+    assert s.last_frame == measured_frame
+    assert s.frames[-1]['ball'] is None
+    far = ball(.8, 1500, 300)
+    s.update(20, 20 / FPS, [far], persons=())
+    assert s.frames[-1]['ball']['xyxy'] == list(far.xyxy)

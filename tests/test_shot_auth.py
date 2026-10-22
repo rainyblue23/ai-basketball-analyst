@@ -23,12 +23,31 @@ class LoginTests(unittest.TestCase):
         r=self.c.get('/web/index.html',follow_redirects=False)
         self.assertEqual(r.status_code,302)
         self.assertEqual(self.c.get('/web/login.html').status_code,200)
+        self.assertEqual(self.c.get('/web/register.html').headers['cache-control'],'private, max-age=60')
+        for asset in ('/web/auth-login-court.css','/web/auth-visual.css',
+                      '/web/editorial.css','/web/img/replay-editorial-v1.webp',
+                      '/web/img/login-court-redblue-v1.webp',
+                      '/web/fonts/ReplaySans.woff'):
+            self.assertEqual(self.c.get(asset).status_code,200,asset)
         self.assertEqual(self.c.get('/api/media/anything/a.mp4').status_code,401)
     def test_login_cookie_logout_revokes(self):
         token=self.login()
         self.assertEqual(self.c.get('/api/me').json()['username'],'reviewer')
         self.assertEqual(self.c.post('/api/logout').status_code,200)
         self.assertIsNone(auth.read_session(token))
+    def test_registration_without_code_and_strong_password(self):
+        body={'username':'newuser','password':'short'}
+        self.assertEqual(self.c.post('/api/register',json=body).status_code,400)
+        body['password']='a-long-test-password'
+        self.assertEqual(self.c.post('/api/register',json=body).status_code,200)
+        self.assertIn('newuser',auth.load_accounts())
+    def test_registration_rate_limit(self):
+        body={'username':'reviewer','password':'a-long-test-password'}
+        for _ in range(10):
+            self.assertEqual(self.c.post('/api/register',json=body).status_code,409)
+        result=self.c.post('/api/register',json=body)
+        self.assertEqual(result.status_code,429)
+        self.assertEqual(result.headers['retry-after'],'3600')
     def test_password_reset_and_account_removal(self):
         token=self.login();auth.save_account('reviewer','another-password')
         self.assertIsNone(auth.read_session(token))
@@ -61,5 +80,14 @@ class LoginTests(unittest.TestCase):
             r=c.post('/api/login',json={'username':'reviewer','password':'a-long-test-password'})
             for attribute in ('HttpOnly','Secure','SameSite=lax'):
                 self.assertIn(attribute,r.headers['set-cookie'])
+    def test_secure_public_cookie_keeps_local_http_usable(self):
+        with patch.dict(os.environ, {'AIHOOP_COOKIE_SECURE': '1'}):
+            with TestClient(api.app,base_url='http://127.0.0.1') as local_client:
+                local=local_client.post('/api/login',json={'username':'reviewer','password':'a-long-test-password'})
+                self.assertNotIn('Secure',local.headers['set-cookie'])
+                self.assertEqual(local_client.get('/api/me').status_code,200)
+            with TestClient(api.app,base_url='http://basketparts.top') as public:
+                result=public.post('/api/login',json={'username':'reviewer','password':'a-long-test-password'})
+                self.assertIn('Secure',result.headers['set-cookie'])
 
 if __name__=='__main__':unittest.main()

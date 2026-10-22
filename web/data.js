@@ -45,13 +45,31 @@
     return !!e && (e.result === 'unknown' || e.made === null || e.made === undefined);
   };
 
-  // 出手结果标签（made 为 null 表示"结果未知"，不能说成"未中"）
+  // Only resolved outcomes receive a result label. Unresolved observations
+  // retain their timestamps separately; suggestions never become facts here.
+  D.shotDisplay = function (row) {
+    row = row || {};
+    if (!D.isUnknown(row) && typeof row.made === 'boolean') {
+      return { made: row.made, resolved: true,
+        label: row.made ? '中' : '没中', reason: '已判定结果' };
+    }
+    return { made: null, resolved: false, label: '',
+      reason: '仅保留回看时间，未计为投篮结果。' };
+  };
+
+  // Result labels never invent an outcome for missing data.
   D.shotLabel = function (value, made) {
-    var head = (made === null || made === undefined) ? '待确认'
-      : (made ? '命中' : '未中');
-    return head + ({ 1: '罚球', 2: '两分', 3: '三分' }[value] || value + '分');
+    return made === true ? '中' : made === false ? '没中' : '';
+  };
+  // Result lists show a point value only for a confirmed make. Keep the
+  // original value in exports/statistics (2PA/3PA also include misses).
+  D.shotValueLabel = function (shot) {
+    if (!shot || D.isUnknown(shot) || shot.made !== true) return '';
+    return shot.value_assumed || [1, 2, 3].indexOf(Number(shot.value)) < 0
+      ? '' : Number(shot.value) + ' 分';
   };
   D.teamName = function (game, side) {
+    if (side !== 'home' && side !== 'away') return '球队未知';
     var t = game && game.teams && game.teams[side];
     return (t && t.name) || (side === 'home' ? '主队' : '客队');
   };
@@ -147,8 +165,15 @@
     if (p.jersey !== null && p.jersey !== undefined && /^[0-9]{1,2}$/.test(String(p.jersey))) return String(p.jersey) + '号';
     var name = String(p.name || '');
     if (name && name !== (p.player_id || p.id) && !/^T[0-9]+$/.test(name) && name !== 'UNASSIGNED' && name !== '号码待确认') return name;
-    if (/^[AB][1-9][0-9]?$/.test(String(p.short_label || ''))) return String(p.short_label);
+    if (/^[AB][1-9][0-9]*$/.test(String(p.short_label || ''))) return String(p.short_label);
     return '号码待确认';
+  };
+
+  D.tacticsPlayerLabel = function (p) {
+    p=p||{};var label=D.playerLabel(p);
+    if(label!=='号码待确认')return label;
+    var id=String(p.player_id||p.id||'');
+    return /^T[0-9]+$/.test(id)?id:'球员';
   };
 
   D.normalizePlayers = function (list) {

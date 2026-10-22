@@ -337,7 +337,12 @@ def _sample(video: str, times: list):
     except ImportError:
         return [None] * len(times)
     out = []
-    cap = cv2.VideoCapture(video)
+    from .video_compat import ensure_cv2_preview
+    try:
+        readable = ensure_cv2_preview(video)
+    except (OSError, RuntimeError):
+        return [None]*len(times)
+    cap = cv2.VideoCapture(readable)
     if not cap.isOpened():
         return [None] * len(times)
     try:

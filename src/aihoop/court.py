@@ -201,6 +201,11 @@ def calibration_degeneracy(cal, min_src_frac: float = 0.008,
         if any(max_triangle_area(triple) < 1e-8
                for triple in combinations(dst, 3)):
             out["degenerate"] = True
+            try:
+                import numpy as np
+                out["H_cond"] = round(float(np.linalg.cond(np.asarray(cal.H, dtype=float))), 1)
+            except (ValueError, TypeError, np.linalg.LinAlgError):
+                pass
             out["reason"] = (
                 "这幅画面只有 4 个点，其中 3 个地标在同一条线上（例如罚球线两角与中点）。"
                 "它们不能独立确定平面矩阵；请再标一个底线角、篮下地面角或中线交点。")
@@ -621,7 +626,7 @@ class Calibration:
         分辨率比对，并且**只在标定点确实落在画面内时**才算通过。
         """
         import os
-        base = os.path.basename(str(video_path or "")).lower()
+        base = os.path.basename(str(video_path or "").replace("\\", "/")).lower()
         # 两边都归一化成**文件名**再比（对路径分隔符与大小写不敏感）。
         # 实测踩到的大坑：标定文件里存的是路径（"data\basketball_match.mp4"），
         # 这里却拿它跟 basename（"basketball_match.mp4"）直接比 → 永远不相等

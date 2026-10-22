@@ -18,8 +18,16 @@ class CenterHintTests(unittest.TestCase):
         self.assertEqual(args['hoop_hint'],(621,181))
         self.assertEqual(rt.detections_meta['hoop_source'],'manual_center+detector_geometry')
     def test_complete_ellipse_stays_manual(self):
-        args,rt=self.call(Hoop(621,181,18,4,method='manual'))
+        hoop=Hoop(621,181,18,4,method='manual')
+        args,rt=self.call(hoop)
         self.assertEqual(args['hoop_track'].samples[0][1].rx,18)
         self.assertEqual(rt.detections_meta['hoop_source'],'manual_landmarks')
+        source=VideoSource('fixture.mp4',Calibration(),detect_players=False,manual_hoop=hoop)
+        self.assertTrue(source.legacy_detect['ball_rim_recovery'])
+
+    def test_center_only_does_not_claim_measured_rim_recovery(self):
+        source=VideoSource('fixture.mp4',Calibration(),detect_players=False,
+                           manual_hoop=Hoop(621,181,0,0,method='manual'))
+        self.assertFalse(source.legacy_detect['ball_rim_recovery'])
 
 if __name__=='__main__': unittest.main()

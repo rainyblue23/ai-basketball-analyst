@@ -26,7 +26,7 @@ window.PAGES['review'] = {
       showAll: false,           // 是否把高置信度出手也列出来
       busyIdx: -1,
       localLog: [],             // 改判记录（用于答辩演示时说明写回口径）
-      manual: { t: 0, team: '', value: 2, result: 'unknown', x: null, y: null },  // 坐标为空时只补录事件，不进入热区
+      manual: { t: 0, team: '', value: 2, result: '', x: null, y: null },  // 必须主动选择结果；无坐标不进入热区
       adding: false
     };
   },
@@ -64,11 +64,16 @@ window.PAGES['review'] = {
   },
   created: function () { this.build(); },
   methods: {
+    shotValueLabel: function (row) { return window.D.shotValueLabel(row); },
     /** 手动补录一次进球：填时间/球队/分值，后端按 manual 出手整条重算。 */
     addManual: function () {
       var self = this;
       if (!this.canSubmit) {
         this.$message.warning('无后端/演示模式下不能补录');
+        return;
+      }
+      if (['made', 'missed'].indexOf(this.manual.result) < 0) {
+        this.$message.warning('请选择中或没中');
         return;
       }
       var t = Number(this.manual.t);
@@ -139,7 +144,8 @@ window.PAGES['review'] = {
     hasSuggestion: function (row) {
       return this.isUnknown(row) && !this.unknownReason(row) && typeof row.suggested_made === 'boolean';
     },
-    resultLabel: function (row) { return this.isUnknown(row) ? '结果未知' : row.made ? '命中' : '未中'; },
+    resultLabel: function (row) { return window.D.shotDisplay(row).label; },
+    resultReason: function (row) { return window.D.shotDisplay(row).reason; },
     suggestionReason: function (row) {
       if (row.evidence === 'legacy_occlusion_descent') return '筐口短暂遮挡后，连续观测到球在筐下下降；尚未确认穿筐，请回看核实';
       return row.evidence === 'cross_extrapolated' ? '筐口轨迹缺失，依据趋势拟合推算' : '筐口轨迹缺失，依据前后位置插值推算';
@@ -328,7 +334,6 @@ window.PAGES['review'] = {
     '      </div>',
     '      <div class="row" style="margin-top:10px;flex-wrap:wrap">',
     '        <el-switch v-model="showAll" active-text="全部出手" />',
-    '        <el-checkbox v-model="onlyInferred">仅看建议</el-checkbox>',
     '        <el-button size="small" @click="build">刷新</el-button>',
     '        <el-button size="small" type="primary" plain :disabled="!stats.left || isExample" @click="confirmAll">维持原判</el-button>',
     '      </div>',
@@ -347,7 +352,7 @@ window.PAGES['review'] = {
     '        <el-select v-model="manual.value" style="width:120px">',
     '          <el-option label="1 分" :value="1" /><el-option label="2 分" :value="2" /><el-option label="3 分" :value="3" />',
     '        </el-select>',
-    '        <el-select v-model="manual.result" style="width:120px" aria-label="出手结果"><el-option label="命中" value="made"/><el-option label="未中" value="missed"/><el-option label="未知" value="unknown"/></el-select>',
+    '        <el-select v-model="manual.result" placeholder="选择结果" style="width:120px" aria-label="出手结果"><el-option label="中" value="made"/><el-option label="没中" value="missed"/></el-select>',
     '        <el-button type="primary" :loading="adding" :disabled="!canSubmit" @click="addManual">补录漏掉的出手</el-button>',
     '      </div>',
     '    </div>',
@@ -372,16 +377,14 @@ window.PAGES['review'] = {
     '        </div>',
     '        <div v-html="thumb(row)"></div>',
     '        <div>',
-    '          <el-tag size="small" :type="isUnknown(row) ? \'info\' : row.made ? \'success\' : \'danger\'" effect="dark">',
-    '            {{ resultLabel(row) }} · {{ row.value_assumed ? \'分值未确认\' : row.value + \' 分\' }}',
+    '          <el-tag v-if="resultLabel(row)" size="small" :title="resultReason(row)" :type="row.made ? \'success\' : \'danger\'" effect="dark">',
+    '            {{ resultLabel(row) }}<span v-if="shotValueLabel(row)"> · {{ shotValueLabel(row) }}</span>',
     '          </el-tag>',
     '          <div v-if="unknownReason(row)" style="margin-top:8px">',
-    '            <div><copy-note label="未知原因">{{ unknownReason(row) }}</copy-note></div>',
+    '            <div><copy-note label="判定依据">{{ unknownReason(row) }}</copy-note></div>',
     '            <div v-if="row.crossing_t != null">回看 {{ mmss(row.crossing_t) }} 附近</div>',
     '          </div>',
     '          <div v-if="hasSuggestion(row)" style="margin-top:8px">',
-    '            <strong>系统建议：{{ row.suggested_made ? \'进球\' : \'未中\' }}</strong>',
-    '            <div><copy-note label="不计分">{{ suggestionReason(row) }}。尚未计入命中统计。</copy-note></div>',
     '            <div v-if="suggestionReviewTime(row) != null">回看 {{ mmss(suggestionReviewTime(row)) }} 附近</div>',
     '          </div>',
     '          <div v-else class="muted" style="font-size:12px;margin-top:6px">置信度 {{ conf(row) }}%</div>',
@@ -389,10 +392,9 @@ window.PAGES['review'] = {
     '          <el-tag v-if="row._corrected" size="small" type="success" effect="plain" style="margin-top:6px">已改判</el-tag>',
     '        </div>',
     '        <div>',
-    '          <el-button v-if="hasSuggestion(row)" size="small" :disabled="busyIdx !== -1 || (S.jobId || \'\').indexOf(\'example_\')===0" @click="correct(row, row.suggested_made, row.value)">采纳建议</el-button>',
     '          <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px">',
-    '            <el-button size="small" type="success" :loading="busyIdx===row._index" :disabled="isExample" @click="correct(row, true, row.value)">命中</el-button>',
-    '            <el-button size="small" type="danger" plain :loading="busyIdx===row._index" :disabled="isExample" @click="correct(row, false, row.value)">未中</el-button>',
+    '            <el-button size="small" type="success" :loading="busyIdx===row._index" :disabled="isExample" @click="correct(row, true, row.value)">中</el-button>',
+    '            <el-button size="small" type="danger" plain :loading="busyIdx===row._index" :disabled="isExample" @click="correct(row, false, row.value)">没中</el-button>',
     '          </div>',
     '          <div class="row" style="gap:6px;margin-top:6px">',
     '            <span class="muted" style="font-size:12px">分值：</span>',
@@ -411,10 +413,10 @@ window.PAGES['review'] = {
     '        <el-table-column prop="t" label="时刻" width="90" />',
     '        <el-table-column prop="player" label="球员" width="120" />',
     '        <el-table-column label="改判前" min-width="140">',
-    '          <template #default="s">{{ resultLabel(s.row.before) }} {{ s.row.before.value }} 分（可信度 {{ (s.row.confidence*100).toFixed(0) }}%）</template>',
+    '          <template #default="s">{{ resultLabel(s.row.before) }}<span v-if="shotValueLabel(s.row.before)"> {{ shotValueLabel(s.row.before) }}</span></template>',
     '        </el-table-column>',
     '        <el-table-column label="改判后" min-width="120">',
-    '          <template #default="s">{{ s.row.made ? \'命中\' : \'未中\' }} {{ s.row.value }} 分</template>',
+    '          <template #default="s">{{ resultLabel(s.row) }}<span v-if="shotValueLabel(s.row)"> {{ shotValueLabel(s.row) }}</span></template>',
     '        </el-table-column>',
     '        <el-table-column label="是否写回后端" width="130" align="center">',
     '          <template #default="s"><el-tag size="small" :type="s.row.persisted ? \'success\' : \'info\'">{{ s.row.persisted ? \'已写回\' : \'仅本地\' }}</el-tag></template>',

@@ -24,4 +24,29 @@ class ReplayOverlayTest(unittest.TestCase):
         self.assertEqual(len(d['frames'][0]['players']),2)
         self.assertIsNone(d['frames'][0]['ball'])
 
+    def test_large_spectator_box_is_not_shown_as_ball(self):
+        raw={'width':1920,'height':1080,'detections_meta':{'legacy_shots':{'frames':[
+            {'t':12.0,'ball':{'xyxy':[0,284,36,350]},'persons':[]}]}}}
+        result=detection_overlay(raw)
+        self.assertIsNone(result['frames'][0]['ball'])
+
+    def test_camera_compensated_static_run_is_suppressed(self):
+        frames=[]
+        for i in range(5):
+            dx=i*8
+            persons=[{'xyxy':[100+dx,100,160+dx,400],'track_id':1},
+                     {'xyxy':[400+dx,100,460+dx,400],'track_id':2},
+                     {'xyxy':[700+dx,100,760+dx,400],'track_id':3}]
+            frames.append({'t':i*.2,'ball':{'xyxy':[500+dx,220,524+dx,244]},
+                           'persons':persons})
+        raw={'width':1920,'height':1080,
+             'detections_meta':{'legacy_shots':{'frames':frames}}}
+        result=detection_overlay(raw)
+        self.assertTrue(all(row['ball'] is None for row in result['frames']))
+
+    def test_short_ball_observation_is_labeled_suspect(self):
+        raw={'width':960,'height':540,'detections_meta':{'legacy_shots':{'frames':[
+            {'t':1,'ball':{'xyxy':[100,100,116,116]},'persons':[]}]}}}
+        self.assertTrue(detection_overlay(raw)['frames'][0]['ball_suspect'])
+
 if __name__=='__main__': unittest.main()

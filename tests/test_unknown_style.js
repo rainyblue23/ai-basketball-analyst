@@ -33,11 +33,11 @@ assert.deepEqual(ROWS.map(D.isUnknown), [false, false, true, true, true, false],
 const vm = Object.assign({}, page.data ? page.data() : {});
 Object.keys(page.methods).forEach(function (k) { vm[k] = page.methods[k].bind(vm); });
 const badges = ROWS.map(function (e) { return vm.resultClass(e); });
-assert.deepEqual(badges, ['made', 'miss', 'needs', 'needs', 'needs', 'made'], '徽章三态');
+assert.deepEqual(badges, ['made', 'miss', '', '', '', 'made'], '只有已判定结果有结果颜色');
 assert.equal(vm.resultClass({ result: 'made', made: true, counts_for_score: false }), 'made');
-assert.equal(vm.resultClass(null), 'miss', '空行不该抛异常');
-assert.equal(vm.resultClass({ made: null }), 'needs');
-assert.equal(vm.resultClass({}), 'needs');
+assert.equal(vm.resultClass(null), '', '空行不该冒充没中');
+assert.equal(vm.resultClass({ made: null }), '');
+assert.equal(vm.resultClass({}), '');
 
 // ---- ② 徽章文案（从模板里取真实表达式求值，而不是抄一份） --------------------
 const src = fs.readFileSync(path.join(root, 'web', 'pages', 'overview.js'), 'utf8');
@@ -46,18 +46,18 @@ const badgeLine = page.template.split('\n').find(function (l) {
 });
 assert.ok(badgeLine, '时间轴徽章必须走 resultClass(e)');
 const expr = badgeLine.match(/\{\{\s*(.*?)\s*\}\}/)[1].replace(/\\'/g, "'");
-const textOf = new Function('e', 'resultClass', 'return (' + expr + ');');
+const textOf = new Function('e', 'resultLabel', 'return (' + expr + ');');
 const texts = ROWS.map(function (e) {
-  return textOf(e, function (row) { return vm.resultClass(row); });
+  return textOf(e, function (row) { return vm.resultLabel(row); });
 });
-assert.deepEqual(texts, ['命中', '未中', '未知（待确认）', '未知（待确认）', '未知（待确认）', '命中'], '徽章文案');
+assert.deepEqual(texts, ['中', '没中', '', '', '', '中'], '不为缺少结果的时间点生成标签');
 ROWS.forEach(function (e, i) {
-  assert.equal(texts[i] === '未知（待确认）', badges[i] === 'needs',
+  assert.equal(texts[i] === '', D.isUnknown(e),
     '第 ' + (i + 1) + ' 行：文案与徽章对"待确认"的判断必须一致');
 });
 assert.ok(!/:class="e\.made\?/.test(src), '不该再出现直接按 e.made 配色的写法');
-assert.ok(page.template.includes("{{ resultClass(e) === 'needs' ? '未知（待确认）'"),
-  '文字与颜色必须使用同一未知结果判据');
+assert.ok(page.template.includes('{{ resultLabel(e) }}'),
+  '文字与颜色必须使用同一显示判据');
 
 // ---- ③ 时间轴筛选：三种口径必须与徽章一一对应 -------------------------------
 Object.keys(page.computed).forEach(function (k) {
@@ -71,13 +71,14 @@ function visible(filter) {
   Object.defineProperty(vm, 'filterMade', { value: filter, configurable: true, writable: true });
   return vm.timeline.map(function (e) { return e.t; });
 }
-assert.deepEqual(visible('all'), [1, 2, 3, 4, 5, 6], '不过滤时全在');
+assert.deepEqual(visible('all'), [1, 2, 6], '结果列表仅含已有结果');
 assert.deepEqual(visible('made'), [1, 6], '命中筛选只留 made=true');
-assert.deepEqual(visible('miss'), [2], '"未中"筛选不能把待确认算进来');
-assert.deepEqual(visible('unknown'), [3, 4, 5], '待确认筛选必须能找到缺 result 的行');
+assert.deepEqual(visible('miss'), [2], '不把缺少结果的时间点算作没中');
+assert.deepEqual(vm.unresolvedShots.map(r=>r.t),[3,4,5],'其余时间仍可回看');
+assert.ok(!page.template.includes('label="unknown"'), '不提供第三类结果筛选');
 
 // 总数独立于筛选；所有未知都保留，不拿已判定数冒充总出手数。
-assert.deepEqual(vm.shotCounts, {total:6, made:2, miss:1, unknown:3});
+assert.deepEqual(vm.shotCounts, {total:6, made:2, miss:1, pending:3});
 assert.ok(page.template.indexOf('<video') < page.template.indexOf('投篮记录'));
 assert.ok(page.template.indexOf('投篮记录') < page.template.indexOf('<big-scoreboard'));
 assert.ok(!page.template.includes('showVideo'), '原视频默认可见');
@@ -111,10 +112,10 @@ assert.deepEqual(
   [1, 2, 6], 'players.json 兜底只留命中/未中');
 
 // ---- ⑤ tooltip 文案与样式 ---------------------------------------------------
-assert.equal(D.shotLabel(2, true), '命中两分');
-assert.equal(D.shotLabel(2, false), '未中两分');
-assert.equal(D.shotLabel(3, null), '待确认三分');
-assert.equal(D.shotLabel(1, undefined), '待确认罚球');
+assert.equal(D.shotLabel(2, true), '中');
+assert.equal(D.shotLabel(2, false), '没中');
+assert.equal(D.shotLabel(3, null), '');
+assert.equal(D.shotLabel(1, undefined), '');
 const css = fs.readFileSync(path.join(root, 'web', 'styles.css'), 'utf8');
 assert.match(css, /\.tl-badge\.needs\s*\{/, '待确认用的 .needs 样式必须存在');
 

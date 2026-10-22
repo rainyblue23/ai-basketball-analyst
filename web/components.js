@@ -57,7 +57,7 @@
       stats:'切换球队，按列排序查看球员统计。'
       // train: 已下线（用户要求删除「训练标注」模块），对应文案一并移除
     }[this.page] || '先查看结果，再核对原视频。';}},
-    template: '<div class="page-help"><el-popover trigger="click" placement="bottom-end" :width="360" popper-class="copy-note-panel"><template #reference><button type="button" class="copy-note-trigger">怎么用</button></template><p class="copy-note-body">{{ steps }}</p></el-popover><el-popover trigger="click" placement="bottom-end" :width="400" popper-class="copy-note-panel"><template #reference><button type="button" class="copy-note-trigger">方法与口径</button></template><div class="copy-note-body"><p><b>仅提示、不计分：</b>轨迹候选与未确认建议不自动加入出手和命中统计；matched只代表时间接近，不证明同一次出手。</p><p><b>结果未知：</b>证据不足不能当作未中；没有记录也不代表没有投篮。</p><p><b>球检测观测率：</b>这是模型检测到球的比例，不是录像里有没有球的判定。</p><p><b>估计值、未校验：</b>分值和自动位置需复核。未标定或位置未知时不据占位坐标生成热区；未知结果不进投篮图。</p><p><b>证据跨段、切镜截断、球框可疑：</b>这些提示说明证据限制，不是投篮与否的结论；不跨切镜自动合链。</p></div></el-popover></div>'
+    template: '<div class="page-help"><el-popover trigger="click" placement="bottom-end" :width="360" popper-class="copy-note-panel"><template #reference><button type="button" class="copy-note-trigger">怎么用</button></template><p class="copy-note-body">{{ steps }}</p></el-popover><el-popover trigger="click" placement="bottom-end" :width="400" popper-class="copy-note-panel"><template #reference><button type="button" class="copy-note-trigger">方法与口径</button></template><div class="copy-note-body"><p><b>仅提示、不计分：</b>轨迹候选与未确认建议不自动加入出手和命中统计；matched只代表时间接近，不证明同一次出手。</p><p><b>投篮结果：</b>只显示中与没中；证据不足的时间点单独供回看，不当作投篮结论。</p><p><b>球检测观测率：</b>这是模型检测到球的比例，不是录像里有没有球的判定。</p><p><b>估计值、未校验：</b>分值和自动位置需复核。未标定或位置未知时不据占位坐标生成热区；未确认结果不进投篮图。</p><p><b>证据跨段、切镜截断、球框可疑：</b>这些提示说明证据限制，不是投篮与否的结论；不跨切镜自动合链。</p></div></el-popover></div>'
   };
 
 
@@ -80,9 +80,16 @@
       option: {
         deep: true,
         handler: function () {
-          if (!this.chart) return;
-          // 用 notMerge=true 避免切换球队/指标时残留上一次的 series
-          this.chart.setOption(this.buildOption(), true);
+          var self = this;
+          if (!self.chart) return;
+          // 切换任务时坐标轴与 series 会同时变化。ECharts 6 即使用 notMerge，
+          // 仍可能在同一渲染帧里让旧 series 访问已替换的坐标轴（getAxis/type 异常）。
+          // 下一次 Vue 更新完成后先 clear，再提交一份完整 option。
+          this.$nextTick(function () {
+            if (!self.chart || !self.$refs.el || !self.$refs.el.isConnected) return;
+            self.chart.clear();
+            self.chart.setOption(self.buildOption(), { notMerge: true, lazyUpdate: false });
+          });
         }
       }
     },
@@ -97,9 +104,20 @@
           console.warn('[echarts-box] ECharts 未加载，请检查 CDN');
           return;
         }
-        this.chart = window.echarts.init(this.$refs.el, window.AIHOOP_ECHARTS_THEME(), { renderer: 'canvas' });
-        this.chart.setOption(this.buildOption(), true);
+        // ECharts 实例含大量内部对象，交给 Vue 深层响应式代理后会把内部数组变成
+        // Proxy；ECharts 6 渲染坐标轴时会因此出现 getAxis/type 异常。
+        this.chart = Vue.markRaw(window.echarts.init(
+          this.$refs.el, window.AIHOOP_ECHARTS_THEME(), { renderer: 'canvas' }));
+        var created = this.chart;
         var self = this;
+        // mounted 时父页面的 game 计算属性仍可能处在同一轮刷新中。延后一帧，
+        // 避免 ECharts 在坐标轴 option 尚未稳定时开始 series 渲染。
+        this.$nextTick(function () {
+          requestAnimationFrame(function () {
+            if (self.chart !== created || !self.$refs.el || !self.$refs.el.isConnected) return;
+            created.setOption(self.buildOption(), { notMerge: true, lazyUpdate: false });
+          });
+        });
         if (window.ResizeObserver && !this.ro) {
           this.ro = new ResizeObserver(function () { if (self.chart) self.chart.resize(); });
           this.ro.observe(this.$refs.el);

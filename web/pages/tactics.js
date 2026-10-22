@@ -1,3 +1,20 @@
+// Display interpolation only; never changes saved positions or statistics.
+function tacticsPopulationIssue(f){
+  if(!f)return false;
+  if(f.population_quality && f.population_quality.valid===false)return true;
+  var counts={};(f.players||[]).forEach(function(p){counts[p[1]]=(counts[p[1]]||0)+1;});
+  return (f.players||[]).length>10 || Object.keys(counts).some(function(k){return ['unknown','UNKNOWN','','?'].indexOf(k)<0 && counts[k]>5;});
+}
+function interpolateTacticsFrame(a,b,t){
+  if(!a)return null;
+  if(t<a.t || t-a.t>.6)return Object.assign({},a,{players:[],ball:null,position_quality:{valid:false,reason:'display_frame_expired'}});
+  if(!b || a.segment===undefined || a.segment!==b.segment || b.t-a.t<=0 || b.t-a.t>.6 ||
+     (a.population_quality&&a.population_quality.valid===false) || (b.population_quality&&b.population_quality.valid===false) ||
+     !(a.players||[]).length || !(b.players||[]).length)return a;
+  var f=Math.max(0,Math.min(1,(t-a.t)/(b.t-a.t))),by={};b.players.forEach(function(p){by[p[0]]=p;});
+  var players=a.players.map(function(p){var q=by[p[0]];if(!q||q[1]!==p[1]||Math.hypot(q[2]-p[2],q[3]-p[3])>12*(b.t-a.t))return p;return [p[0],p[1],p[2]+(q[2]-p[2])*f,p[3]+(q[3]-p[3])*f];});
+  return Object.assign({},a,{players:players,display_interpolated:true});
+}
 /* ==========================================================================
    pages/tactics.js —— 页面 5：战术分析（核心展示页）
    --------------------------------------------------------------------------
@@ -30,7 +47,8 @@ window.PAGES['tactics'] = {
     return {
       S: window.STORE,
       // 球场底图与叠加层用同一个 viewBox，保证像素级对齐
-      courtSVG: window.Court.courtSVG({ view: 'half' }),
+      courtSVG: window.Court.courtSVG({ view: 'full' }),
+      courtView: 'full',
       loading: false,
       err: '',
       // 在飞的加载 Promise（同一时刻只允许一份，见 load()）
@@ -44,15 +62,16 @@ window.PAGES['tactics'] = {
       raf: null,
       _last: 0,
       // 传球网络
-      netTeam: 'home',
+      netTeam: 'all',
+      netFocus: '',
       // 间距曲线
       metric: 'area',
       METRICS: [
-        { key: 'area', label: '凸包面积', unit: 'm²' },
-        { key: 'mean_dist', label: '平均间距', unit: 'm' },
-        { key: 'width', label: '阵型宽度', unit: 'm' },
-        { key: 'depth', label: '阵型纵深', unit: 'm' },
-        { key: 'radius', label: '重心到篮筐', unit: 'm' }
+        { key: 'area', label: '站位面积', unit: 'm²', meaning:'把同队最外侧球员的位置连成一个圈，计算围住的面积（也叫凸包面积）。', reading:'面积越大，队员整体站得越散；面积越小，站位越集中。' },
+        { key: 'mean_dist', label: '平均间距', unit: 'm', meaning:'计算同队球员两两之间的距离，再取平均值。', reading:'例如 5 米，表示队员之间的平均距离约为 5 米；数值越大，彼此越分散。' },
+        { key: 'width', label: '左右展开宽度', unit: 'm', meaning:'同队最左侧与最右侧球员之间的横向距离。', reading:'数值越大，球队越向球场两边展开。' },
+        { key: 'depth', label: '前后展开距离', unit: 'm', meaning:'沿篮筐到中场的方向，同队最靠前与最靠后球员之间的距离（也叫纵深）。', reading:'数值越大，队员前后站得越开。' },
+        { key: 'radius', label: '整体离篮筐距离', unit: 'm', meaning:'先计算同队球员的平均位置（站位中心），再计算这个位置到该半场篮筐的距离。', reading:'数值越小，整体站位越靠近篮筐；它不是每名球员到篮筐距离的平均值。' }
       ]
     };
   },
@@ -78,10 +97,8 @@ window.PAGES['tactics'] = {
     frameQuality: function () {
       var frames=this.frames||[], valid=0;
       frames.forEach(function(f){
-        if(f.population_quality && f.population_quality.valid===false)return;
-        var counts={};(f.players||[]).forEach(function(p){counts[p[1]]=(counts[p[1]]||0)+1;});
         var n=(f.players||[]).length;
-        if(n>0 && n<=10 && !Object.keys(counts).some(function(k){return counts[k]>5;}))valid++;
+        if(n>0 && !tacticsPopulationIssue(f))valid++;
       });
       return {valid:valid,total:frames.length,pct:frames.length?valid/frames.length:0};
     },
@@ -92,6 +109,9 @@ window.PAGES['tactics'] = {
       var step=Number((this.tac && this.tac.config && this.tac.config.frame_step)||1);
       var expected=this.duration>0?Math.floor(this.duration/step)+1:0;
       return {observed:observed,expected:expected,pct:expected?observed/expected:0};
+    },
+    spacingObservedSubset: function () {
+      return !!(this.tac && this.tac.config && this.tac.config.spacing_observed_subset);
     },
     hasBallTrack: function () {
       return !!(this.tac && this.tac.coverage && Number(this.tac.coverage.ball_samples)>0);
@@ -113,16 +133,22 @@ window.PAGES['tactics'] = {
       }
       return lo;
     },
-    frame: function () { return this.frames[this.frameIdx] || null; },
+    frame: function () {
+      var a=this.frames[this.frameIdx],b=this.frames[this.frameIdx+1];
+      return interpolateTacticsFrame(a,b,this.playT);
+    },
+    positionMissing: function () {
+      return !!(this.frame && this.frame.position_quality && this.frame.position_quality.valid === false);
+    },
+    registrationMissing: function () {
+      return !!(this.frame && this.frame.position_quality && this.frame.position_quality.reason === 'court_registration_unavailable');
+    },
     populationIssue: function () {
-      var f=this.frame;if(!f)return false;
-      if(f.population_quality && f.population_quality.valid===false)return true;
-      var counts={};(f.players||[]).forEach(function(p){counts[p[1]]=(counts[p[1]]||0)+1;});
-      return (f.players||[]).length>10 || Object.keys(counts).some(function(k){return counts[k]>5;});
+      return tacticsPopulationIssue(this.frame);
     },
     populationNeedsRebuild: function () {
       if(this.tac && this.tac.population_quality)return false;
-      return this.frames.some(function(f){var counts={};(f.players||[]).forEach(function(p){counts[p[1]]=(counts[p[1]]||0)+1;});return (f.players||[]).length>10 || Object.keys(counts).some(function(k){return counts[k]>5;});});
+      return this.frames.some(tacticsPopulationIssue);
     },
     teamOf: function () {
       var m = {};
@@ -134,8 +160,9 @@ window.PAGES['tactics'] = {
       if (!this.showTrails || !this.frames.length || this.populationIssue) return {};
       var out = {}, i0 = Math.max(0, this.frameIdx - 10);
       for (var i = i0; i <= this.frameIdx; i++) {
+        if(this.frames[i].segment!==this.frame.segment || !(this.frames[i].players||[]).length){out={};continue;}
         (this.frames[i].players || []).forEach(function (p) {
-          if (Object.prototype.hasOwnProperty.call(this.teamOf, p[0])) (out[p[0]] = out[p[0]] || []).push([p[2], p[3]]);
+          if (Object.prototype.hasOwnProperty.call(this.teamOf,p[0])){var seq=out[p[0]]||[];if(seq.length && Math.hypot(p[2]-seq[seq.length-1][0],p[3]-seq[seq.length-1][1])>6)seq=[];seq.push([p[2],p[3]]);out[p[0]]=seq;}
         }, this);
       }
       return out;
@@ -147,7 +174,7 @@ window.PAGES['tactics'] = {
       var trails = {};
       Object.keys(this.trails).forEach(function (k) { trails[k] = this.trails[k]; }, this);
       return window.Court.tacticsPlayersLayer(f, trails, {
-        showTrails: this.showTrails, teamOf: teams, players:this.S.players || []
+        showTrails: this.showTrails, teamOf: teams, players:this.S.players || [], view:this.courtView
       });
     },
     timeLabel: function () { return window.D.mmss(this.playT); },
@@ -156,26 +183,59 @@ window.PAGES['tactics'] = {
     net: function () {
       var t = this.tac;
       if (!t || !t.pass_network) return { nodes: [], edges: [] };
-      return t.pass_network[this.netTeam] || { nodes: [], edges: [] };
+      var sides=this.netTeam==='all' ? (this.teams || ['home','away']) : [this.netTeam];
+      var players={};(this.S.players||[]).forEach(function(p){players[p.player_id]=p;});
+      var nodes=[],edges=[];
+      sides.forEach(function(side){var n=t.pass_network[side] || {};
+        (n.nodes||[]).forEach(function(p){nodes.push(Object.assign({},p,players[p.id]||{},{id:p.id,team:p.team||side}));});
+        edges=edges.concat(n.edges||[]);
+      });
+      return {nodes:nodes,edges:edges};
     },
     netHTML: function () {
       if (!this.hasTactics) return '';
-      return window.Court.passNetLayer(this.net, { team: this.netTeam });
+      return window.Court.passNetLayer(this.net, { team: this.netTeam, focus:this.netFocus });
     },
     netEdges: function () {
       var self = this;
       var names = {};
-      (this.net.nodes || []).forEach(function (n) { names[n.id] = D.playerLabel(n); });
-      return (this.net.edges || []).slice(0, 8).map(function (e) {
+      (this.net.nodes || []).forEach(function (n) { names[n.id] = D.tacticsPlayerLabel(n); });
+      return (this.net.edges || []).filter(function(e){return !self.netFocus || e.source===self.netFocus || e.target===self.netFocus;}).map(function (e) {
         return {
-          from: names[e.source] || '号码待确认', to: names[e.target] || '号码待确认',
+          from: names[e.source] || D.tacticsPlayerLabel({player_id:e.source}), to: names[e.target] || D.tacticsPlayerLabel({player_id:e.target}),
           value: e.value
         };
       });
     },
 
     // ---------------- 阵型 ----------------
-    teams: function () { return ['home', 'away']; },
+    formationGlossary: function () {
+      var explanations={
+        '均衡落位':'球员分布在不同区域，没有明显偏向篮下或三分线外；“均衡”不代表打得更好。',
+        '五外拉开':'五人主要站在三分线外，把篮下空间让出来。',
+        '四外一内':'通常指四人在外线、一人更靠近篮筐。',
+        '三外两内':'通常指三人在外线、两人更靠近篮筐。',
+        '双塔（内线为主）':'至少两名球员靠近篮筐，整体偏向篮下；这里按站位命名，不判断身高。',
+        '转换进攻':'球员仍在从一侧向另一侧推进，还没有稳定站好进攻位置。',
+        '人盯人':'防守球员主要跟随并贴近各自的对手。',
+        '2-3 联防':'通常指两人在前、三人在后，分别守住球场区域。',
+        '3-2 联防':'通常指三人在前、两人在后，分别守住球场区域。',
+        '1-3-1 联防':'通常分成前方一人、中间三人、篮下附近一人的三层站位。',
+        '1-2-2 联防':'通常分成前方一人、中间两人、后方两人的三层站位。',
+        '收缩联防':'防守队员较集中地站在篮筐附近，优先保护篮下区域。',
+        '前场施压（紧逼）':'防守位置向对方推进方向压上，尝试提早干扰持球和传球。',
+        '混合防守':'当前站位不明显符合某一种防守形状，系统暂归为混合；不代表已确认具体战术。',
+        '人数不足':'画面中可可靠定位的球员太少，无法判断站位形状。'
+      };
+      var labels=[];
+      this.formationRows.forEach(function(row){row.offenseTop.concat(row.defenseTop).forEach(function(x){if(labels.indexOf(x.label)<0)labels.push(x.label);});});
+      return labels.map(function(label){return {label:label,text:explanations[label] || '根据当前画面中的球员位置估计的站位形状。'};});
+    },
+    metricHelp: function () {
+      return this.METRICS.find(function(m){return m.key===this.metric;},this) || this.METRICS[0];
+    },
+    teams: function () { return this.tac && this.tac.team_identity && this.tac.team_identity.verified===false ? ['team_a','team_b'] : ['home', 'away']; },
+    rosterLegend: function () { return this.teams[0]==='team_a' ? '蓝色分组A · 橙色分组B · 灰色分队未知；分组尚未核实主客身份。' : '蓝色主队 · 橙色客队 · 灰色分队未知。'; },
     formationRows: function () {
       var t = this.tac;
       if (!t) return [];
@@ -185,7 +245,7 @@ window.PAGES['tactics'] = {
         var off = ((t.formation || {}).summary || {})[side] || {};
         out.push({
           side: side,
-          name: window.D.teamName(self.game, side),
+          name: self.teamName(side),
           offense: (off.offense || [])[0] ? off.offense[0].label : '-',
           offenseTop: (off.offense || []).slice(0, 3),
           defense: (off.defense || [])[0] ? off.defense[0].label : '-',
@@ -212,26 +272,33 @@ window.PAGES['tactics'] = {
         var out = [], prev = null;
         for (var i = 0; i < rows.length; i += st) {
           var row=rows[i];
-          if(prev && row.t-prev.t > 1.5*((self.tac && self.tac.config && self.tac.config.frame_step)||1))
+          if(prev && (row.t-prev.t > 1.5*((self.tac && self.tac.config && self.tac.config.frame_step)||1)
+              || (row.segment !== undefined && prev.segment !== row.segment)
+              || (self.spacingObservedSubset && prev.n !== row.n)))
             out.push([+((prev.t+row.t)/2).toFixed(1), null]);
-          out.push([+row.t.toFixed(1), row[m]]);
+          out.push(self.spacingObservedSubset ? [+row.t.toFixed(1), row[m], row.n] : [+row.t.toFixed(1), row[m]]);
           prev=row;
         }
         return out;
       }
       return {
-        tooltip: { trigger: 'axis' },
-        legend: { top: 0, data: [window.D.teamName(this.game, 'home'), window.D.teamName(this.game, 'away')] },
+        tooltip: { trigger: 'axis', formatter: this.spacingObservedSubset ? function (params) {
+          function escape(s){return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+          return params.filter(function(p){return p.value && p.value[1] != null;}).map(function(p){
+            return escape(p.seriesName) + ' · ' + p.value[0] + '秒：' + p.value[1] + '（可见 ' + p.value[2] + ' 人）';
+          }).join('<br>');
+        } : undefined },
+        legend: { top: 0, data: this.teams.map(function(side){return self.teamName(side);}) },
         grid: { left: 52, right: 20, top: 34, bottom: 40, containLabel: true },
         xAxis: { type: 'value', name: '时间(秒)', min: 0, max: Math.ceil(this.duration) },
         yAxis: { type: 'value', name: this.METRICS.filter(function (x) { return x.key === m; })[0].label },
         series: [
-          { name: window.D.teamName(this.game, 'home'), type: 'line', showSymbol: true, symbolSize: 4,
+          { name: this.teamName(this.teams[0]), type: 'line', showSymbol: true, symbolSize: 4,
             smooth: false, connectNulls: false, lineStyle: { width: 2, color: '#3D8BFF' }, itemStyle: { color: '#3D8BFF' },
-            data: pick('home') },
-          { name: window.D.teamName(this.game, 'away'), type: 'line', showSymbol: true, symbolSize: 4,
+            data: pick(this.teams[0]) },
+          { name: this.teamName(this.teams[1]), type: 'line', showSymbol: true, symbolSize: 4,
             smooth: false, connectNulls: false, lineStyle: { width: 2, color: '#FF7A33' }, itemStyle: { color: '#FF7A33' },
-            data: pick('away') }
+            data: pick(this.teams[1]) }
         ]
       };
     },
@@ -243,12 +310,19 @@ window.PAGES['tactics'] = {
       var sp = (this.tac && this.tac.spacing && this.tac.spacing.teams) || this.summary.spacing || {};
       var self = this;
       return this.teams.map(function (s) {
-        return { side: s, name: window.D.teamName(self.game, s), d: sp[s] || {} };
+        return { side: s, name: self.teamName(s), d: sp[s] || {} };
       });
     }
   },
   methods: {
-    teamName: function (side) { return window.D.teamName(this.game, side); },
+    selectNetPlayer: function (event) {
+      if(event.type==='keydown' && event.key!=='Enter' && event.key!==' ')return;
+      var node=event.target.closest('[data-player]');
+      if(!node)return;
+      event.preventDefault();
+      this.netFocus=node.getAttribute('data-player');
+    },
+    teamName: function (side) { return ((this.tac && this.tac.team_identity && this.tac.team_identity.labels)||{})[side] || window.D.teamName(this.game, side); },
     mmss: function (t) { return window.D.mmss(t); },
 
     // ---- 数据加载 ----
@@ -263,6 +337,8 @@ window.PAGES['tactics'] = {
         return window.APP_WAIT_READY ? window.APP_WAIT_READY() : null;
       }).then(function () {
         requestedJobId = self.S.jobId;
+        return window.APP_REFRESH_RESULTS ? window.APP_REFRESH_RESULTS() : null;
+      }).then(function () {
         return window.APP_TACTICS(true);
       }).then(function () {
         // Keep the selected match; switching requires an explicit user action.
@@ -290,7 +366,7 @@ window.PAGES['tactics'] = {
       return window.API.listJobs(true).then(function (list) {
         var arr = Array.isArray(list) ? list : (list && list.jobs) || [];
         self.altJobs = arr.filter(function (j) {
-          return j.status === 'done' && j.has_tactics && j.job_id !== self.S.jobId;
+          return j.status === 'done' && j.has_tactics && j.source !== 'synthetic' && j.job_id !== self.S.jobId;
         }).slice(0, 5);
       }).catch(function () { self.altJobs = []; });
     },
@@ -316,7 +392,7 @@ window.PAGES['tactics'] = {
         var segs = ((t.formation || {})[kind] || {})[side] || [];
         return {
           side: side,
-          name: window.D.teamName(self.game, side),
+          name: self.teamName(side),
           html: window.Court.formationBar(segs, {
             total: self.duration || 1,
             colorOf: function (g) { return self.colorOf(g.shape || g.scheme); }
@@ -372,8 +448,13 @@ window.PAGES['tactics'] = {
     step: function (d) { this.seek(Math.max(0, Math.min(this.duration, this.playT + d))); }
   },
   watch: {
+    net: function (value) {
+      if(this.netFocus && !(value.nodes||[]).some(function(p){return p.id===this.netFocus;},this))this.netFocus='';
+    },
+    netTeam: function () { this.netFocus=''; },
     // bootstrap 选完任务、或用户在本页/顶栏切换任务时，刷新对应任务的战术结果。
     'S.jobId': function (id, oldId) {
+      this.netFocus='';
       if (id && id !== oldId) this.load();
     }
   },
@@ -406,7 +487,7 @@ window.PAGES['tactics'] = {
     '        <div class="muted">下面这些任务<b>已经有战术数据</b>，点一下直接切过去：</div>',
     '        <el-button v-for="j in altJobs" :key="j.job_id" size="small" type="primary"',
     '                   plain style="margin:6px 6px 0 0" @click="switchTo(j.job_id)">',
-    '          {{ String(j.job_id).slice(0,8) }} · {{ j.source }} · {{ j.summary }}',
+    '          {{ (j.video_path || "比赛分析").split(/[\\\\/]/).pop() }} · {{ String(j.job_id).slice(0,8) }}',
     '        </el-button>',
     '      </div>',
     '    </div>',
@@ -428,7 +509,7 @@ window.PAGES['tactics'] = {
     '    </el-alert>',
     '    <el-alert v-if="frameQuality.total && frameQuality.pct < 0.5" type="warning" :closable="false" show-icon',
     '      :title="\'俯视图中可用坐标仅覆盖 \' + frameQuality.valid + \' / \' + frameQuality.total + \' 帧\'">',
-      '      <span>已跳过人数或坐标异常时刻。球场位置未经独立校验，本结果不代表整场。</span>',
+    '      <span>已跳过人数或坐标异常时刻。球场位置未经独立校验，本结果不代表整场。</span>',
     '    </el-alert>',
     '    <el-alert v-if="spacingQuality.expected && spacingQuality.pct < 0.5" type="warning" :closable="false"',
     '      :title="\'空间指标仅来自 \' + spacingQuality.observed + \' / \' + spacingQuality.expected + \' 个秒级采样点\'">',
@@ -447,9 +528,12 @@ window.PAGES['tactics'] = {
     '    <el-card shadow="never" class="blk">',
     '      <template #header><b>① 俯视战术图</b>',
     '      </template>',
+    '      <p>{{ rosterLegend }} A/B或T开头为临时轨迹编号，不是球衣号码。</p>',
     '      <div class="tac-grid">',
     '        <div>',
     '          <p v-if="populationIssue" role="status">本时刻人数异常，暂停显示阵型。请核对分队与球场边界。</p>',
+    '          <p v-else-if="registrationMissing" role="status">此镜头暂未定位球场；特写、转场或缺少对应机位参照时，不显示场上位置。</p>',
+    '          <p v-else-if="positionMissing" role="status">本时刻位置未知，暂停显示阵型。</p>',
     '          <div class="court-wrap">',
     '            <div v-html="courtSVG"></div>',
     '            <div class="tac-overlay" v-html="overlayHTML"></div>',
@@ -492,12 +576,14 @@ window.PAGES['tactics'] = {
     '      <template #header><b>② 传球网络</b>',
     '      </template>',
     '      <el-radio-group v-model="netTeam" size="small" style="margin-bottom:10px">',
-    '        <el-radio-button label="home">{{ teamName("home") }}</el-radio-button>',
-    '        <el-radio-button label="away">{{ teamName("away") }}</el-radio-button>',
+    '        <el-radio-button label="all">双方</el-radio-button>',
+    '        <el-radio-button v-for="side in teams" :key="side" :label="side">{{ teamName(side) }}</el-radio-button>',
     '      </el-radio-group>',
+    '      <el-button v-if="netFocus" size="small" @click="netFocus=\'\'" style="margin-left:12px">查看全部</el-button>',
+    '      <div class="hint" style="margin-bottom:8px"><span style="color:#2f6fed">● {{ teamName(teams[0]) }}</span>　<span style="color:#f2762e">● {{ teamName(teams[1]) }}</span>　点击球员，查看相关传球</div>',
     '      <div class="tac-net">',
-    '        <div class="court-wrap" v-html="netHTML"></div>',
-    '        <el-table :data="netEdges" size="small" style="width:340px">',
+    '        <div class="court-wrap" @click="selectNetPlayer" @keydown="selectNetPlayer" v-html="netHTML"></div>',
+    '        <el-table :data="netEdges" size="small" max-height="360" style="width:340px">',
     '          <el-table-column label="传球连线" >',
     '            <template #default="s">{{ s.row.from }} → {{ s.row.to }}</template>',
     '          </el-table-column>',
@@ -513,6 +599,10 @@ window.PAGES['tactics'] = {
     '    <el-card v-if="!populationNeedsRebuild && canInferAttack" shadow="never" class="blk">',
     '      <template #header><b>③ 阵型识别</b>',
     '      </template>',
+    '      <p>看两队球员怎么站位：进攻时是靠近篮筐还是向外拉开，防守时是跟着对手还是守住区域。</p>',
+    '      <p class="hint">篮筐附近叫“内线”，三分线外叫“外线”。以下名称是根据检测到的站位估计，不代表已确认教练安排。</p>',
+    '      <div style="margin:12px 0;line-height:1.8"><div v-for="item in formationGlossary" :key="item.label"><b>{{ item.label }}：</b>{{ item.text }}</div></div>',
+    '      <p class="hint">标签后的数字是有效采样时刻数。例如“均衡落位 · 3”表示在 3 个采样时刻看到这种站位，不是 3 次进攻。</p>',
     '      <el-table :data="formationRows" size="small">',
     '        <el-table-column label="球队" width="110">',
     '          <template #default="s"><b>{{ s.row.name }}</b></template>',
@@ -532,6 +622,7 @@ window.PAGES['tactics'] = {
     '          </template>',
     '        </el-table-column>',
     '      </el-table>',
+    '      <p class="hint">下面的色条从左到右对应视频时间；每一段颜色表示当时识别出的阵型，长短表示持续时间。空白表示没有足够依据。</p>',
     '      <div v-for="b in offBars" :key="\'o\'+b.side" class="bar-row">',
     '        <span class="bar-label">{{ b.name }} · 进攻</span>',
     '        <span class="bar-track" v-html="b.html"></span>',
@@ -543,30 +634,38 @@ window.PAGES['tactics'] = {
     '    </el-card>',
     '    <el-card v-else-if="!populationNeedsRebuild" shadow="never" class="blk">',
     '      <template #header><b>③ 阵型识别</b></template>',
-    '      <div class="muted">球轨迹或控球片段不足，无法区分进攻与防守阵型。</div>',
+    '      <p>这个模块用来观察两队球员怎么站位：谁更靠近篮筐、谁在外线，以及防守如何分布。</p>',
+    '      <div class="muted">当前球轨迹或控球片段不足，暂时无法区分进攻与防守阵型。</div>',
     '    </el-card>',
     '    <!-- ⑤ 间距曲线 -->',
     '    <el-card v-if="!populationNeedsRebuild" shadow="never" class="blk">',
-    '      <template #header><b>④ 空间/间距曲线（仅有效采样）</b>',
+    '      <template #header><b>④ 空间/间距曲线（{{ spacingObservedSubset ? "仅可见球员" : "仅有效采样" }}）</b>',
     '      </template>',
+    '      <p>看同队球员站得有多开、整体离篮筐多远。横轴是视频时间，纵轴是所选指标；蓝色为{{ teamName(teams[0]) }}，橙色为{{ teamName(teams[1]) }}。</p>',
     '      <el-radio-group v-model="metric" size="small" style="margin-bottom:8px">',
     '        <el-radio-button v-for="m in METRICS" :key="m.key" :label="m.key">',
     '          {{ m.label }}</el-radio-button>',
     '      </el-radio-group>',
+    '      <div style="line-height:1.8;margin:8px 0 16px"><b>{{ metricHelp.label }}（{{ metricHelp.unit }}）：</b>{{ metricHelp.meaning }}<br>{{ metricHelp.reading }}</div>',
+    '      <p class="hint">曲线断开表示该时段缺少可靠位置；数值大或小不直接代表打得好坏。下表只对有效采样取平均，不代表整场比赛。</p>',
+    '      <p v-if="spacingObservedSubset" class="hint">仅计算已分组的可见球员，不代表完整五人阵容。人数变化和切镜处断线；悬停可查看当时人数。</p>',
     '      <echarts-box :option="spacingOption" height="300px" />',
     '      <el-table :data="spacingTeams" size="small" style="margin-top:10px">',
     '        <el-table-column label="球队" width="110">',
     '          <template #default="s"><b>{{ s.row.name }}</b></template>',
     '        </el-table-column>',
-    '        <el-table-column label="凸包面积(m²)" align="center">',
+    '        <el-table-column v-if="spacingObservedSubset" label="每次可见人数" width="120">',
+    '          <template #default="s">{{ s.row.d.n_min == null ? "—" : s.row.d.n_min + "～" + s.row.d.n_max + " 人" }}</template>',
+    '        </el-table-column>',
+    '        <el-table-column label="站位面积(m²)" align="center">',
     '          <template #default="s">{{ s.row.d.area }}</template></el-table-column>',
     '        <el-table-column label="平均间距(m)" align="center">',
     '          <template #default="s">{{ s.row.d.mean_dist }}</template></el-table-column>',
-    '        <el-table-column label="宽度(m)" align="center">',
+    '        <el-table-column label="左右展开(m)" align="center">',
     '          <template #default="s">{{ s.row.d.width }}</template></el-table-column>',
-    '        <el-table-column label="纵深(m)" align="center">',
+    '        <el-table-column label="前后展开(m)" align="center">',
     '          <template #default="s">{{ s.row.d.depth }}</template></el-table-column>',
-    '        <el-table-column label="重心到篮筐(m)" align="center">',
+    '        <el-table-column label="整体离篮筐(m)" align="center">',
     '          <template #default="s">{{ s.row.d.radius }}</template></el-table-column>',
     '      </el-table>',
     '    </el-card>',

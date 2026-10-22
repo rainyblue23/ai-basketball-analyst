@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>战术覆盖修复对照</title>
+<link rel="stylesheet" href="vendor/element-plus.css"><link rel="stylesheet" href="styles.css">
+<style>body{padding:20px}nav{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:16px}.preview-scope{padding:12px;border:1px solid #9ca3af;border-radius:8px;margin-bottom:16px}</style>
+<div id="app">
+  <h2>战术覆盖修复对照</h2>
+  <p class="preview-scope">任务 {{ meta.job_id }} · 离线预览。原任务和线上服务保持原样。位置覆盖增加不代表识别准确率；未知人员保留灰色。</p>
+  <nav><label>结果 <select id="variant" v-model="variant" @change="loadVariant">
+    <option value="saved">原任务结果</option><option value="evidence">角色与分队修复</option>
+    <option value="subset">修复＋可见球员空间曲线</option></select></label>
+    <button id="tactics-tab" @click="page='tactics'">战术图与曲线</button>
+    <button id="overview-tab" @click="page='overview'">投篮记录</button>
+    <span id="coverage">可显示 {{ quality.valid }}/{{ quality.total }} · 空间采样 {{ spacing }} 个时刻</span>
+  </nav>
+  <p v-if="error" role="alert">{{ error }}</p>
+  <component v-else-if="ready" :is="page+'-view'" ref="content"></component>
+</div>
+<script src="vendor/vue.global.prod.js"></script><script src="vendor/element-plus.full.min.js"></script>
+<script src="vendor/echarts.min.js"></script><script src="data.js"></script><script src="court.js"></script>
+<script src="components.js"></script><script src="tactics.js"></script><script src="overview.js"></script>
+<script>
+const state=Vue.reactive({game:null,tactics:null,tacticsFrames:[],players:[],shotchart:{},report:{},demoMode:true,backendOk:false,jobId:''});
+window.STORE=state;
+// Local JSON only. The production API is deliberately absent from this preview.
+window.API={jobVideoUrl:()=>''};
+window.APP_REFRESH_RESULTS=()=>Promise.resolve();window.APP_TACTICS=()=>Promise.resolve();
+const getJSON=async path=>{const r=await fetch(path,{cache:'no-store'});if(!r.ok)throw Error(path+': '+r.status);return r.json()};
+const app=Vue.createApp({
+  data:()=>({variant:'subset',page:'tactics',meta:{},ready:false,error:'',quality:{valid:0,total:0},spacing:0}),
+  methods:{async loadVariant(){try{
+    this.ready=false;
+    const [frames,tac]=await Promise.all([getJSON(this.variant+'_frames.json'),getJSON(this.variant+'_tactics.json')]);
+    state.tacticsFrames=frames;state.tactics=tac;
+    this.quality=window.PAGES.tactics.computed.frameQuality.call({frames});
+    this.spacing=new Set((tac.spacing?.timeline||[]).map(r=>r.t)).size;
+    this.ready=true;
+  }catch(e){this.error=String(e)} }},
+  async mounted(){try{
+    const [meta,game,players,shotchart,report]=await Promise.all(['meta.json','game.json','players.json','shotchart.json','report.json'].map(getJSON));
+    this.meta=meta;Object.assign(state,{jobId:meta.job_id,game,players,shotchart,report});
+    await this.loadVariant();
+  }catch(e){this.error=String(e)}}
+});
+app.use(ElementPlus);
+Object.entries(window.COMPONENTS).forEach(([k,v])=>app.component(k,v));
+app.component('tactics-view',window.PAGES.tactics);app.component('overview-view',window.PAGES.overview);
+window.previewApp=app.mount('#app');
+</script>
+</html>

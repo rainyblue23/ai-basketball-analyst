@@ -482,25 +482,24 @@ def court_fit_score(video_path: str, cal: Calibration,
     import cv2
     import numpy as np
 
-    cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        return {"ok": False, "ratio": 0.0, "note": f"打不开视频：{video_path}"}
-    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
-    dur = total / fps if fps else 0.0
+    # Only the requested full-resolution frames are decoded; never transcode a whole
+    # AV1 video merely to check one manually selected screenshot.
     if not times:
-        times = [dur * f for f in (0.05, 0.3, 0.55, 0.8) if dur > 0] or [0.0]
-
+        cap = cv2.VideoCapture(str(video_path))
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+        cap.release()
+        dur = total / fps
+        times = [dur*f for f in (0.05,0.3,0.55,0.8)] if dur>0 else [0.0]
+    from .api import _frame_bgr
     per_frame = []
     for t in times:
-        cap.set(cv2.CAP_PROP_POS_FRAMES, int(t * fps))
-        ok, frame = cap.read()
-        if not ok:
+        frame = _frame_bgr(Path(video_path),t)
+        if frame is None:
             continue
-        d = frame_fit_detail(frame, cal, n_samples)
-        d["t"] = round(t, 2)
+        d = frame_fit_detail(frame,cal,n_samples)
+        d['t'] = round(float(t),2)
         per_frame.append(d)
-    cap.release()
     if not per_frame:
         return {"ok": False, "ratio": 0.0, "note": "投影点全部落在画面外，标定可能完全不适用"}
     ratio = float(np.median([f["ratio"] for f in per_frame]))

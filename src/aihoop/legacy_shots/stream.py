@@ -3,13 +3,22 @@ from __future__ import annotations
 
 import copy
 import math
+import statistics
 from .detector import Det, filter_by_size, pick_best, pick_rim
 from .scorer import ScoreEngine
 
 # 旧版 config.yaml 的有效默认值；不搬旧版的机器路径、UI 和估算三分。
 DEFAULT_CONFIG = {
-    'detect': {'imgsz': 640, 'ball_conf': .25, 'rim_min_conf': .35,
-               'ball_min_w_ratio': .012, 'ball_max_w_ratio': .24,
+    'detect': {'imgsz': 640, 'ball_conf': .25, 'ball_candidate_conf': .25,
+               'ball_low_conf_confirm': False, 'ball_candidate_nms_iou': .5, 'rim_min_conf': .35,
+               'ball_min_side_px': 4., 'rim_refinement': True, 'ball_min_w_ratio': .012, 'ball_max_w_ratio': .24,
+               # 广播全景里的球不应大到接近人头/台标。旧上限按 1920 宽算成
+               # 460px，实际上等于没有上限；专用权重把 80~180px 的队徽和
+               # 人头报成 basketball 时会直接被接管。这里另加一个按 960
+               # 参考尺度计算的硬上限（约 58px），近景仍可由原始审计看到，但不
+               # 能污染比赛球轨迹。
+               'ball_max_reference_ratio': .06,
+               'ball_max_aspect': 2.4,
                'ball_jump_px_per_frame': 90., 'rim_min_aspect': 1.2, 'center_lock_widths': 0.,
                # ---- 静止锁（第三轮诊断加的口径）----
                # 实测：转播段有 23% 的帧，被跟踪的"球"速度 < 5 px/帧 且持续 ≥1 秒
@@ -24,9 +33,15 @@ DEFAULT_CONFIG = {
                # 就不默认改行为；要试就把它设成 1.0（诊断计数 `ball_static_lock` 不受这里影响，照样在算）。
                'ball_static_px_per_frame': 5., 'ball_static_lock_s': 0.,
                'ball_reacquire_min_conf': .35,
+               # 同一位置连续半秒几乎不动的“球”记成画面固定物；它离开该位置
+               # 后仍可重新成为球，因此不会永久屏蔽真实持球人。
+               'screen_static_reject_s': .5,
                # 筐周围高分辨率复检（第五轮）：球丢/被锁住时，用**筐为中心的窗口**再检一次球。
                # 默认关；打开后由 sources.py 在"球不可用且到重试节拍"时调用 recover_rim()。
                'ball_rim_recovery': False,
+               # 检测器漏掉球时，用局部高速运动块补“候选”；必须已有近期球轨迹
+               # 或可靠篮筐，不能凭运动块单独建立全屏篮球身份。
+               'motion_ball_recovery': True,
                # 候选出手层（只提示、不计分）的阈值；见 shot_candidates()
                'cand_window_s': .6, 'cand_rise_px': 25., 'cand_fall_px': 12.,
                'cand_near_rim_widths': 3., 'cand_dedupe_s': 1.2,
@@ -80,7 +95,7 @@ def ball_visibility(frames, fps):
         return None
     def observed(row):
         ball = row.get('ball') or {}
-        return bool(ball.get('xyxy')) and not ball.get('predicted')
+        return bool(ball.get('xyxy')) and not ball.get('predicted') and ball.get('cls') != 'motion_ball'
     seen = sum(1 for r in frames if observed(r))
     gaps, start, longest = [], None, 0.0
     for row in frames:
@@ -153,7 +168,7 @@ def shot_candidates(frames, config, events=None):
         prev_seg = seg
         ball = r.get('ball') or {}
         box = ball.get('xyxy')
-        if box and not ball.get('predicted'):
+        if box and not ball.get('predicted') and ball.get('cls') != 'motion_ball':
             tr = r.get('tracked_rim') or {}
             cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
             persons = [p.get('xyxy') for p in (r.get('persons') or []) if p.get('xyxy')]
@@ -354,24 +369,31 @@ def shot_candidates(frames, config, events=None):
 
 def unpack(det):
     return None if det is None else Det(det['cls'], det['conf'], tuple(det['xyxy']),
-                                       det.get('track_id'), det.get('predicted',False))
+                                       det.get('track_id'), det.get('predicted',False),
+                                       det.get('source','model'),tuple(det['region']) if det.get('region') is not None else None,
+                                       tuple(det.get('support_sources',())))
 
 def pack(det):
     # 不四舍五入：回放应使用同一次运行、同精度的检测。
     return None if det is None else dict(cls=det.cls_name, conf=det.conf,
-        xyxy=list(det.xyxy), track_id=det.track_id, predicted=det.predicted)
+        xyxy=list(det.xyxy), track_id=det.track_id, predicted=det.predicted,
+        measurement=det.is_measurement,source=det.source,
+        region=list(det.region) if det.region is not None else None,support_sources=list(det.support_sources))
 
 # 静止锁（"跟踪器锁在一个几乎不动的对象上"）的**诊断**阈值：固定 1 秒。
 # 动作是否执行由 config['detect']['ball_static_lock_s'] 决定（默认 0 = 关）。
 STATIC_LOCK_MEASURE_S = 1.0
 
 class LegacyShotStream:
-    def __init__(self, fps, width, config=None, manual_hoop=None, hint=None):
+    def __init__(self, fps, width, config=None, manual_hoop=None, hint=None,
+                 height=None):
         self.config=copy.deepcopy(DEFAULT_CONFIG)
         for section, values in (config or {}).items():
             if section in self.config:self.config[section].update(values)
-        self.fps=fps; self.width=width; self.engine=ScoreEngine(self.config,fps)
+        self.config['score'].update(self.config['detect'].get('shot_evidence',{}))
+        self.fps=fps; self.width=width; self.height=height; self.engine=ScoreEngine(self.config,fps)
         self.manual_hoop=manual_hoop; self.hint=hint
+        self.manual_seeded=False
         self.center_lock_width=None; self.center_rejected=0
         self.last_ball=None; self.last_frame=-999; self.vx=self.vy=0.
         self.events=[]; self.frames=[]; self.rim_seen=0; self.real_seen=0
@@ -380,12 +402,30 @@ class LegacyShotStream:
         self.low_rim_history=[]
         # 静止锁状态（口径见 DEFAULT_CONFIG['detect'] 里的注释）
         self.static_run=0; self.reacquired_frames=0; self.static_lock_frames=0
+        self.fixed_decoys=[]; self.static_rejected=0; self.head_rejected=0
+        self.low_conf_history=[]
+        self.adaptive_history=[]
+        self._camera_image=None;self._camera_frame=-1;self.camera_audit=None
+        general=self.config['detect'].get('general',{})
+        self.release_detector=None;self.role_classifier=None;self.replay_linker=None
+        if general.get('release_shadow'):
+            from .release_candidates import ShotReleaseCandidateDetector
+            self.release_detector=ShotReleaseCandidateDetector(fps,general)
+        if general.get('role_shadow'):
+            from ..player_roles import PlayerRoleClassifier
+            self.role_classifier=PlayerRoleClassifier(general)
+        if general.get('replay_shadow'):
+            from ..replay_candidates import ReplayCandidateLinker
+            self.replay_linker=ReplayCandidateLinker(general)
+        self._person_centers={}; self.camera_dx=self.camera_dy=0.
 
     def tracked_state(self, t):
         r=self.engine.rim
         if not r.initialized:return None
         return dict(cx=r.cx,cy=r.cy,w=r.w,h=r.h,segment=self.track_segment,
-                    fresh=r.fresh(t,self.engine.rim_stale_s),last_seen_t=r.last_seen_t)
+                    fresh=r.fresh(t,self.engine.rim_stale_s),last_seen_t=r.last_seen_t,
+                    status=r.status(t,self.engine.rim_stale_s),camera_verified=r.camera_verified,
+                    measured_at_t=abs(t-r.last_seen_t)<1e-7)
 
     def hint_relation(self, state):
         if self.hint is None or state is None:return None
@@ -397,10 +437,13 @@ class LegacyShotStream:
     def reset(self, frame, t):
         # 切镜结束已有候选并清空身份，禁止跨镜头拼接穿筐。
         previous=self.tracked_state(t)
+        if self.release_detector:self.release_detector.reset()
+        if self.role_classifier:self.role_classifier.reset()
         self.low_rim_history=[]
         if self.config["detect"].get("hint_first_scene_only", False):
             self.hint=None
             self.manual_hoop=None
+            self.manual_seeded=False
             self.center_lock_width=None
         closed=self.engine.finalize(frame,t)
         self.events.extend(closed)
@@ -409,6 +452,67 @@ class LegacyShotStream:
         self.engine=ScoreEngine(self.config,self.fps)
         self.last_ball=None; self.last_frame=-999; self.vx=self.vy=0.
         self.static_run=0      # 切镜后不能把上一个镜头的"静止时长"带过来
+        self.low_conf_history=[]
+        self.adaptive_history=[]
+        self._camera_image=None;self._camera_frame=-1;self.camera_audit=None
+        self.fixed_decoys=[]   # 屏幕坐标只对当前镜头成立
+        self._person_centers={}; self.camera_dx=self.camera_dy=0.
+
+    def _follow_camera(self, persons):
+        """Estimate one-frame camera translation from persistent person tracks.
+
+        A spectator/logo fixed in the arena moves across image pixels when the
+        broadcast camera pans.  Moving the decoy mask by the median displacement
+        of people keeps it attached to that background object.  A real ball has
+        additional motion relative to the scene and therefore leaves the mask.
+        """
+        current={str(p.track_id):(p.cx,p.cy) for p in persons or ()
+                 if p.track_id is not None and not p.predicted}
+        shifts=[(xy[0]-self._person_centers[key][0],
+                 xy[1]-self._person_centers[key][1])
+                for key,xy in current.items() if key in self._person_centers]
+        dx=dy=0.
+        if len(shifts)>=3:
+            dx=float(statistics.median(v[0] for v in shifts))
+            dy=float(statistics.median(v[1] for v in shifts))
+            # Track resets and cuts must not teleport every decoy mask.
+            if abs(dx)>.08*self.width or (self.height and abs(dy)>.08*self.height):
+                dx=dy=0.
+        self._person_centers=current
+        self.camera_dx,self.camera_dy=dx,dy
+        if dx or dy:
+            for decoy in self.fixed_decoys:
+                decoy['cx']+=dx;decoy['cy']+=dy
+        return dx,dy
+
+    def observe_camera(self, frame, t, image, cut=False):
+        options=self.config['detect'].get('general',{})
+        if not options.get('dynamic_rim') or image is None:return
+        if self._camera_frame==frame:return
+        from ..frame_motion import validated_forward_motion
+        import time
+        started=time.perf_counter()
+        if cut:
+            self._camera_image=None
+            self._camera_features={}
+        if not hasattr(self,'_camera_features'):self._camera_features={}
+        # The geometry helper resizes both images consistently and returns an
+        # original-pixel map. Keep one prior image, never the whole video.
+        rim=self.engine.rim
+        # These are exactly compensate()'s conditions for a transform to have
+        # any effect. Skipping here cannot extend a stale chain or hide a jump.
+        needed=(rim.initialized and frame==rim.geometry_frame+1
+                and rim.geometry_t<t and 0<=t-rim.last_seen_t<=rim.prediction_s)
+        if options.get('camera_demand_only') and not needed:
+            self.camera_audit={'ok':False,'forward_H':None,'reason':'geometry_not_consumable'}
+            self._camera_features.clear()
+        else:
+            self.camera_audit=validated_forward_motion(self._camera_image,image,options,
+                feature_cache=self._camera_features if options.get('camera_feature_cache') else None,
+                frame_index=frame)
+        self.camera_audit['geometry_wall_ms']=(time.perf_counter()-started)*1000
+        self.engine.rim.compensate(self.camera_audit,t,frame)
+        self._camera_image=image.copy();self._camera_frame=frame
 
     def static_lock(self):
         """是否**允许换锚**：当前轨迹已连续够久几乎不动，且这条规则被打开。
@@ -445,11 +549,74 @@ class LegacyShotStream:
         best=None
         for c in balls:
             if c is current or float(c.conf)<floor:continue
-            if not lo<=c.w<=d['ball_max_w_ratio']*self.width:continue
+            hi=min(d['ball_max_w_ratio']*self.width,
+                   d.get('ball_max_reference_ratio',.06)*min(self.width,960))
+            if not lo<=c.w<=hi or not lo<=c.h<=hi:continue
+            if max(c.w,c.h)>d.get('ball_max_aspect',2.4)*max(1.,min(c.w,c.h)):continue
             if best is None or float(c.conf)>float(best.conf):best=c
         return best
 
-    def preview_ball(self, frame, detections, image=None, cut=False, suspect=False):
+    @staticmethod
+    def _inside_person_head(candidate, persons):
+        """Reject a detector box whose centre and extent sit inside a person's head.
+
+        A real release can overlap the face for one frame, but dropping that ambiguous
+        frame is safer than starting a many-second track on a head. Airborne frames
+        immediately outside the head remain eligible and can initialise/reacquire.
+        """
+        cx,cy=candidate.cx,candidate.cy
+        for p in persons or ():
+            x1,y1,x2,y2=p.xyxy
+            ph=max(1.,y2-y1);pw=max(1.,x2-x1)
+            # The upper 28% of a detector person box includes shoulders, arms and
+            # a ball held beside the face.  Use the central head core only; the
+            # NBA regression frame has the true ball at the outer edge of this
+            # region and must remain eligible.
+            head_cx=(x1+x2)/2
+            if (abs(cx-head_cx)<=.22*pw and y1-.03*ph<=cy<=y1+.24*ph
+                    and candidate.w<=1.15*pw and candidate.h<=.42*ph):
+                return True
+        return False
+
+    def _fixed_decoy(self, candidate):
+        return any(math.hypot(candidate.cx-d['cx'],candidate.cy-d['cy'])
+                   <=max(5.,d['radius']) for d in self.fixed_decoys)
+
+    def _unconfirmed_upper_graphic(self,candidate,previous):
+        """Arena clocks/logos live high in the frame and often change every second.
+
+        Appearance recurrence cannot catch changing digits.  A high-frame candidate
+        is admitted only when a currently tracked rim gives it basketball context.
+        """
+        if not self.height or candidate.cy>=.25*self.height:return False
+        # A genuine high arc may continue from a ball already tracked lower in the
+        # frame.  A clock/logo must not initialise a new ball identity merely because
+        # it happens to sit beside the backboard.
+        return previous is None
+
+    def _low_conf_context(self, candidate, frame):
+        recent = self.last_ball is not None and frame-self.last_frame <= self.fps*self.config['score']['ball_recent_s']
+        if recent:
+            delta=max(1,frame-self.last_frame)
+            steps=min(delta,self.config['score']['ball_max_gap_frames'])
+            target=(self.last_ball.cx+self.vx*steps,self.last_ball.cy+self.vy*steps)
+            if math.hypot(candidate.cx-target[0],candidate.cy-target[1]) <= self.config['detect']['ball_jump_px_per_frame']*math.sqrt(delta):
+                return True
+        rim=self.engine.rim
+        return bool(rim.fresh(frame/self.fps,self.engine.rim_stale_s) and
+                    math.hypot(candidate.cx-rim.cx,candidate.cy-rim.cy) <=
+                    self.config['detect'].get('ball_low_conf_near_rim_widths',3.)*rim.w)
+
+    def _low_conf_supported(self, candidate, frame):
+        if not self._low_conf_context(candidate,frame):return False
+        from .ball_selection import temporal_support
+        d=self.config['detect']
+        return temporal_support(candidate,frame,self.fps,self.low_conf_history,
+            min_frames=d.get('ball_low_conf_min_frames',3),window_s=d.get('ball_low_conf_window_s',.25),
+            min_motion_px=d.get('ball_low_conf_min_motion_px',2.),jump=d['ball_jump_px_per_frame'])
+
+    def preview_ball(self, frame, detections, image=None, cut=False, suspect=False,
+                     persons=()):
         """Same selection as update, without altering history or producing evidence.
 
         `suspect=True`（调用方按 static_lock() 判定）时允许一次重新锚定；
@@ -461,18 +628,49 @@ class LegacyShotStream:
             previous=None
         velocity=(self.vx,self.vy) if previous is not None else (0.,0.)
         from ..screen_graphics import matches
+        from ..ball_recovery import deduplicate_candidates, unconfirmed_crop_boundary
+        detections=deduplicate_candidates(detections,d.get('ball_candidate_nms_iou',.5))
         raw_balls=[b for b in detections if ('ball' in b.cls_name.lower() or
-            'basket' in b.cls_name.lower()) and b.conf>=d['ball_conf']]
+            'basket' in b.cls_name.lower()) and b.conf>=min(d['ball_conf'],d.get('ball_candidate_conf',d['ball_conf']))]
         # Cap the minimum at the 960px reference scale: HD must not discard
         # a 12px live ball just because the frame is 1920px wide.
-        lo=d['ball_min_w_ratio']*min(self.width,960)
+        lo=(d['ball_min_side_px'] if d.get('ball_min_side_px') is not None
+            else d['ball_min_w_ratio']*min(self.width,960))
+        hi=min(d['ball_max_w_ratio']*self.width,
+               d.get('ball_max_reference_ratio',.06)*min(self.width,960))
         ball_audit=[];balls=[]
         for candidate in raw_balls:
             reason='eligible'
-            if not lo<=candidate.w<=d['ball_max_w_ratio']*self.width:reason='size_rejected'
+            adaptation=None
+            size_ok=lo<=candidate.w<=hi and lo<=candidate.h<=hi
+            general=d.get('general',{})
+            if general.get('adaptive_ball') and candidate.is_measurement:
+                from .ball_selection import adaptive_size_evidence
+                size_ok,adaptation=adaptive_size_evidence(candidate,previous,persons,
+                    self.tracked_state(frame/self.fps),self.adaptive_history,frame,self.fps,
+                    self.width,self.height,lo,hi,general,d['ball_jump_px_per_frame'])
+            if not candidate.is_measurement:reason='motion_only'
+            elif not size_ok:reason='size_rejected'
+            elif max(candidate.w,candidate.h)>d.get('ball_max_aspect',2.4)*max(1.,min(candidate.w,candidate.h)):reason='shape_rejected'
             elif matches(image,candidate.xyxy,d.get('screen_graphics')):reason='screen_graphic'
+            elif self._fixed_decoy(candidate):reason='screen_static'
+            elif self._inside_person_head(candidate,persons):reason='person_head'
+            elif d.get('ball_roi_edge_guard',False) and unconfirmed_crop_boundary(
+                    candidate,self.width,self.height,d.get('ball_roi_edge_margin_px',2.)):
+                reason='roi_boundary_unconfirmed'
+            elif self._unconfirmed_upper_graphic(candidate,previous):reason='upper_graphic'
+            elif candidate.conf < d['ball_conf']:
+                if not d.get('ball_low_conf_confirm'):reason='low_confidence'
+                elif cut:reason='low_conf_pending'
+                elif not self._low_conf_context(candidate,frame):reason='low_conf_no_context'
+                elif not self._low_conf_supported(candidate,frame):reason='low_conf_pending'
+                else:balls.append(candidate)
             else:balls.append(candidate)
-            ball_audit.append(dict(**pack(candidate),selection_reason=reason))
+            entry=dict(**pack(candidate),selection_reason=reason)
+            if adaptation is not None:entry['size_adaptation']=adaptation
+            if d.get('ball_filter_diagnostics',False):
+                entry.update(size_limits_px=[lo,hi],observed_size_px=[candidate.w,candidate.h])
+            ball_audit.append(entry)
         from .ball_selection import select_ball
         ball, selection = select_ball(balls, previous, frame-self.last_frame,
                                       velocity, gap, d['ball_jump_px_per_frame'])
@@ -491,20 +689,67 @@ class LegacyShotStream:
                 audit.update(selection[eligible_index]);eligible_index+=1
         return ball, ball_audit
 
-    def update(self, frame, t, detections, persons=(), cut=False, image=None):
+    def update(self, frame, t, detections, persons=(), cut=False, image=None, head_context=None, role_on_court=None):
         if cut:self.reset(frame,t)
+        self.observe_camera(frame,t,image,cut=cut)
         d=self.config['detect'];s=self.config['score']
         gap=s['ball_max_gap_frames']
+        camera_dx,camera_dy=self._follow_camera(persons)
         if self.last_ball and frame-self.last_frame>max(gap,int(self.fps*s['ball_recent_s'])):
             self.last_ball=None; self.vx=self.vy=0.
+        # 把已经连续半秒不动的框登记为当前镜头的固定误检区域，然后断开旧锚。
+        # 真球若从持球状态开始运动，离开这个很小的区域后会立刻重新 eligible。
+        reject_s=float(d.get('screen_static_reject_s') or 0.)
+        if (reject_s>0 and self.last_ball is not None
+                and not self.static_lock()
+                and self.static_run>=max(2,int(round(self.fps*reject_s)))):
+            self.fixed_decoys.append(dict(cx=self.last_ball.cx,cy=self.last_ball.cy,
+                radius=max(8.,.55*max(self.last_ball.w,self.last_ball.h))))
+            self.fixed_decoys=self.fixed_decoys[-16:]
+            self.last_ball=None;self.last_frame=-999;self.vx=self.vy=0.;self.static_run=0
         suspect=self.static_lock()
         if self.static_lock_measured():self.static_lock_frames+=1
-        ball, ball_audit = self.preview_ball(frame,detections,image,suspect=suspect)
-        if ball:
+        ball, ball_audit = self.preview_ball(frame,detections,image,suspect=suspect,
+                                             persons=persons if head_context is None else head_context)
+        # Commit each timestamp once, after all non-mutating preview calls.
+        window=self.config['detect'].get('ball_low_conf_window_s',.25)
+        self.low_conf_history=[(f,items) for f,items in self.low_conf_history
+                               if f<frame and 0 <= (frame-f)/self.fps <= window]
+        history_candidates=[unpack(a) for a in ball_audit if a.get('selection_reason') in
+                            ('selected','not_selected','low_conf_pending')]
+        if history_candidates:
+            self.low_conf_history.append((frame,sorted(history_candidates,key=lambda c:-c.conf)[:self.config['detect'].get('ball_low_conf_max_candidates',16)]))
+        general=d.get('general',{})
+        if general.get('adaptive_ball'):
+            from ..screen_graphics import matches
+            context=persons if head_context is None else head_context
+            # Raw model votes are stored once AFTER preview; unsafe head/UI
+            # boxes and predictions can never vote to enlarge a future gate.
+            clean=[unpack(a) for a in ball_audit if a['measurement'] and
+                a['selection_reason'] in ('selected','not_selected','size_rejected','motion_rejected')]
+            clean=[b for b in clean if max(b.w,b.h)<=general['adaptive_max_short_side_ratio']*min(self.width,self.height or self.width)
+                and min(b.w,b.h)>=general['adaptive_min_side_px']
+                and max(b.w,b.h)<=d.get('ball_max_aspect',2.4)*min(b.w,b.h)
+                and not self._inside_person_head(b,context) and not self._fixed_decoy(b)
+                and not matches(image,b.xyxy,d.get('screen_graphics'))
+                and not self._unconfirmed_upper_graphic(b,self.last_ball)]
+            self.adaptive_history=[(f,items) for f,items in self.adaptive_history
+                                   if 0<(frame-f)/self.fps<=general['adaptive_window_s']]
+            if clean:self.adaptive_history.append((frame,clean[:16]))
+        for audit in ball_audit:audit.update(frame_id=frame,timestamp=t)
+        self.static_rejected+=sum(a.get('selection_reason')=='screen_static' for a in ball_audit)
+        self.head_rejected+=sum(a.get('selection_reason')=='person_head' for a in ball_audit)
+        # A prediction is display/continuity evidence only.  It must never refresh
+        # the last *measured* frame; doing so creates an immortal false track that
+        # blocks every distant real-ball candidate forever.
+        if ball and ball.is_measurement:
             if self.last_ball and 0<frame-self.last_frame<=10:
                 delta=frame-self.last_frame
                 self.vx=(ball.cx-self.last_ball.cx)/delta;self.vy=(ball.cy-self.last_ball.cy)/delta
-                step=math.hypot(ball.cx-self.last_ball.cx,ball.cy-self.last_ball.cy)/delta
+                # Remove the estimated camera translation.  Background spectators,
+                # clocks and logos then remain stationary even during a pan.
+                step=math.hypot(ball.cx-self.last_ball.cx-camera_dx,
+                                ball.cy-self.last_ball.cy-camera_dy)/delta
                 if step<d['ball_static_px_per_frame']:self.static_run+=1
                 else:self.static_run=0
             else:
@@ -518,7 +763,18 @@ class LegacyShotStream:
                         for i,v in enumerate(b.xyxy)),predicted=True)
         else:
             self.static_run=0
-        rims=[r for r in detections if any(k in r.cls_name.lower() for k in ('rim','hoop'))]
+        refinement_audit=[]
+        refined=[]
+        if d.get('rim_refinement') and image is not None:
+            from ..hoop import refine_rim_candidate
+            for candidate in detections:
+                if (candidate.cls_name.lower() == 'hoop' and candidate.conf >= d['rim_min_conf']
+                        and candidate.h > 0 and candidate.w/candidate.h < d['rim_min_aspect']):
+                    rim_candidate, audit = refine_rim_candidate(image, candidate,
+                        **d.get('rim_refinement_options', {}))
+                    refinement_audit.append(audit)
+                    if rim_candidate is not None:refined.append(rim_candidate)
+        rims=[r for r in [*detections,*refined] if any(k in r.cls_name.lower() for k in ('rim','hoop'))]
         # 完整指送到此处的 NMS 后候选，不包含检测器阈值以下的框。
         candidates=[dict(index=i,**pack(r),selection_reason='not_selected') for i,r in enumerate(rims)]
         candidate_by_id={id(r):c for r,c in zip(rims,candidates)}
@@ -571,18 +827,35 @@ class LegacyShotStream:
         rim,_=pick_rim(rims,min_conf=d['rim_min_conf'],min_aspect=d['rim_min_aspect'])
         if rim is not None:candidate_by_id[id(rim)]['selection_reason']='selected'
         selected_source='detector' if rim is not None else 'none'
-        if self.manual_hoop is not None and self.manual_hoop.rx>0 and self.manual_hoop.ry>0:
+        # 人工框只在它所属的标记帧初始化一次。旧实现每一帧都把同一组像素
+        # 坐标强行覆盖回来；镜头稍微平移，篮筐就被锁在错误位置。后续位置由
+        # detector / appearance lock 更新，切镜后不沿用旧像素坐标。
+        mark_t=float(getattr(self.manual_hoop,'t',0.) or 0.) if self.manual_hoop is not None else 0.
+        use_manual=(self.manual_hoop is not None and self.manual_hoop.rx>0 and
+                    self.manual_hoop.ry>0 and not self.engine.rim.initialized and
+                    t+(.51/max(self.fps,1))>=mark_t)
+        if use_manual:
             for c in candidates:
                 if c['selection_reason']=='selected':c['selection_reason']='manual_override'
             selected_source='manual'
             h=self.manual_hoop
             rim=Det('rim',1.,(h.cx-h.rx,h.cy-h.ry,h.cx+h.rx,h.cy+h.ry))
+            self.manual_seeded=True
         self.rim_seen+=int(rim is not None)
         previous=self.tracked_state(t)
         row=dict(frame=frame,t=t,ball=pack(ball),rim=pack(rim),persons=[pack(p) for p in persons],cut=cut,
-                 rim_candidates=candidates,selected_rim_source=selected_source,
+                 rim_candidates=candidates,rim_refinement=refinement_audit,selected_rim_source=selected_source,
+                 head_context=[pack(p) for p in (head_context or ())],
                  ball_candidates=ball_audit)
         new_events=self.engine.update(frame,t,ball,rim,list(persons))
+        active=self.engine.attempt
+        row['shot_state']=('SHOT_RESOLVED' if new_events else
+            'BALL_IN_FLIGHT' if active and active.binding=='contact_sequence' else
+            'SHOT_CANDIDATE' if active else 'IDLE')
+        row['shot_evidence']=(dict(candidate_t=active.candidate_t,
+            release_known=active.binding=='contact_sequence',release_evidence=dict(active.release_evidence),
+            entered=active.entered,crossing_t=active.crossing_t,real_obs=active.real_obs,
+            geometry_source=self.engine.ball_geometry_mode) if active else None)
         reason=self.engine.rim.last_update_reason
         if reason in ('initialized','reacquired_near','reacquired_far'):
             self.track_segment+=1
@@ -595,6 +868,21 @@ class LegacyShotStream:
         row.update(tracked_rim=state,tracker_reason=reason,hint_relation=self.hint_relation(state),
                    center_rejected_candidates=self.center_rejected-rejected_before,
                    evidence_segment=(previous['segment'] if previous and new_events and reason.startswith('reacquired') else self.track_segment))
+        if general:
+            row['ball_state']='DETECTED' if ball and ball.is_measurement else 'PREDICTED' if ball and ball.predicted else 'LOST'
+            row['camera_motion']=self.camera_audit
+        if self.release_detector:
+            self.release_detector.update(frame,t,ball,persons,state)
+            row['release_phase']=self.release_detector.last_phase
+            row['scene_segment']=self.release_detector.segment
+            row['release_candidate_ids']=[c['candidate_id'] for c in self.release_detector.candidates
+                                          if c['candidate_state']=='COLLECTING_CONTEXT']
+        if self.role_classifier:
+            row['player_roles']=self.role_classifier.update(head_context or persons,detections,role_on_court)
+        if self.replay_linker:
+            self.replay_linker.sample(frame,t,image)
+            for c in self.release_detector.candidates if self.release_detector else ():
+                self.replay_linker.observe(c)
         for c in candidates:
             c['tracker_reason']=reason if c['selection_reason']=='selected' else 'not_submitted'
         self.center_rejected_frames+=int(self.center_rejected>rejected_before)
@@ -606,10 +894,11 @@ class LegacyShotStream:
 
     def finish(self, frame, t):
         self.events.extend(self.engine.finalize(frame,t))
+        if self.release_detector:self.release_detector.finish()
         return self.events
 
     def to_dict(self):
-        return dict(version='hoopai_legacy_v1',trace_schema=2,fps=self.fps,config=self.config,
+        output=dict(version='hoopai_legacy_v1',trace_schema=2,fps=self.fps,config=self.config,
                     rim_tracking=self.tracking_summary(),
                     shot_candidates=shot_candidates(self.frames,self.config,self.events),
                     frames=self.frames,events=self.events,real_ball_frames=self.real_seen,
@@ -618,9 +907,18 @@ class LegacyShotStream:
                     # 两者都要能对上，否则"换了没换"就成了没法复查的说法。
                     ball_static_lock=dict(suspect_frames=self.static_lock_frames,
                                           reacquired_frames=self.reacquired_frames,
+                                          static_rejected=self.static_rejected,
+                                          head_rejected=self.head_rejected,
                                           lock_s=self.config['detect'].get('ball_static_lock_s'),
                                           px_per_frame=self.config['detect'].get('ball_static_px_per_frame')),
                     center_lock_width=self.center_lock_width, center_hint=self.hint)
+        if self.release_detector:
+            from .release_candidates import link_forward_evidence
+            output['release_shadow']={'candidates':self.release_detector.candidates,
+                'forward_links':link_forward_evidence(self.release_detector.candidates,self.events,self.frames),
+                'replay_links':self.replay_linker.links if self.replay_linker else [],
+                'counts_for_statistics':False}
+        return output
 
     def tracking_summary(self):
         last=self.frames[-1] if self.frames else {}

@@ -1,16 +1,69 @@
 """Bounded, optional crop inference. Only actual detector boxes are returned."""
 import math
+import cv2
+import numpy as np
 from .legacy_shots.detector import Det
 
 
-def measured_detections(result, offset=(0,0), balls_only=False):
+def cpu_boxes(result):
+    """Transfer the compact box tensor once, avoiding a CUDA sync per scalar."""
+    boxes = result.boxes
+    if boxes is not None and hasattr(boxes, 'cpu'):
+        result.boxes = boxes.cpu()
+    return result.boxes if result.boxes is not None else []
+
+
+def measured_detections(result, offset=(0,0), balls_only=False, source="full_frame", region=None):
     rows=[]
-    for box in result.boxes if result.boxes is not None else []:
+    for box in cpu_boxes(result):
         name=str(result.names.get(int(box.cls[0]),''))
         if balls_only and 'ball' not in name.lower():continue
         xyxy=[float(v)+offset[i%2] for i,v in enumerate(box.xyxy[0])]
-        rows.append(Det(name,float(box.conf[0]),tuple(xyxy)))
+        rows.append(Det(name,float(box.conf[0]),tuple(xyxy),source=source,region=region))
     return rows
+
+
+def deduplicate_candidates(detections, iou=.5):
+    """One measured ball box per overlapping object, retaining all source names.
+
+    Separate model scales/ROIs at one timestamp are not temporal votes. Never
+    merge rim or motion candidates into a measured ball or inflate confidence.
+    """
+    from dataclasses import replace
+    remaining=[];balls=[]
+    for index,det in enumerate(detections):
+        if det.is_measurement and 'ball' in det.cls_name.lower():balls.append((index,det))
+        else:remaining.append(det)
+    kept=[];positions=[]
+    for position,det in sorted(balls,key=lambda item:item[1].conf,reverse=True):
+        duplicate=None
+        for index,old in enumerate(kept):
+            intersection=max(0,min(old.xyxy[2],det.xyxy[2])-max(old.xyxy[0],det.xyxy[0])) * max(0,min(old.xyxy[3],det.xyxy[3])-max(old.xyxy[1],det.xyxy[1]))
+            union=old.area+det.area-intersection
+            if union>0 and intersection/union>=iou:
+                duplicate=index;break
+        if duplicate is None:
+            kept.append(det);positions.append(position)
+        else:
+            old=kept[duplicate]
+            kept[duplicate]=replace(old,support_sources=tuple(dict.fromkeys((old.source,*old.support_sources,det.source,*det.support_sources))))
+            positions[duplicate]=min(positions[duplicate],position)
+    return [*remaining,*(det for _,det in sorted(zip(positions,kept),key=lambda pair:pair[0]))]
+
+
+def unconfirmed_crop_boundary(det, width, height, margin=2.):
+    """A crop-clipped box needs full-frame corroboration before seeding a track.
+
+    A crop boundary inside the image can truncate an unrelated larger object.
+    Keep the detector box in the audit; do not confuse this with a screen edge
+    or with full-frame boxes corroborated by IoU during candidate fusion.
+    """
+    if det.source not in ('ball_roi','rim_roi') or det.region is None:return False
+    if {'full_frame','multiscale'} & set(det.support_sources):return False
+    x1,y1,x2,y2=det.region;bx1,by1,bx2,by2=det.xyxy
+    return ((x1>0 and bx1-x1<=margin) or (y1>0 and by1-y1<=margin)
+            or (x2<width and x2-bx2<=margin)
+            or (height is not None and y2<height and y2-by2<=margin))
 
 
 def recovery_region(stream, frame, width, height):
@@ -31,11 +84,12 @@ def recover_region(model,image,options,stream,frame):
     audit=dict(ran=False,reason='no_recent_track',region_px=region,candidates=[])
     if region is None:return [],audit
     x1,y1,x2,y2=region
-    result=model.predict(image[y1:y2,x1:x2],**dict(options,imgsz=640))[0]
-    detections=measured_detections(result,(x1,y1),balls_only=True)
+    size=stream.config['detect'].get('ball_roi_imgsz',640)
+    result=model.predict(image[y1:y2,x1:x2],**dict(options,imgsz=size))[0]
+    detections=measured_detections(result,(x1,y1),balls_only=True,source="ball_roi",region=tuple(region))
     # Map each measured crop box back to the ORIGINAL frame exactly once.
     detections=[d for d in detections if x1<=d.xyxy[0]<d.xyxy[2]<=x2 and y1<=d.xyxy[1]<d.xyxy[3]<=y2]
-    audit.update(ran=True,reason='measured_crop_retry',imgsz=640,
+    audit.update(ran=True,reason='measured_crop_retry',imgsz=size,
                  candidates=[d.as_dict() for d in detections])
     return detections,audit
 
@@ -53,7 +107,11 @@ def rim_recovery_region(stream, frame, width, height):
     半径取 approach_radius_ratio × 筐宽（默认 5×），与建立出手的门限同源。
     """
     rim=getattr(stream.engine,'rim',None)
-    if rim is None or not getattr(rim,'initialized',False):
+    t=frame/max(stream.fps,1.)
+    bounded_prediction=bool(rim is not None and getattr(rim,'dynamic_enabled',False)
+                            and rim.status(t,stream.engine.rim_stale_s)=='PREDICTED')
+    if (rim is None or not getattr(rim,'initialized',False)
+            or not (rim.fresh(t,stream.engine.rim_stale_s) or bounded_prediction)):
         return None
     ratio=float(stream.config['score'].get('approach_radius_ratio',5.))
     radius=min(float(max(width,height)),max(96.,ratio*max(1.,float(rim.w))))
@@ -75,9 +133,64 @@ def recover_rim(model,image,options,stream,frame):
     audit=dict(ran=False,reason='no_rim',region_px=region,candidates=[])
     if region is None:return [],audit
     x1,y1,x2,y2=region
-    result=model.predict(image[y1:y2,x1:x2],**dict(options,imgsz=960))[0]
-    detections=measured_detections(result,(x1,y1),balls_only=True)
+    size=stream.config['detect'].get('ball_rim_roi_imgsz',960)
+    result=model.predict(image[y1:y2,x1:x2],**dict(options,imgsz=size))[0]
+    detections=measured_detections(result,(x1,y1),balls_only=True,source="rim_roi",region=tuple(region))
     detections=[d for d in detections if x1<=d.xyxy[0]<d.xyxy[2]<=x2 and y1<=d.xyxy[1]<d.xyxy[3]<=y2]
-    audit.update(ran=True,reason='rim_crop_retry',imgsz=960,
+    audit.update(ran=True,reason='rim_crop_retry',imgsz=size,
                  candidates=[d.as_dict() for d in detections])
     return detections,audit
+
+
+def motion_candidates(motion, stream, frame, width, height, max_candidates=8):
+    """Generate small fast-moving object candidates inside a bounded search region.
+
+    Motion alone never proves that an object is a basketball.  These candidates are
+    admitted only when a detector observation is missing and when there is either a
+    recent ball trajectory or an established rim.  The existing temporal selector
+    and shot geometry still have to accept the resulting track.
+    """
+    if motion is None or getattr(motion, 'size', 0) == 0:
+        return [], {'ran': False, 'reason': 'no_motion'}
+    region = recovery_region(stream, frame, width, height)
+    reason = 'recent_ball'
+    if region is None:
+        # A fast blob near a rim is still just a hand, head, net, LED or camera
+        # motion.  Without a detector-confirmed recent ball it stays diagnostic
+        # evidence and must not seed the scoring trajectory.
+        return [], {'ran': False, 'reason': 'no_recent_ball'}
+    x1,y1,x2,y2=region
+    roi=motion[y1:y2,x1:x2]
+    if roi.size == 0:
+        return [], {'ran': False, 'reason': 'empty_region', 'region_px': region}
+    # Camera motion raises the whole ROI.  Use a high local percentile and a fixed
+    # floor so only compact peaks remain; then join the short streak of a blurred ball.
+    threshold=max(28.,float(np.percentile(roi,96)))
+    mask=(roi>=threshold).astype(np.uint8)*255
+    mask=cv2.morphologyEx(mask,cv2.MORPH_OPEN,np.ones((2,2),np.uint8))
+    mask=cv2.dilate(mask,np.ones((3,3),np.uint8),iterations=1)
+    contours,_=cv2.findContours(mask,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
+    hi=.075*min(width,960)
+    rows=[]
+    for contour in contours:
+        area=float(cv2.contourArea(contour))
+        if area<5 or area>max(1600.,hi*hi):continue
+        xx,yy,w,h=cv2.boundingRect(contour)
+        if w<3 or h<3 or w>hi or h>hi:continue
+        aspect=max(w,h)/max(1.,min(w,h))
+        if aspect>3.0:continue
+        perimeter=float(cv2.arcLength(contour,True))
+        circularity=(4*math.pi*area/(perimeter*perimeter)) if perimeter>0 else 0.
+        if circularity<.18:continue
+        fill=area/max(1.,w*h)
+        if fill<.16:continue
+        patch=roi[yy:yy+h,xx:xx+w]
+        strength=float(patch.mean())/255.
+        conf=min(.49,.26+.14*strength+.05*min(fill,1.)+.04*min(circularity,1.)
+                 -.025*max(0.,aspect-1.))
+        rows.append((conf,Det('motion_ball',conf,(x1+xx,y1+yy,x1+xx+w,y1+yy+h))))
+    rows.sort(key=lambda item:item[0],reverse=True)
+    detections=[d for _,d in rows[:max_candidates]]
+    return detections, {'ran': True, 'reason': reason, 'region_px': region,
+                        'threshold': round(threshold,2),
+                        'candidates': [d.as_dict() for d in detections]}

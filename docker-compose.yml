@@ -21,7 +21,6 @@ services:
     environment:
       - PYTHONPATH=/app/src
       - PYTHONUNBUFFERED=1
-      - AIHOOP_REGISTER_CODE=${AIHOOP_REGISTER_CODE}
       - AIHOOP_ALLOWED_ORIGINS=${AIHOOP_ALLOWED_ORIGINS:-}
       - AIHOOP_COOKIE_SECURE=${AIHOOP_COOKIE_SECURE:-0}
       - AIHOOP_MODELS=/app/models
@@ -36,4 +35,3 @@ services:
       retries: 3
       start_period: 10s
     restart: unless-stopped
-

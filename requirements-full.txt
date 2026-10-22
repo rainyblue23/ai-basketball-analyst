@@ -14,5 +14,5 @@ numpy>=1.26
 # moviepy>=1.0.3
 # 可选：单应/数值计算加速（本骨架的 court.py 已用纯 python 实现，可不装）
 # numpy>=1.26
-# 可选：记分牌 OCR
-# paddleocr>=2.7
+# 可选：Linux 比分牌 OCR 与球衣号码 OCR
+# pip install -r requirements-jersey.txt

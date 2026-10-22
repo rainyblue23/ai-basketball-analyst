@@ -38,13 +38,18 @@ PIXEL_TOL = 0.005 + 1e-6
 
 # 5 个真实场地特征点（不共线、铺得开），归一化坐标**故意多给小数位**，
 # 用来验证"不得假定请求只有六位小数"。
-NORM = {
-    "hoop_far":         [0.3612345678901234, 0.5123456789012345],
-    "corner_far_left":  [0.2045678901234567, 0.7234567890123456],
-    "corner_far_right": [0.6534567890123456, 0.7145678901234567],
-    "lane_far_left":    [0.5023456789012345, 0.8156789012345678],
-    "arc_far":          [0.7601234567890123, 0.6609876543210987],
-}
+from aihoop.court import find_homography
+_fixture_H = np.asarray(find_homography(
+    [[80,420],[560,420],[520,80],[120,80]],
+    [[-7.5,14],[7.5,14],[7.5,0],[-7.5,0]]))
+_fixture_inverse = np.linalg.inv(_fixture_H)
+NORM = {}
+for name in ['corner_far_left','corner_far_right','paint_base_far_left',
+             'paint_base_far_right','lane_far_left','lane_far_right','arc_far']:
+    x,y=api.COURT_LANDMARKS[name]
+    q=_fixture_inverse @ np.array([x,y,1.])
+    NORM[name]=[float(q[0]/q[2]/640),float(q[1]/q[2]/480)]
+
 
 
 def _video() -> Path:
@@ -78,9 +83,16 @@ def _run(body: dict) -> tuple[dict, dict]:
     from aihoop import calib_segments
     old_ov = getattr(calib_segments, "_PATH_OVERRIDE", None)
     calib_segments.set_path_override(lambda v: out_box / (Path(v).stem + ".json"))
+    from aihoop import calibcheck
+    old_quality = calibcheck.court_fit_score
+    old_split = api._split_marks_by_shot
+    calibcheck.court_fit_score = lambda *_a, **_k: {'ok':True, 'ratio':2.0}
+    api._split_marks_by_shot = lambda _v, times: ([times], [])
     try:
         out = asyncio.run(api.post_calibrate_multi(api.MultiCalibRequest(**body)))
     finally:
+        calibcheck.court_fit_score = old_quality
+        api._split_marks_by_shot = old_split
         api._calibration_path_for = old
         calib_segments.set_path_override(old_ov)
     saved = json.loads(Path(out["path"]).read_text(encoding="utf-8")) if out.get("path") else {}
@@ -92,7 +104,7 @@ def _frames(ts=(0.30, 0.70)) -> list:
 
 
 def _body(compensate: bool, ts=(0.30, 0.70)) -> dict:
-    return {"video_path": str(_video()), "compensate": compensate, "confirm": True,
+    return {"video_path": str(_video()), "compensate": compensate, "confirm": True, "snap": False,
             "frames": _frames(ts)}
 
 

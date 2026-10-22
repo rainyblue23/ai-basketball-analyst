@@ -214,7 +214,7 @@ window.PAGES['stats'] = {
   template: [
     '<div>',
     '  <section class="card" v-if="sampleReview">',
-    '    <h3 class="card-title">全片出手统计 <el-tag size="small" effect="plain">人工复核</el-tag></h3>',
+    '    <h3 class="card-title">全片出手统计 <el-tag size="small" effect="plain">样例分析</el-tag></h3>',
     '    <table class="data-table" style="width:100%;text-align:left"><thead><tr><th>类型</th><th>出手</th><th>命中</th><th>命中率</th></tr></thead><tbody>',
     '      <tr><td>运动战</td><td>{{ sampleReview.field_attempts }}</td><td>{{ sampleReview.field_made }}</td><td>{{ sampleReview.field_attempts ? Math.round(100*sampleReview.field_made/sampleReview.field_attempts) : 0 }}%</td></tr>',
     '      <tr><td>罚球</td><td>{{ sampleReview.free_throw_attempts }}</td><td>{{ sampleReview.free_throw_made }}</td><td>{{ sampleReview.free_throw_attempts ? Math.round(100*sampleReview.free_throw_made/sampleReview.free_throw_attempts) : 0 }}%</td></tr>',
@@ -229,7 +229,7 @@ window.PAGES['stats'] = {
     // 会以为是自己的操作漏了（实测：跑的是 8 秒片段 → 0 名球员）。分两种情况说清楚。
     '    <el-empty :description="S.jobId ? \'这次分析没有识别到球员，所以统计表是空的（原因见页面顶部提示）\' : \'还没有选中分析任务：到「上传与分析」页跑一次，或在顶栏「当前任务」里挑一个\'" />',
     '  </div>',
-    '  <template v-if="players.length">',
+    '  <template v-if="players.length && !sampleReview">',
     '    <div class="grid grid-court">',
     '      <div class="card">',
     '        <h3 class="card-title">得分榜</h3>',

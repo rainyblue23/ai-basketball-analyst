@@ -58,7 +58,7 @@ class GraphicsAndJerseyTest(unittest.TestCase):
  def test_hd_minimum_and_reference_resolution(self):
   for width in (852,960,1920):
    s=LegacyShotStream(30,width);b=s.update(0,0,[Det('basketball',.8,(40,40,52,52))]);self.assertIsNotNone(b)
-  s=LegacyShotStream(30,1920);self.assertIsNone(s.update(0,0,[Det('basketball',.8,(40,40,45,45))]))
+  s=LegacyShotStream(30,1920,{'detect':{'ball_min_side_px':None}});self.assertIsNone(s.update(0,0,[Det('basketball',.8,(40,40,45,45))]))
  def test_jersey_votes_need_independent_times(self):
   self.assertIsNone(consensus([{'t':0,'number':'13'}]*5))
   self.assertEqual(consensus([{'t':t,'number':'00'} for t in (0,.3,.6)])['number'],'00')

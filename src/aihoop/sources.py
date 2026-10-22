@@ -74,6 +74,10 @@ class Attempt:
     decision_t: Optional[float] = None
     release_source: str = ""
     clip_end: Optional[float] = None  # 复核片段须覆盖判定收尾，不能只截离手后 1.5s
+    release_known: Optional[bool] = None
+    release_evidence: dict = field(default_factory=dict)
+    candidate_t: Optional[float] = None
+    geometry_source: str = ""
 
     def attach_shot_evidence(self, shot) -> None:
         """Keep inferred outcomes reviewable without treating them as observations."""
@@ -487,7 +491,8 @@ def synthetic_game(seed: int = 7, duration: float = 720.0,
                         is_free_throw=is_ft,
                         release_frame=int(tt * fps),
                         contest=round(rng.uniform(0, 1), 2),
-                        made=made, conf=round(rng.uniform(0.75, 1.0), 2))
+                        made=made, conf=round(rng.uniform(0.75, 1.0), 2),
+                        source="synthetic")
             rt.attempts.append(a)
             rt.ball_track.extend(_simulate_ball_flight(rng, tt, x, y, made))
             if made:
@@ -573,63 +578,84 @@ def _unit_to_rim(x: float, d: float) -> tuple[float, float]:
 
 
 def stitch_player_tracks(tracks: list, max_gap: float = 3.0,
-                         max_dist: float = 2.5, max_iter: int = 8
-                         ) -> tuple[list, dict]:
-    """把断开的球员轨迹碎片接回同一个人（tracklet stitching）。
+                         max_dist: float = 2.5, max_iter: int = 8,
+                         cuts=(), *, link_evaluator=None,
+                         allow_unknown: bool = False) -> tuple[list, dict]:
+    """Conservative same-team tracklet links; never bridge a cut or mutate input.
 
-    为什么需要：ByteTrack 是**逐帧在线**关联的，球员一被遮挡/出画再回来，
-    就会拿到一个新的 track ID。实测一段 30 秒的广播片段裂出了 **83 条** 轨迹
-    （真实场上只有 10 个人）——传球网络会因此碎成一地，每个"人"只传一两次。
-
-    判据（简单、可解释、不依赖任何模型）：
-      两条轨迹**时间上不重叠**（A 结束后 B 才开始）、间隔 <= max_gap、
-      且 A 的最后位置与 B 的起始位置距离 <= max_dist -> 认为是同一个人。
-
-    只做"端点相接"，所以不会把同时在场的两个人错误合并
-    （时间不重叠是硬约束，这是它安全的原因）。
+    Position/time alone cannot establish a real player identity. Ambiguous
+    endpoints and unknown/contradicting teams therefore remain separate.
+    Callers retain the alias map when opting in to this tracklet heuristic.
+    The optional evaluator receives ORIGINAL tail/head IDs plus current sample
+    chains. Unverified but plausible alternatives block a unique association;
+    UNKNOWN can participate only with an explicit evaluator and opt-in.
     """
-    by_id: dict[str, list] = {}
-    for s in sorted(tracks, key=lambda x: x.t):
-        by_id.setdefault(s.player_id, []).append(s)
-    changed = True
-    it = 0
-    while changed and it < max_iter:
-        changed = False
-        it += 1
-        ids = sorted(by_id, key=lambda k: by_id[k][0].t)
-        for i, a in enumerate(ids):
-            if a not in by_id:
-                continue
-            for b in ids[i + 1:]:
-                if b not in by_id:
+    from dataclasses import replace
+    by_id = {}
+    aliases = {}
+    for item in sorted(tracks, key=lambda item: item.t):
+        by_id.setdefault(item.player_id, []).append(replace(item))
+    raw_count = len(by_id)
+    origins = {pid: [pid, pid] for pid in by_id}
+    evaluations, links = [], []
+    iteration = 0
+    for iteration in range(1, max_iter+1):
+        edges, plausible = [], []
+        for a, ta in by_id.items():
+            teams_a = {item.team for item in ta}
+            allowed = {'home', 'away'} if link_evaluator is None else {'home','away','team_a','team_b'}
+            if link_evaluator is None and (len(teams_a) != 1 or not teams_a <= allowed):continue
+            known_a = teams_a - {'unknown','UNKNOWN','','?'}
+            if len(known_a)>1 or not known_a <= allowed:continue
+            if not known_a and not (allow_unknown and link_evaluator):continue
+            for b, tb in by_id.items():
+                if a == b:continue
+                teams_b = {item.team for item in tb}
+                known_b = teams_b - {'unknown','UNKNOWN','','?'}
+                if link_evaluator is None:
+                    if teams_b != teams_a:continue
+                elif (len(known_b)>1 or not known_b <= allowed or
+                      (known_a and known_b and known_a != known_b) or
+                      (not known_b and not allow_unknown)):
                     continue
-                ta, tb = by_id[a], by_id[b]
-                if tb[0].t < ta[-1].t:          # 时间重叠 -> 同时在场，绝不合并
-                    continue
-                gap = tb[0].t - ta[-1].t
-                if gap > max_gap:
-                    continue
-                d = math.hypot(tb[0].x - ta[-1].x, tb[0].y - ta[-1].y)
-                if d > max_dist:
-                    continue
-                # 把 b 接到 a 后面
-                for s in tb:
-                    s.player_id = ta[0].player_id
-                    s.team = ta[0].team
-                by_id[a] = ta + tb
-                del by_id[b]
-                changed = True
-                break
-            if changed:
-                break
-    out: list = []
-    for lst in by_id.values():
-        out.extend(lst)
-    out.sort(key=lambda x: x.t)
-    meta = {"raw_tracks": len({s.player_id for s in tracks}),
-            "merged_tracks": len(by_id),
-            "iterations": it}
-    return out, meta
+                gap = tb[0].t-ta[-1].t
+                if not 0 < gap <= max_gap:continue
+                if any(ta[-1].t < cut <= tb[0].t for cut in cuts):continue
+                if link_evaluator and any(ta[0].t < cut <= ta[-1].t or tb[0].t < cut <= tb[-1].t for cut in cuts):continue
+                if math.hypot(tb[0].x-ta[-1].x,tb[0].y-ta[-1].y) <= max_dist:
+                    result = link_evaluator(origins[a][1], origins[b][0], ta, tb) if link_evaluator else {'accepted':True}
+                    evaluations.append(dict(from_id=a,to_id=b,source_from_id=origins[a][1],
+                        source_to_id=origins[b][0],end_t=ta[-1].t,start_t=tb[0].t,**result,
+                        eligible=bool(result.get('accepted')),linked=False,
+                        decision='eligible' if result.get('accepted') else 'rejected'))
+                    if result.get('plausible', True):plausible.append((a,b))
+                    if result.get('accepted'):edges.append((a,b))
+        unique = [(a,b) for a,b in edges if sum(x==a for x,_ in plausible)==1
+                  and sum(y==b for _,y in plausible)==1]
+        if link_evaluator:
+            for row in evaluations:
+                if row['decision']=='eligible' and (row['from_id'],row['to_id']) not in unique:
+                    row['decision']='ambiguous_endpoint'
+        if not unique:break
+        # Recompute after each merge so chained endpoints cannot become stale.
+        a,b = sorted(unique,key=lambda edge:(by_id[edge[0]][-1].t,str(edge[0]),str(edge[1])))[0]
+        selected=next(r for r in reversed(evaluations) if r['from_id']==a and r['to_id']==b)
+        selected['linked']=True;selected['decision']='linked'
+        links.append(selected)
+        team = next(iter(({item.team for item in by_id[a]+by_id[b]}-{'unknown','UNKNOWN','','?'})), 'unknown')
+        for item in by_id[b]:item.player_id=a
+        if link_evaluator:
+            for item in by_id[a]+by_id[b]:item.team=team
+        by_id[a].extend(by_id.pop(b))
+        origins[a][1] = origins.pop(b)[1]
+        aliases[b]=a
+        for key,value in aliases.items():
+            if value==b:aliases[key]=a
+    joined=sorted((item for items in by_id.values() for item in items),key=lambda item:item.t)
+    return joined, {'raw_tracks':raw_count,'merged_tracks':len(by_id),
+                    'iterations':iteration,'aliases':aliases,
+                    'identity_basis':'appearance_motion_unique_endpoint' if link_evaluator else 'same_team_unique_spatial_endpoint',
+                    **({'link_evaluations':evaluations,'accepted_links':links} if link_evaluator else {})}
 
 
 def _synth_possession(rng: random.Random, t0: float, t1: float,
@@ -875,7 +901,7 @@ class VideoSource:
                  home_hoop: str = "left",
                  visual_shot_value: int = 2,
                  jersey_teams: Optional[dict] = None,
-                 score_policy: str = "court",
+                 score_policy: str = "auto",
                  hoop_hint: Optional[tuple] = None,
                  sliding: Optional[dict] = None,
                  auto_sliding: bool = True,
@@ -891,14 +917,17 @@ class VideoSource:
                  basket_teams: Optional[dict] = None,
                  basket_lookback_s: float = 1.5,
                  manual_hoop=None,
+                 manual_hoops=None,
         scoreboard_events=None,
                  basket_labels=None,
                  basket_model=None,
                  multi_cal=None,
-                 shot_engine: str = "legacy", legacy_center_lock: bool = False, legacy_detect=None):
+                 shot_engine: str = "legacy", legacy_center_lock: bool = False, legacy_detect=None,
+                 player_track_stitch: bool = False):
         if shot_engine not in ("legacy", "geometry"):
             raise ValueError("shot_engine 必须为 legacy 或 geometry")
         self.shot_engine = shot_engine
+        self.player_track_stitch = bool(player_track_stitch)
         self.legacy_center_lock = legacy_center_lock
         from .legacy_shots.settings import resolve_detect
         self.legacy_detect = resolve_detect(legacy_detect)
@@ -926,13 +955,13 @@ class VideoSource:
         # 球衣颜色 -> 队伍。默认 None 表示用「色相聚类 + 绿色算主队」的启发式。
         self.jersey_teams = jersey_teams
         # 计分口径：
-        #   court（默认）—— 按场上检测到的进球计分；比分牌读数只作参考，不计入；
+        #   court          —— 按场上检测到的进球计分；比分牌读数只作参考，不计入；
         #   visual        —— 同 court，视觉命中直接计入；
         #   scoreboard    —— 以广播比分牌带入分/得分事件为准；
-        #   auto          —— 有比分牌得分事件时用比分牌事件，否则按场上进球计分。
+        #   auto（默认）   —— 有比分牌得分事件时用比分牌事件，否则按场上进球计分。
         self.score_policy = (score_policy if score_policy in
                              ("court", "visual", "scoreboard", "auto")
-                             else "court")
+                             else "auto")
         # 手动篮筐提示 (cx, cy, r?)；移动机位/复杂场景下用它锁定篮筐。
         self.hoop_hint = hoop_hint
         # 多机位标定（multical.MultiCal）：**每个镜头一份 H**。
@@ -985,6 +1014,12 @@ class VideoSource:
         # 给了它就不再跑篮筐检测器：判据里的 rx/ry 有了真实尺度，
         # 也不会因为检测器在这个机位上不灵而整条路径失效。
         self.manual_hoop = manual_hoop
+        self.manual_hoops = list(manual_hoops or ([manual_hoop] if manual_hoop is not None else []))
+        # A manual hoop supplies geometry; it does not override the caller's
+        # explicit ROI switch. Preserve legacy callers that omit this option.
+        if (not (legacy_detect is not None and 'ball_rim_recovery' in legacy_detect)
+                and any(float(h.rx or 0)>0 and float(h.ry or 0)>0 for h in self.manual_hoops)):
+            self.legacy_detect['ball_rim_recovery']=True
         # 外部记分牌事件（scripts/read_marked_scoreboard.py 的产出）：
         # 给非标准台标用 —— 模板匹配读不出来时，靠它走比分牌路径
         self.scoreboard_events_path = scoreboard_events
@@ -1101,8 +1136,14 @@ class VideoSource:
     def run(self, progress=None) -> RawTrack:
         self._require()
         import cv2
+        from .video_compat import ensure_cv2_decodable
         from .ball import (BallConfig, _link_tracks, _color_candidates,
                            BallCandidate, build_background, rank_ball_tracks)
+
+        import time
+        analysis_started = time.perf_counter()
+
+        self.video_path = ensure_cv2_decodable(self.video_path)
 
         cfg_ball = self.ball_cfg or BallConfig()
         cfg_ball.weights = self.weights
@@ -1198,30 +1239,15 @@ class VideoSource:
                 rt.detections_meta["calibration_degeneracy_error"] = (
                     f"{type(e).__name__}: {e}")
 
-        # ---- 独立校验：这份标定解释得了画面里那个（手标的）真篮筐吗？----
-        # 为什么放在这里而不是只在"篮下判进球"那条路径里：有比分牌的转播走的是
-        # 比分牌路径、根本不跑 hoopsight，于是这道校验被整条绕过 ——
-        # 实测 basketball_match 那份标定把画面里的篮筐投到了 87m 外，
-        # 却照样能出热区/战术图。用户手标过篮筐时，这是**与特征点无关的真值**，
-        # 一票否决。
-        try:
-            mh = getattr(self, "manual_hoop", None)
-            if mh is not None and self.cal is not None and getattr(self.cal, "H", None):
-                from .baskets import calibration_sane_for_scoring
-                ok_h, why_h = calibration_sane_for_scoring(
-                    self.cal, (float(mh.cx), float(mh.cy), float(mh.rx)))
-                rt.detections_meta["calibration_hoop_check"] = {
-                    "ok": bool(ok_h), "reason": why_h,
-                    "hoop_px": [float(mh.cx), float(mh.cy)],
-                    "source": "manual_marks"}
-                if not ok_h:
-                    rt.detections_meta["calibration_for_value"] = {
-                        "ok": False, "reason": why_h}
-                    rt.detections_meta["calibration_valid"] = False
-                    rt.detections_meta["calibration_rejected"] = why_h
-        except Exception as e:  # noqa: BLE001
-            rt.detections_meta["calibration_hoop_check_error"] = (
-                f"{type(e).__name__}: {e}")
+        # 篮圈中心离地 3.05m，不能拿它去校验只描述地面的单应矩阵。篮筐框在这里
+        # 只服务于篮筐锁定和篮球补检；地面标定由地面特征点、退化检查和白线吻合度验证。
+        mh = getattr(self, "manual_hoop", None)
+        if mh is not None:
+            rt.detections_meta["calibration_hoop_check"] = {
+                "checked": False, "ok": None,
+                "reason": "篮圈离地 3.05m，不参与球场地面单应矩阵校验",
+                "hoop_px": [float(mh.cx), float(mh.cy)],
+                "source": "manual_marks", "role": "detection_only"}
         # ---- 套餐 B 前置关卡：机位稳不稳 + 标定准不准 ----
         # 单应标定只对固定机位成立，而且标错了**不会报错**（画出来依然像战术图）。
         # 所以在花几十分钟跑推理之前先把这两件事量出来。
@@ -1232,9 +1258,19 @@ class VideoSource:
             if m.get("verdict") == "moving":
                 rt.detections_meta["camera_warning"] = m.get("note")
             if rt.detections_meta["calibration_valid"]:
-                fit = court_fit_score(self.video_path, self.cal)
+                if len(mc_segs)>=2:
+                    from .marked_projection import multical_fit, MarkedProjector
+                    fit = multical_fit(self.multi_cal)
+                    from .api import _calibration_path_for
+                    marked_path = _calibration_path_for(self.cal.for_video or self.video_path)
+                    if marked_path.exists():
+                        self._marked_projector = MarkedProjector(self.video_path, marked_path, W, H)
+                        if not self._marked_projector.references:
+                            self._marked_projector.close(); self._marked_projector = None
+                else:
+                    fit = court_fit_score(self.video_path, self.cal)
                 rt.detections_meta["calibration_fit"] = fit
-                if fit.get("ratio", 0) < FIT_RATIO_BAD:
+                if fit.get('ok') is False or (fit.get('ratio') is not None and fit['ratio']<FIT_RATIO_BAD):
                     # 标定与画面基本对不上 -> 宁可不出坐标，也不出错的坐标
                     rt.detections_meta["calibration_valid"] = False
                     rt.detections_meta["calibration_rejected"] = (
@@ -1242,6 +1278,11 @@ class VideoSource:
                         + str(fit.get("note", "")))
         except Exception as e:  # noqa: BLE001  校验失败不该拖垮主流程
             rt.detections_meta["calcheck_error"] = f"{type(e).__name__}: {e}"
+        rt.detections_meta["calibration_for_value"] = {
+            "ok": bool(rt.detections_meta.get("calibration_valid")),
+            "basis": "ground_plane",
+            "reason": rt.detections_meta.get("calibration_rejected") or
+                      "按对应画面检查地面标定；空中篮圈不参与地面校验"}
         # 中值背景：固定机位下用来压掉静止橙色物体；移动镜头下当作额外线索。
         bg = None
         if getattr(cfg_ball, "use_bg", True) and total > 3:
@@ -1258,20 +1299,41 @@ class VideoSource:
             except Exception:
                 bg_gray = None
 
+        timings = {"device": self.device, "stages": []}
+        stage_name = "准备模型、视频与标定"
+        stage_started = analysis_started
+        rt.detections_meta["performance"] = timings
+
         def step(p: float, msg: str):
+            nonlocal stage_name, stage_started
+            now = time.perf_counter()
+            if msg != stage_name:
+                timings["stages"].append({"name": stage_name,
+                                          "seconds": round(now-stage_started, 3)})
+                stage_name, stage_started = msg, now
+            timings["total_seconds"] = round(now-analysis_started, 3)
             if progress:
                 progress(p, msg)
 
         legacy = None
+        manual_hoop_locks = []
         legacy_persons = []
+        ball_head_context = []
+        shared_ball_selection = bool(ball_model is not None and self.shot_engine == "legacy"
+                                     and self.legacy_detect.get("ball_track_selected_only",True))
+        scene_motion_checks = []
         if self.shot_engine == "legacy":
             from .legacy_shots.stream import LegacyShotStream
             from .legacy_shots.detector import Det as LegacyDet
             hint = self.hoop_hint
             if hint is None and self.manual_hoop is not None:
                 hint = (self.manual_hoop.cx, self.manual_hoop.cy)
-            legacy = LegacyShotStream(fps, W, manual_hoop=self.manual_hoop, hint=hint,
+            legacy = LegacyShotStream(fps, W, manual_hoop=self.manual_hoop, hint=hint,height=H,
                 config={"detect": {**self.legacy_detect, "center_lock_widths": 3. if self.legacy_center_lock else 0.}})
+            if self.manual_hoops:
+                from .hoop_lock import ManualHoopLock
+                manual_hoop_locks=[ManualHoopLock(h,fps) for h in self.manual_hoops
+                    if float(h.rx or 0)>0 and float(h.ry or 0)>0]
             rt.detections_meta["shot_engine"] = "legacy"
             if ball_model is None:
                 rt.detections_meta["visual_error"] = "旧版投篮引擎需要球/筐联合检测权重，当前没有可用权重"
@@ -1295,6 +1357,7 @@ class VideoSource:
         cascade_missing_frames=0
         roi_recovery_frames=0
         rim_recovery_frames=0
+        motion_recovery_frames=0
         offcourt_person_dropped=0
         # ---- 标定可信度：决定"场内判定"这把剪刀允不允许用 ----------------
         # 标定本身就弱（吻合度低于门槛）或已被判未校验时，它投出来的坐标只能参考，
@@ -1317,6 +1380,7 @@ class VideoSource:
         jersey_sum: dict[str, dict] = {}
         player_pos: dict[str, list] = {}          # track_id -> [(t, cx, cy)]
         player_boxes: dict[str, list] = {}        # track_id -> [(t, x1, y1, x2, y2)]
+        confirmed_player_ids=set()                # 高置信度见过后，短暂遮挡可降阈值保轨迹
         ball_cands: list = []
         prev_gray = None
         idx = 0
@@ -1337,8 +1401,12 @@ class VideoSource:
             legacy_cut = False
             legacy_detections = []
             recovery_audit = None
+            rim_audit = None
+            candidate_pool_audit = None
+            motion_audit = None
             hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            previous_gray = prev_gray
             motion = cv2.absdiff(gray, prev_gray) \
                 if prev_gray is not None and prev_gray.shape == gray.shape else None
             prev_gray = gray
@@ -1364,8 +1432,26 @@ class VideoSource:
                 corr = float(cv2.compareHist(prev_hist, hist, cv2.HISTCMP_CORREL))
                 mad = float(motion.mean())
                 if corr < 0.55 and mad > 25.0:
-                    cuts.append(round(t, 3))
-                    legacy_cut = True
+                    is_cut = True
+                    if self.legacy_detect.get('scene_motion_guard',True):
+                        from .frame_motion import estimate_frame_motion
+                        side=self.legacy_detect.get('scene_motion_max_side',640)
+                        scale=min(1.,side/max(W,H))
+                        size=(max(1,round(W*scale)),max(1,round(H*scale)))
+                        check=estimate_frame_motion(cv2.resize(previous_gray,size),cv2.resize(gray,size),
+                            min_matches=self.legacy_detect.get('scene_motion_min_matches',20),
+                            ok_ratio=self.legacy_detect.get('scene_motion_min_ratio',.45),
+                            min_grid_cells=self.legacy_detect.get('scene_motion_min_grid_cells',3),
+                            min_points_per_cell=self.legacy_detect.get('scene_motion_min_points_per_cell',3))
+                        is_cut=not check['ok']
+                        scene_motion_checks.append(dict(t=t,frame=idx,hist_correlation=corr,mad=mad,
+                            is_cut=is_cut,**{k:v for k,v in check.items() if k!='H'}))
+                    if is_cut:
+                        cuts.append(round(t, 3))
+                        legacy_cut = True
+                        confirmed_player_ids.clear()
+                        legacy_persons=[]
+                        ball_head_context=[]
             prev_hist = hist
 
             res = None
@@ -1374,13 +1460,25 @@ class VideoSource:
                 self.player_stride <= 1 or idx % self.player_stride == 0)
             if run_players:
                 legacy_persons = []
-                # BoT-SORT（带 ReID）比默认的 ByteTrack 抗遮挡得多 ——
-                # 广播/手持画面里球员互相遮挡是常态，ByteTrack 一遮就换 ID，
-                # 实测 15 秒裂出 27 条轨迹。跟踪不稳，后面阵型/传球全乱。
+                # Reuse the configured tracker. The installed botsort.yaml has
+                # ReID disabled; these IDs are temporary, not player identities.
                 res = model.track(frame, persist=True, conf=self.conf,
                                   imgsz=self.imgsz, device=self.device,
                                   tracker=self.tracker, verbose=False)[0]
+                from .ball_recovery import cpu_boxes
+                cpu_boxes(res)
+                if legacy is not None:
+                    # Head exclusion needs ALL available person detections, including
+                    # spectators. It must be identical before and after ROI recovery.
+                    ball_head_context=[]
+                    for person in res.boxes if res.boxes is not None else ():
+                        if res.names.get(int(person.cls[0]),'') != 'person':continue
+                        identity=int(person.id[0]) if person.id is not None else -1
+                        ball_head_context.append(LegacyDet('person',float(person.conf[0]),
+                            tuple(float(v) for v in person.xyxy[0]),f'T{identity}'))
             # ---- 球：优先用专用球检测器 ----
+            if legacy is not None:
+                legacy.observe_camera(idx,t,frame,cut=legacy_cut)
             if ball_model is not None:
                 predict_options = dict(conf=self.conf, imgsz=self.imgsz,
                                        device=self.device, verbose=False)
@@ -1390,42 +1488,57 @@ class VideoSource:
                 from .screen_graphics import matches as is_screen_graphic
                 rb = ball_model.predict(frame, **predict_options)[0]
                 predictions=[rb]
-                from .ball_recovery import measured_detections, recover_region, recover_rim
+                from .ball_recovery import measured_detections, recover_region, recover_rim, deduplicate_candidates
                 primary_dets=measured_detections(rb)
                 primary_balls=[b for b in primary_dets if 'ball' in b.cls_name.lower()]
                 graphic_hit=any(is_screen_graphic(frame,b.xyxy,graphics) for b in primary_balls)
-                viable=legacy is not None and legacy.preview_ball(idx,primary_dets,frame,cut=legacy_cut)[0] is not None
+                viable=legacy is not None and legacy.preview_ball(idx,primary_dets,frame,cut=legacy_cut,persons=ball_head_context)[0] is not None
                 # Retain the base-scale observations: a larger scale is supplemental,
-                # never a replacement. Missing-ball recovery is capped at 5 Hz;
+                # never a replacement. Missing-ball recovery uses the configured
+                # retry rate (5 Hz by default);
                 # a known graphic still triggers the existing immediate retry.
-                missing_retry = not viable and idx % max(1, round(fps / 5)) == 0
+                missing_retry = not viable and idx % max(1, round(fps / legacy.config['detect'].get('ball_roi_retry_hz',5.))) == 0 if legacy is not None else False
                 if legacy is not None and not viable and (graphic_hit or missing_retry) and predict_options.get('imgsz',640)<960:
                     predictions.append(ball_model.predict(frame,**dict(predict_options,imgsz=960))[0])
                     cascade_frames+=1
                     if not graphic_hit: cascade_missing_frames+=1
                 # Both fallback decisions use the SAME eligibility as the scorer.
                 # A motion-rejected logo must not suppress missing-ball recovery.
-                all_dets=[det for pr in predictions for det in measured_detections(pr)]
+                all_dets=[det for scale_index,pr in enumerate(predictions)
+                          for det in measured_detections(pr,source='full_frame' if scale_index==0 else 'multiscale')]
+                roi_calls=0
                 if (legacy is not None and legacy.config['detect'].get('ball_roi_recovery',False)
                         and not legacy_cut and missing_retry
-                        and legacy.preview_ball(idx,all_dets,frame)[0] is None):
+                        and roi_calls < legacy.config['detect'].get('ball_roi_max_per_frame',2)
+                        and legacy.preview_ball(idx,all_dets,frame,persons=ball_head_context)[0] is None):
                     extra,recovery_audit=recover_region(ball_model,frame,predict_options,legacy,idx)
                     all_dets.extend(extra)
                     roi_recovery_frames+=int(recovery_audit['ran'])
+                    roi_calls+=int(recovery_audit['ran'])
                 # 筐周围高分辨率复检（第五轮）：ROI 开在**筐**上，而不是球的预测位置 ——
                 # 球被锁在静止误检上时，预测位置就是那个假目标，而真球在筐附近。
                 if (legacy is not None and legacy.config['detect'].get('ball_rim_recovery',False)
                         and not legacy_cut and missing_retry
-                        and legacy.preview_ball(idx,all_dets,frame)[0] is None):
+                        and roi_calls < legacy.config['detect'].get('ball_roi_max_per_frame',2)
+                        and legacy.preview_ball(idx,all_dets,frame,persons=ball_head_context)[0] is None):
                     extra,rim_audit=recover_rim(ball_model,frame,predict_options,legacy,idx)
                     all_dets.extend(extra)
                     rim_recovery_frames+=int(rim_audit['ran'])
+                    roi_calls+=int(rim_audit['ran'])
+                pooled_count=len(all_dets)
+                all_dets=deduplicate_candidates(all_dets,legacy.config['detect'].get('ball_candidate_nms_iou',.5) if legacy is not None else .5)
+                candidate_pool_audit={'input_candidates':pooled_count,'deduplicated_candidates':len(all_dets),
+                                      'roi_calls':roi_calls}
                 for det in all_dets:
                     if legacy is not None:legacy_detections.append(det)
+                    if shared_ball_selection:continue
                     if 'ball' not in det.cls_name.lower():continue
                     if is_screen_graphic(frame,det.xyxy,graphics):continue
                     bw,bh=det.w,det.h
-                    if bw<4 or bh<4 or bw>120 or bh>120:continue
+                    # 与实时投篮引擎使用同一个参考尺度上限。旧的 120px 固定值
+                    # 会让 1920p 画面里 80~110px 的人头/队徽进入另一套球轨迹。
+                    ball_hi=min(120.,.06*min(W,960))
+                    if bw<4 or bh<4 or bw>ball_hi or bh>ball_hi:continue
                     if max(bw,bh)>min(bw,bh)*2.2:continue
                     ball_cands.append(BallCandidate(t=t,x=det.cx,y=det.cy,
                         score=min(1.,det.conf+.5),source='ball_model'))
@@ -1435,7 +1548,7 @@ class VideoSource:
                     xyxy = [float(v) for v in b.xyxy[0]]
                     cx = (xyxy[0] + xyxy[2]) / 2
                     tid = int(b.id[0]) if b.id is not None else -1
-                    if name in ("sports ball", "ball"):
+                    if name in ("sports ball", "ball") and not shared_ball_selection:
                         ball_cands.append(BallCandidate(
                             t=t, x=cx, y=(xyxy[1] + xyxy[3]) / 2,
                             score=min(1.0, float(b.conf[0]) + 0.3), source="yolo"))
@@ -1448,19 +1561,30 @@ class VideoSource:
                             continue          # 太小 / 太扁 —— 不是站着的人
                         if xyxy[3] >= H - 2:
                             continue          # 贴着画面底边 —— 镜头前的观众
-                        if float(b.conf[0]) < self.player_conf:
-                            continue          # 人用更高的置信度门槛
+                        pid = f"T{tid}"
+                        confidence=float(b.conf[0])
+                        # 已经由高置信度确认过的同一跟踪 ID，在遮挡/运动模糊时
+                        # 允许降到模型输出底线继续保留；新出现的低置信度人体仍
+                        # 不接纳，避免用“衣服像”把观众凭空变成球员。
+                        if confidence < self.player_conf and pid not in confirmed_player_ids:
+                            continue
+                        if confidence >= self.player_conf:
+                            confirmed_player_ids.add(pid)
                         # 静态/分时段标定可用时，在检测入口就用脚底点过滤场外人员。
                         # 这样观众不会进入投篮人关联、球衣识别和回放绿框，再由下游隐藏。
-                        _person_cal = self._cal_at(t)
+                        _person_cal = self._cal_at(t) if cal_trusted else None
+                        # 所有当前人体框都用于排除人头误检，包括场边人员。
+                        if legacy is not None:
+                            legacy_persons.append(LegacyDet("person",float(b.conf[0]),tuple(xyxy),pid))
                         if cal_trusted:
                             _on_court = calibrated_person_on_court(_person_cal, xyxy)
                             if _on_court is False:
                                 offcourt_person_dropped += 1
                                 continue
-                        pid = f"T{tid}"
-                        if legacy is not None:
-                            legacy_persons.append(LegacyDet("person",float(b.conf[0]),tuple(xyxy),pid))
+                        if (_person_cal is None and
+                                (xyxy[3] < .32*H or bh > .72*H)):
+                            offcourt_person_dropped += 1
+                            continue
                         if pid not in rt.players:
                             rt.players[pid] = Player(pid, "号码待确认", "home")
                         player_pos.setdefault(pid, []).append(
@@ -1503,14 +1627,50 @@ class VideoSource:
                                 jersey_sum.setdefault(pid, {"n": 0, "bins": {}})["n"] += 1
 
             if legacy is not None:
-                legacy.update(idx, t, legacy_detections, legacy_persons, cut=legacy_cut, image=frame)
+                # 没有可靠球场坐标时也不能把整片看台送进投篮关联。每帧优先
+                # 保留下方、置信度高的人体框；10 名球员加裁判留 12 个余量。
+                # 这只是候选压制，不按运动速度删除站位/掩护中的慢球员。
+                if self.max_players > 0 and len(legacy_persons) > self.max_players:
+                    legacy_persons = sorted(
+                        legacy_persons,
+                        key=lambda p: float(p.conf)+.15*min(1.,p.xyxy[3]/max(H,1)),
+                        reverse=True)[:self.max_players]
+                for hoop_lock in manual_hoop_locks:
+                    locked_rim=hoop_lock.update(frame,t,cut=legacy_cut)
+                    if locked_rim is not None:legacy_detections.append(locked_rim)
+                # 用户建议的“先找高速移动球体再追轨迹”放在这里作为受限兜底：
+                # 只有模型候选经尺寸/台标/人头过滤后仍不可用，并且已经有近期
+                # 球轨迹或可用篮筐时，才把局部运动块送进同一套时序选择器。
+                # 它只是候选，不会绕过出手弧线和穿筐判据。
+                if (legacy.config['detect'].get('motion_ball_recovery',True)
+                        and not legacy_cut and motion is not None
+                        and legacy.preview_ball(idx,legacy_detections,frame,
+                            persons=ball_head_context)[0] is None):
+                    from .ball_recovery import motion_candidates
+                    extra,motion_audit=motion_candidates(
+                        motion,legacy,idx,W,H)
+                    legacy_detections.extend(extra)
+                    motion_recovery_frames+=int(bool(motion_audit.get('ran')))
+                role_on_court=None
+                if legacy.config['detect'].get('general',{}).get('role_shadow') and cal_trusted:
+                    role_cal=self._cal_at(t)
+                    role_on_court={str(p.track_id):calibrated_person_on_court(role_cal,p.xyxy)
+                                   for p in ball_head_context}
+                selected_ball=legacy.update(idx, t, legacy_detections, legacy_persons,
+                    cut=legacy_cut,image=frame,head_context=ball_head_context,role_on_court=role_on_court)
+                if shared_ball_selection and selected_ball is not None and selected_ball.is_measurement:
+                    ball_cands.append(BallCandidate(t=t,x=selected_ball.cx,y=selected_ball.cy,
+                        score=selected_ball.conf,source='selected_ball'))
                 if recovery_audit is not None:legacy.frames[-1]['ball_recovery']=recovery_audit
+                if rim_audit is not None:legacy.frames[-1]['rim_recovery']=rim_audit
+                if candidate_pool_audit is not None:legacy.frames[-1]['candidate_pool']=candidate_pool_audit
+                if motion_audit is not None:legacy.frames[-1]['motion_ball_recovery']=motion_audit
 
             # 颜色线索（YOLO 漏掉的球靠它兜底）；背景运动量已经在上面的 bg_motion 里融合。
             # 但**有专用球检测器时直接跳过** —— 广播画面下这条线索是纯噪声
             # （实测每帧 ~70 个橙色候选，球衣/地板/皮肤全中）。
             color_cands = []
-            if ball_model is None:
+            if ball_model is None and not shared_ball_selection:
                 color_cands = _color_candidates(frame, hsv, cfg_ball,
                                                 motion_for_candidates, bg_motion)
             for (bx, by, r) in color_cands:
@@ -1530,7 +1690,14 @@ class VideoSource:
                 step(0.02 + 0.58 * idx / total, "检测球员与篮球")
             idx += 1
         cap.release()
+        rt.detections_meta['video_decode'] = {'reported_frames':total,'decoded_frames':idx,
+            'reported_duration_s':rt.duration,'decoded_duration_s':idx/fps,
+            'frame_count_mismatch':idx!=total,'timestamp_basis':'decoded_index_over_nominal_fps',
+            'vfr_pts_verified':False}
+        rt.duration=idx/fps
         self._cuts = cuts
+        rt.detections_meta['scene_motion_checks']=scene_motion_checks
+        rt.detections_meta['ball_selection_policy']='shared_measured_selection' if shared_ball_selection else 'legacy_candidate_projection'
         self._legacy_events = legacy.finish(idx, idx / fps) if legacy is not None else []
         if legacy is not None:
             import hashlib
@@ -1543,6 +1710,8 @@ class VideoSource:
                         digest.update(chunk)
                 meta["model_sha256"] = digest.hexdigest()
             rt.detections_meta["legacy_shots"] = meta
+            if manual_hoop_locks:
+                rt.detections_meta["manual_hoop_locks"] = [h.summary() for h in manual_hoop_locks]
             if not legacy.rim_seen:
                 rt.detections_meta["visual_error"] = "没有检测到可用篮筐，无法确认投篮结果"
             elif not legacy.real_seen:
@@ -1552,6 +1721,7 @@ class VideoSource:
         rt.detections_meta['ball_missing_cascade_frames']=cascade_missing_frames
         rt.detections_meta['ball_roi_recovery_frames']=roi_recovery_frames
         rt.detections_meta['ball_rim_recovery_frames']=rim_recovery_frames
+        rt.detections_meta['motion_ball_recovery_frames']=motion_recovery_frames
 
         # ---- 2) 球轨迹连接 ----
         step(0.56, "连接球轨迹")
@@ -1655,28 +1825,18 @@ class VideoSource:
         # ---- 3b) 套餐 B：把球员像素轨迹投影成球场坐标 ----
         # 只有标定确实适用于这段视频时才投影（标定按机位存，对不上就拒绝），
         # 否则宁可不产出轨迹 —— 错位的俯视战术图比没有更糟。
-        # 走自动逐帧标定时，先拿**人工标的篮筐**当独立真值校验一次：
-        # 实测这段素材的逐帧标定把篮筐投到 9.2m 外（而它自己的质量分 ratio
-        # 反而高达 7.17），坐标整段不可用 —— 不过这道校验就绝不能出战术图。
+        # 篮圈中心离地 3.05m，不能作为逐帧地面单应矩阵的真值点。
         if self.sliding and getattr(self, "manual_hoop", None) is not None:
-            try:
-                from .calibcheck import validate_sliding_with_hoop
-                mh = self.manual_hoop
-                val = validate_sliding_with_hoop(
-                    self.sliding, (mh.cx, mh.cy), t=float(getattr(mh, "t", 0.0)))
-                rt.detections_meta["sliding_validation"] = val
-                if val.get("checked") and not val.get("ok"):
-                    # 校验没过 → 丢掉这套滑动标定，球员坐标一律不产出
-                    # （留着它只会得到一张看着专业、实际偏 9 米的战术图）
-                    self.sliding = None
-            except Exception as e:  # noqa: BLE001
-                rt.detections_meta["sliding_validation_error"] = \
-                    f"{type(e).__name__}: {e}"
+            rt.detections_meta["sliding_validation"] = {
+                "checked": False, "ok": None, "dist_m": None,
+                "reason": "篮圈是空中点，不参与地面单应矩阵校验",
+                "basis": "ground_plane"}
 
         on_court_obs = set()
         if rt.detections_meta.get("calibration_valid") or self.sliding:
             rt.detections_meta["player_track_source"] = (
-                "sliding_calibration" if self.sliding else "static_calibration")
+                "manual_registered" if getattr(self, "_marked_projector", None)
+                else "sliding_calibration" if self.sliding else "static_calibration")
             # ⚠️ 投影的必须是**脚底**（检测框底边中点），不是框中心。
             # 单应矩阵是把"地面上的点"映到球场坐标；用框中心相当于把球员
             # 往画面深处平移了半个人高 —— 俯视战术图上每个人都会前移 1~2m，
@@ -1812,8 +1972,41 @@ class VideoSource:
             # 3c) 轨迹补接：ByteTrack 一被遮挡就换 ID，30 秒能裂出几十条，
             #     传球网络会因此碎成一地。这里按「时间不重叠 + 位置接得上」
             #     把碎片接回同一个人（经典 tracklet stitching）。
-            rt.player_track, stitched = stitch_player_tracks(rt.player_track)
-            rt.detections_meta["player_stitch"] = stitched
+            if self.player_track_stitch:
+                rt.player_track, stitched = stitch_player_tracks(rt.player_track,cuts=self._cuts)
+                aliases = stitched['aliases']
+                # Keep raw detector IDs explicit; all public identity references
+                # must agree with the canonical tracklet ID when this is enabled.
+                for observation in rt.player_obs:
+                    old = observation['player_id']
+                    if old in aliases:
+                        observation['source_track_id']=old
+                        observation['player_id']=aliases[old]
+                on_court_obs = {(stamp,aliases.get(pid,pid)) for stamp,pid in on_court_obs}
+                for key in ('_player_boxes','_player_pos'):
+                    merged = {}
+                    for pid,items in getattr(self,key,{}).items():
+                        merged.setdefault(aliases.get(pid,pid),[]).extend(items)
+                    for items in merged.values():items.sort(key=lambda item:item[0])
+                    setattr(self,key,merged)
+                for rows in (self._legacy_events,(rt.detections_meta.get('legacy_shots') or {}).get('events',[])):
+                    for event in rows:
+                        pid=str(event.get('player_id') or '')
+                        if pid in aliases:
+                            event.setdefault('source_track_id',pid)
+                            event['player_id']=aliases[pid]
+                for frame_row in (rt.detections_meta.get('legacy_shots') or {}).get('frames',[]):
+                    for person in frame_row.get('persons',[]):
+                        pid=str(person.get('track_id') or '')
+                        if pid in aliases:
+                            person['source_track_id']=pid
+                            person['track_id']=aliases[pid]
+                for pid in aliases:rt.players.pop(pid,None)
+            else:
+                count=len({item.player_id for item in rt.player_track})
+                stitched={'raw_tracks':count,'merged_tracks':count,'aliases':{},
+                          'reason':'disabled_without_verified_identity'}
+            rt.detections_meta["player_stitch"] = dict(stitched,enabled=self.player_track_stitch)
             # 回放绿框使用同一份场内判定。标定有效时，场外人员保留原始检测证据，
             # 但显式标为 on_court=false，前端不再把他们画成球员。
             legacy_meta = rt.detections_meta.get("legacy_shots") or {}
@@ -1928,30 +2121,36 @@ class VideoSource:
                     mod = importlib.util.module_from_spec(spec)
                     spec.loader.exec_module(mod)
                     data = mod.read_scoreboard(self.video_path)
-                    baseline = data["start"]
-                    ev = [{"kind":"baseline", "t":0., "team":"", "delta":0,
-                           "home":baseline["home"], "away":baseline["away"], "period":1}]
-                    ev += [dict(e, kind="score") for e in data["events"]]
-                    scan = _ManualScoreScan(ev, baseline, "ocr")
-                    scan.frames_hit = data["ocr_hit"]
-                    # 覆盖率要如实记：以前 frames_read 恒等于 frames_hit，
-                    # 报告写成"读到 1 帧"却给出 38:38，反而不可信（实测踩到）。
-                    scan.frames_read = int(data.get("n_crops") or data["ocr_hit"] or 1)
-                    scan.baseline_from = data.get("baseline_from", "")
-                    scan.baseline_at = data.get("baseline_at") or {}
-                    scan.baseline_note = data.get("baseline_note", "")
-                    sb_source = "ocr"
-                    rt.detections_meta["scoreboard_bar"] = {
-                        "box":data["box"], "method":data["method"],
-                        "baseline_from":data["baseline_from"],
-                        "baseline_at":data.get("baseline_at") or {},
-                        "baseline_note":data.get("baseline_note", "")}
+                    if data.get('team_mapping_confirmed') is False:
+                        rt.detections_meta['scoreboard_reference_only'] = data
+                        # Screen-left/right are not home/away. Keep measured
+                        # changes as supporting evidence, never guess team points.
+                        data = None
+                    if data is not None:
+                        baseline = data["start"]
+                        ev = [{"kind":"baseline", "t":0., "team":"", "delta":0,
+                               "home":baseline["home"], "away":baseline["away"], "period":1}]
+                        ev += [dict(e, kind="score") for e in data["events"]]
+                        scan = _ManualScoreScan(ev, baseline, "ocr")
+                        scan.frames_hit = data["ocr_hit"]
+                        # 覆盖率要如实记：以前 frames_read 恒等于 frames_hit，
+                        # 报告写成"读到 1 帧"却给出 38:38，反而不可信（实测踩到）。
+                        scan.frames_read = int(data.get("n_crops") or data["ocr_hit"] or 1)
+                        scan.baseline_from = data.get("baseline_from", "")
+                        scan.baseline_at = data.get("baseline_at") or {}
+                        scan.baseline_note = data.get("baseline_note", "")
+                        sb_source = "ocr"
+                        rt.detections_meta["scoreboard_bar"] = {
+                            "box":data["box"], "method":data["method"],
+                            "baseline_from":data["baseline_from"],
+                            "baseline_at":data.get("baseline_at") or {},
+                            "baseline_note":data.get("baseline_note", "")}
             except (Exception, SystemExit) as e:
                 rt.detections_meta["ocr_scoreboard_error"] = f"{type(e).__name__}: {e}"
                 rt.detections_meta["scoreboard_action"] = "请手动框选比分牌后重试"
 
             # 4.2 OCR 不适用就退回原来的模板匹配
-            if scan is None:
+            if scan is None and not rt.detections_meta.get('scoreboard_reference_only'):
                 try:
                     bug = self._load_bug(ScoreBug, W, H, fps, total)
                     if bug is None:
@@ -2044,8 +2243,11 @@ class VideoSource:
                 "from_scoreboard": 0, "from_ball_track": 0, "miss_candidates": 0}
         else:
             self.extract_attempts(rt)
-        if progress:
-            progress(1.0, "推理完成")
+        step(1.0, "推理完成")
+        registered = getattr(self, "_marked_projector", None)
+        if registered is not None:
+            rt.detections_meta["marked_projection"] = {"frames": registered.audit}
+            registered.close()
         return rt
 
     def _dispatch_shot_engine(self, rt, progress=None):
@@ -2053,7 +2255,7 @@ class VideoSource:
         if self.shot_engine == "legacy":
             from .legacy_shots.adapter import to_attempts
             progress(0.82, "整理逐次投篮：命中、未中与未知")
-            rt.attempts = to_attempts(self._legacy_events, rt, self.cal,
+            rt.attempts = to_attempts(self._legacy_events, rt, self._cal_at,
                 value=self.visual_shot_value,
                 counts_for_score=getattr(self,"_visual_counts_for_score",True))
             rt.detections_meta["visual"] = {
@@ -2062,6 +2264,20 @@ class VideoSource:
                 "missed": sum(a.made is False for a in rt.attempts),
                 "unknown": sum(a.made is None for a in rt.attempts),
                 "method": "逐帧跟踪球与篮筐，先记录出手，再区分命中、未中和未知"}
+            reference=rt.detections_meta.get('scoreboard_reference_only') or {}
+            support=[]
+            cuts=[float(row['t']) for row in (rt.detections_meta.get('legacy_shots') or {}).get('frames',[])
+                  if row.get('cut')]
+            for attempt in rt.attempts:
+                decision=float(attempt.decision_t or attempt.t)
+                nearby=[e for e in reference.get('screen_events',[])
+                        if decision-1 <= float(e['t']) <= decision+3 and
+                        not any(min(decision,float(e['t']))<cut<=max(decision,float(e['t'])) for cut in cuts)]
+                if len(nearby)==1:
+                    support.append({'attempt_t':attempt.t,'score_change':nearby[0],
+                        'role':'support_only','reason':'球队对应关系未确认，不改写命中或队别'})
+            if reference:
+                rt.detections_meta['scoreboard_support']=support
         else:
             rt.detections_meta["shot_engine"] = "geometry"
             progress(0.78, "篮下判进球（球从筐里下去）")
@@ -2299,34 +2515,13 @@ class VideoSource:
             except Exception as e:  # noqa: BLE001
                 meta["decision_error"] = f"{type(e).__name__}: {e}"
 
-        # 标定能不能用来判 2/3 分 / 能不能用来出热区与战术图？
-        # 先验一道：画面里的篮筐必须被投影到真篮筐附近。
-        # **放在 early-return 之前**：即使一球没判出，也要把这个结论记下来，
-        # 否则管线看不到"标定不适用"，照样画错的热区与战术图（用户实测踩到）。
-        try:
-            from .baskets import calibration_sane_for_scoring
-            hoop_px = None
-            if scan.hoops:
-                h0 = scan.hoops[0]
-                hoop_px = (h0.get("cx", 0.0), h0.get("cy", 0.0),
-                           h0.get("rx", 1.0))
-            elif getattr(self, "manual_hoop", None) is not None:
-                # 检测不到篮筐（镜头在动、画面不清）时，**退回用用户手工标的篮筐**做验证。
-                # 实测踩到：用户把球场标定和篮筐都标好了，却因为这里只认"检测到的篮筐"
-                # 而判成"没有可用标定" → 热区/战术图一个都不生成，
-                # 用户完全不知道为什么（标定明明存下来了、误差 0.693m）。
-                mh = self.manual_hoop
-                hoop_px = (float(mh.cx), float(mh.cy), float(mh.rx))
-                meta["calibration_hoop_source"] = "manual_marks"
-            cal_ok2, cal_why = calibration_sane_for_scoring(
-                (self.cal if self.cal and self.cal.H else None), hoop_px)
-            meta["calibration_for_value"] = {"ok": cal_ok2, "reason": cal_why}
-            if not cal_ok2:
-                # 统一 gate：标定不适用时，后续所有"球场坐标"产物都不该出
-                rt.detections_meta["calibration_valid"] = False
-                rt.detections_meta["calibration_rejected"] = cal_why
-        except Exception as e:  # noqa: BLE001
-            meta["calibration_check_error"] = f"{type(e).__name__}: {e}"
+        # 2/3 分和位置产物沿用地面标定自己的质量门禁。篮圈中心是空中点，不能
+        # 再投进地面单应矩阵做二次否决；否则正常斜视镜头也会被报偏十几米。
+        cal_ok2 = bool(rt.detections_meta.get("calibration_valid"))
+        cal_why = ("地面特征点与球场线校验通过" if cal_ok2 else
+                   rt.detections_meta.get("calibration_rejected") or "没有可用球场标定")
+        meta["calibration_for_value"] = {"ok": cal_ok2, "reason": cal_why,
+                                         "basis": "ground_plane"}
 
         if not scan.shots:
             return
@@ -2392,6 +2587,9 @@ class VideoSource:
         为什么必须按帧取：两个机位没有共同坐标系，用错一份 H 投出来的球员
         会整片落在球场外（实测把球员投到边线外好几米）。
         """
+        registered = getattr(self, '_marked_projector', None)
+        if registered is not None:
+            return registered.at(round(float(t)*4)/4)
         mc = getattr(self, "multi_cal", None)
         if mc is None:
             return self.cal
@@ -2505,19 +2703,8 @@ class VideoSource:
             rt.detections_meta["ball"]["tracks_ranked"] = len(tracks)
         shots = detect_shots(tracks, ht, cfg)
 
-        # 反过来用「篮筐」校验标定：标定正确的话，画面里检测到的篮筐中心投到
-        # 球场坐标应该正好落在 (0, ±1.575) 附近。落不到就说明这份标定不是
-        # 这段视频的 —— **分辨率一样也完全可能是另一个机位**，只比分辨率根本
-        # 拦不住（实测踩过：拿公园球场的标定去算 NBA 转播，出手点被算到
-        # 三分线外 15 米）。校验不过就退回「篮筐占位坐标」，绝不硬套。
-        if rt.detections_meta.get("calibration_valid"):
-            hx, hy = self.cal.to_court(ht.median.cx, ht.median.cy)
-            d = min(math.hypot(hx, hy - 1.575), math.hypot(hx, hy + 1.575))
-            if d > 3.0:
-                rt.detections_meta["calibration_valid"] = False
-                rt.detections_meta["calibration_reject"] = (
-                    f"标定把画面里的篮筐投到了球场坐标 ({hx:.1f}, {hy:.1f})，"
-                    f"离真实篮筐 {d:.1f}m —— 这份标定不属于这个机位，已拒绝使用")
+        # 检测到的篮圈中心是空中点，不能直接通过地面单应矩阵反投影来否决标定。
+        # 篮筐轨迹只用于投篮几何；球场坐标继续服从前面的地面质量门禁。
 
         rt.detections_meta["hoop"] = ht.to_dict()
         rt.detections_meta["visual"] = {
@@ -2960,7 +3147,7 @@ class VideoSource:
         rt.detections_meta["jersey_colors"] = summary
 
     @staticmethod
-    def _jersey_color_of(frame, box):
+    def _jersey_color_of(frame, box, *, skin_filter: bool = True):
         """一个球员框的球衣主色 → (H, S, V)；采不到返回 None。"""
         import cv2
         import numpy as np
@@ -2986,14 +3173,24 @@ class VideoSource:
         flat = hsv.reshape(-1, 3).astype(np.int32)
         hh, ss, vv = flat[:, 0], flat[:, 1], flat[:, 2]
         # 剔肤色（H<=18 且中等饱和）与过暗/过曝
-        keep = ((~(hh <= 18) & (ss >= 25) & (ss <= 110) & (vv >= 70))
+        keep = ((~((hh <= 18) & (ss >= 25) & (ss <= 110) & (vv >= 70)))
                 & (vv >= 30) & (vv <= 245))
+        if not skin_filter:
+            # A warm-tinted white jersey may occupy the entire HSV skin range.
+            # For offline torso-only appearance trials retain those pixels;
+            # confidence comes from multi-frame agreement, not skin colour.
+            keep = (vv >= 30) & (vv <= 245)
         sel = flat[keep]
         if len(sel) < 10:
             sel = flat[(vv >= 30) & (vv <= 245)]
         if len(sel) < 10:
             return None
         bins = (sel[:, 0] // 16).astype(np.int32)
+        # Achromatic pixels have noisy hue: pool them by brightness instead of
+        # splitting a white jersey into many hue bins and letting its coloured
+        # stripe/background win the mode. Chromatic jerseys retain hue bins.
+        achromatic = sel[:, 1] < 60
+        bins[achromatic] = 20 + (sel[achromatic, 2] >= 70).astype(np.int32) + (sel[achromatic, 2] >= 130).astype(np.int32)
         vals, cnts = np.unique(bins, return_counts=True)
         top = vals[int(np.argmax(cnts))]
         grp = sel[bins == top]
@@ -3078,7 +3275,10 @@ class VideoSource:
         return {"home": self.home_hoop,
                 "away": "right" if self.home_hoop == "left" else "left"}
 
-    def _assign_teams(self, rt: RawTrack, jersey_sum: dict) -> None:
+    def _assign_teams(self, rt: RawTrack, jersey_sum: dict, *,
+                      conservative: bool = False, min_votes: int = 3,
+                      min_margin: float = .25, min_vote_share: float = .7,
+                      hue_min_sat: float = 60., hue_min_share: float = .8) -> None:
         """用球衣颜色把球员分成主/客两队。
 
         **不再只按色相聚类**。老做法只取色相做一维 2 聚类，遇到两种常见情况
@@ -3100,6 +3300,14 @@ class VideoSource:
         """
         import numpy as _np
 
+        # Offline opt-in: insufficient appearance evidence must not inherit the
+        # initial fallback team. The normal source path retains its behaviour.
+        assignments = {}
+        if conservative:
+            for pid, player in rt.players.items():
+                player.team = "unknown"
+                assignments[pid] = {"team": "unknown", "reason": "insufficient_jersey_samples"}
+
         def mode_color(rec: dict):
             """众数色 -> (H, S, V)。粗分箱的中心。"""
             if not rec or not rec.get("bins"):
@@ -3110,13 +3318,19 @@ class VideoSource:
 
         rows = []
         for pid, rec in jersey_sum.items():
-            if not isinstance(rec, dict) or rec.get("n", 0) < 3:
+            if not isinstance(rec, dict) or rec.get("n", 0) < (min_votes if conservative else 3):
                 continue
             mc = mode_color(rec)
             if mc is None:
                 continue
             rows.append((pid, mc[0], mc[1], mc[2]))
+            if conservative:
+                assignments[pid] = {"team": "unknown", "reason": "unresolved_appearance_model",
+                                     "samples": rec.get("n", 0)}
         if len(rows) < 4:
+            if conservative:
+                rt.detections_meta["teams"] = {"method": "none", "assignments": assignments,
+                                                "reason": "insufficient_appearance_tracks"}
             return
 
         def flat_hue(h):
@@ -3155,6 +3369,7 @@ class VideoSource:
 
         best = None
         detail = {}
+        rejected_features = {}
         for name, raw in cands.items():
             lo, hi = min(raw), max(raw)
             span = (hi - lo) or 1.0
@@ -3163,6 +3378,17 @@ class VideoSource:
             if r is None:
                 detail[name] = 0.0
                 continue
+            if conservative and name == "hue":
+                # White/grey has arbitrary hue, even when a two-means fit has
+                # an impressive separation score. Both groups need chroma.
+                groups = [[], []]
+                for row, value in zip(rows, vals):
+                    group = int(abs(value-r[0]) > abs(value-r[1]))
+                    groups[group].append(row[2] >= hue_min_sat)
+                if any(not g or sum(g)/len(g) < hue_min_share for g in groups):
+                    detail[name] = 0.0
+                    rejected_features[name] = "low_saturation_hue_is_unreliable"
+                    continue
             detail[name] = round(r[2], 2)
             if best is None or r[2] > best[1][2]:
                 best = (name, r)
@@ -3172,7 +3398,8 @@ class VideoSource:
                 "reason": ("球衣颜色分不开（三组特征都没通过均衡/分离检查）："
                            "可能是两队球衣颜色接近、画面里人太小、"
                            "或者本来就是 1v1 没有两队"),
-                "candidates": detail}
+                "candidates": detail, **({"assignments": assignments,
+                    "rejected_features": rejected_features} if conservative else {})}
             return
 
         feat, (c1, c2, sep) = best
@@ -3193,6 +3420,20 @@ class VideoSource:
             p = (raw - lo) / span
             low = abs(p - c1) <= abs(p - c2)
             is_home = (not low) if invert else low
+            if conservative:
+                ds, do = sorted((abs(p-c1), abs(p-c2)))
+                margin = (do-ds)/max(do+ds, 1e-6)
+                votes = jersey_sum[pid].get("colors", [])
+                def feature(c):
+                    return {"hue": flat_hue(c[0]), "sat": c[1], "val": c[2]}[feat]
+                agrees = sum((abs((feature(c)-lo)/span-c1) <= abs((feature(c)-lo)/span-c2)) == low for c in votes)
+                share = agrees/len(votes) if votes else 0.
+                accepted = sep >= 1.0 and margin >= min_margin and len(votes) >= min_votes and share >= min_vote_share
+                assignments[pid] = {"team": ("home" if is_home else "away") if accepted else "unknown",
+                    "margin": round(margin, 4), "vote_share": round(share, 4), "samples": len(votes),
+                    "reason": "multiframe_appearance" if accepted else "ambiguous_appearance"}
+                if not accepted:
+                    continue
             rt.players[pid].team = "home" if is_home else "away"
             counts["home" if is_home else "away"] += 1
         rt.detections_meta["teams"] = {
@@ -3200,7 +3441,11 @@ class VideoSource:
             "separability": round(sep, 2),
             "candidates": detail,
             "confidence": "ok" if sep >= 1.0 else "low",
-            "players": len(rows), "counts": counts}
+            "players": len(rows), "counts": counts,
+            **({"assignments": assignments, "home_away_mapping_verified": False,
+                "rejected_features": rejected_features,
+                "unknown": sum(p.team == "unknown" for p in rt.players.values()),
+                "conservative": True} if conservative else {})}
 
     # ------------------------------------------------------------------
     def extract_attempts(self, rt: RawTrack,

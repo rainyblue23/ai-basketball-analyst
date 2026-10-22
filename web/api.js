@@ -16,9 +16,8 @@
      GET  /api/media/{job_id}/{path}            高光片段等静态文件
      POST /api/games/{job_id}/shots/{i}/correct 人工复核改判 {made, value}
    --------------------------------------------------------------------------
-   降级策略：探测不到后端（或跨域/断网）时，state.demoMode = true，
-   所有读接口改读 web/demo/ 下的静态产物；写接口（导出/复核）改用本地
-   生成 / 本地改判，保证无后端也能完整走完答辩演示流程。
+   后端或历史读取失败时显示空状态。web/demo/ 静态合成产物仅在
+   用户明确选择演示时加载，不能作为视频分析的自动替代。
    ========================================================================== */
 (function () {
   'use strict';
@@ -50,7 +49,7 @@
 
   API.getJSON = function (url, ms) {
     var t = withTimeout(ms || 20000);
-    return fetch(url, { signal: t.signal, headers: { 'Accept': 'application/json' } })
+    return fetch(url, { cache: 'no-store', signal: t.signal, headers: { 'Accept': 'application/json' } })
       .then(function (r) {
         if (!r.ok) throw new Error('HTTP ' + r.status + ' @ ' + url);
         return r.json();
@@ -109,7 +108,7 @@
   // 后端可用性探测：命中 /api/jobs（契约里的任务列表接口，最轻量）
   // ------------------------------------------------------------------
   API.probe = function () {
-    return API.getJSON(API.base + '/api/jobs', 2500)
+    return API.getJSON(API.base + '/api/jobs', 12000)
       .then(function (d) {
         API.lastError = '';
         API.probeDetail = 'GET /api/jobs 正常，返回 ' +
@@ -132,121 +131,78 @@
     return API.postJSON(API.base + '/api/jobs', payload);
   };
 
-  /**
-   * 直接用浏览器上传视频文件（可选路径）。
-   * 后端契约：POST /api/upload，二进制 body，文件名放 x-filename 头，
-   * 返回 {path, bytes, info} —— 拿到的 path 再填进 /api/jobs 的 video_path。
-   * 用 XHR 而不是 fetch，是为了拿到上传进度（fetch 无法读上传进度）。
-   *
-   * **自动重试**：后端在自动重启（改完源码约 2 秒）或刚启动时会短暂不可用，
-   * 那一刻的 XHR 只会抛一个含糊的「网络错误」。以前这里直接把它报成
-   * 「网络或跨域被拦」，害人以为要改 CORS。现在失败会自动重试 3 次，
-   * 仍然失败才报错，并且把"后端在不在"查清楚再给结论。
+  /** 分块上传，每块 1 MB、最多 3 块并行；网络中断仅重试当前块。
+   * 服务端确认完整视频落盘后才返回分析可用的 path。
    */
   API.uploadVideo = function (file, onProgress) {
-    function authHeaders() {
-      return { 'x-filename': file.name, 'Content-Type': 'application/octet-stream' };
+    if (!file.size) return Promise.reject(new Error('视频文件为空'));
+    var random = new Uint8Array(16);
+    crypto.getRandomValues(random);
+    var id = Array.from(random).map(function (v) { return v.toString(16).padStart(2,'0'); }).join('');
+    var size = 1024 * 1024, cursor = 0, complete = null;
+    var progress = {};
+    function report() {
+      var sum = Object.keys(progress).reduce(function (n,k) { return n+progress[k]; },0);
+      if (onProgress) onProgress(Math.min(.99,sum/file.size));
     }
-
-    function onceXHR() {
+    function sendChunk(offset, end) {
       return new Promise(function (resolve, reject) {
-        if (typeof XMLHttpRequest === 'undefined') {
-          reject(new Error('当前环境不支持 XMLHttpRequest'));
-          return;
-        }
         var xhr = new XMLHttpRequest();
-        xhr.open('POST', API.base + '/api/upload');
-        xhr.setRequestHeader('x-filename', file.name);
+        xhr.open('POST', API.base + '/api/upload/chunk');
+        xhr.withCredentials = true;
+        xhr.timeout = 90000;
         xhr.setRequestHeader('Content-Type', 'application/octet-stream');
-        xhr.timeout = 120000;   // 1.2MB 视频正常 1 秒内传完；120s 是兜底
-        if (xhr.upload && onProgress) {
-          xhr.upload.onprogress = function (e) {
-            if (e.lengthComputable) onProgress(e.loaded / e.total);
-          };
-        }
+        xhr.setRequestHeader('x-filename', encodeURIComponent(file.name));
+        xhr.setRequestHeader('x-upload-id', id);
+        xhr.setRequestHeader('x-upload-offset', String(offset));
+        xhr.setRequestHeader('x-upload-size', String(file.size));
+        xhr.setRequestHeader('x-upload-part-size', String(size));
+        xhr.upload.onprogress = function (e) {
+          if (e.lengthComputable) { progress[offset]=e.loaded; report(); }
+        };
         xhr.onload = function () {
           if (xhr.status >= 200 && xhr.status < 300) {
             try { resolve(JSON.parse(xhr.responseText)); }
-            catch (e) { reject(new Error('上传响应不是 JSON')); }
+            catch (e) { reject(new Error('上传响应无效')); }
           } else {
-            reject(new Error('HTTP ' + xhr.status + ' @ /api/upload'
-              + (xhr.responseText ? '：' + String(xhr.responseText).slice(0, 200) : '')));
+            var error = new Error(xhr.status===401 ? '登录已过期，请重新登录后上传' :
+              '上传失败（HTTP '+xhr.status+'）：'+String(xhr.responseText).slice(0,160));
+            error.retryable = xhr.status>=500 || xhr.status===408 || xhr.status===429;
+            reject(error);
           }
         };
-        // 网络层失败（后端没起 / 被代理或扩展拦 / 连接被重置）
-        xhr.onerror = function () {
-          var e = new Error('NETWORK');
-          if (xhr.status) e.message += ' HTTP ' + xhr.status;
-          e.retryable = true;
-          reject(e);
+        xhr.onerror = xhr.ontimeout = function () {
+          var error = new Error('当前视频块传输中断，请检查网络后重试');
+          error.retryable = true; reject(error);
         };
-        xhr.ontimeout = function () {
-          var e = new Error('上传超时（120 秒）');
-          e.retryable = true;
-          reject(e);
-        };
-        xhr.onabort = function () {
-          var e = new Error('上传被浏览器取消');
-          e.retryable = true;
-          reject(e);
-        };
-        xhr.send(file);
+        xhr.onabort = function () { reject(new Error('上传已取消')); };
+        xhr.send(file.slice(offset, end));
       });
     }
-
-    // XHR 失败时的兜底：fetch（有些浏览器扩展/代理只拦 XHR）。
-    // fetch 读不了上传进度，所以只在最后失败时试一次。
-    function onceFetch() {
-      if (typeof fetch === 'undefined') {
-        var e = new Error('当前环境不支持 fetch，无法回退上传');
-        e.retryable = true;
-        return Promise.reject(e);
-      }
-      if (onProgress) onProgress(0);
-      return fetch(API.base + '/api/upload', {
-        method: 'POST', headers: authHeaders(), body: file
-      }).then(function (r) {
-        if (!r.ok) throw new Error('HTTP ' + r.status + ' @ /api/upload');
-        return r.json();
-      }).catch(function (err) {
-        err.retryable = true;
-        throw err;
-      });
-    }
-
-    var tries = 0;
-    function attempt() {
-      return onceXHR().catch(function (e) {
-        if (!e.retryable || tries >= 2) throw e;
-        tries += 1;
-        if (onProgress) onProgress(0);
-        return new Promise(function (r) { setTimeout(r, 700 * tries); })
-          .then(attempt);
-      });
-    }
-
-    return attempt().catch(function (e) {
-      if (!e.retryable) throw e;
-      return onceFetch().catch(function (e2) {
-        // 后端在不在？在的话给「上传被中断」；不在的话给更明确的结论。
-        return API.getJSON(API.base + '/api/health', 3000).then(function (h) {
-          var msg = '上传被中断';
-          if (h && h.stale) {
-            msg += '：后端进程还在跑旧代码（code_loaded_at < code_rev），'
-              + '请重新双击「启动后端.bat」，等自动重启完成后再试';
-          } else {
-            msg += '，请重试一次';
-          }
-          var detail = (e && e.message && e.message !== 'NETWORK')
-            ? e.message : (e2 && e2.message) || '';
-          if (detail) msg += '（' + detail + '）';
-          throw new Error(msg);
-        }, function () {
-          throw new Error('后端没有响应（连接被拒）。'
-            + '请确认后端的命令行窗口还开着；如果刚改过代码它可能在自动重启，'
-            + '等几秒再试。注意这与「跨域」无关。');
+    function uploadPart(offset) {
+      var end = Math.min(file.size,offset+size), retries = 0;
+      function attempt() {
+        return sendChunk(offset,end).catch(function (error) {
+          if (!error.retryable || retries>=3) throw error;
+          retries++;
+          progress[offset]=0; report();
+          return new Promise(function (resolve) { setTimeout(resolve,500*retries); }).then(attempt);
         });
+      }
+      return attempt().then(function (r) {
+        progress[offset]=end-offset; report();
+        if (r.complete) complete=r;
       });
+    }
+    function worker() {
+      if (cursor >= file.size) return Promise.resolve();
+      var offset=cursor; cursor+=size;
+      return uploadPart(offset).then(worker);
+    }
+    return Promise.all([worker(),worker(),worker()]).then(function () {
+      if (!complete || !complete.path || complete.bytes!==file.size) throw new Error('视频尚未完整保存，请重试');
+      if (onProgress) onProgress(1);
+      return complete;
     });
   };
 
@@ -394,7 +350,7 @@
   /** 取视频某一秒的一帧（给「在画面上标点」用） */
   API.getFrame = function (videoPath, at) {
     return API.getJSON(API.base + '/api/frame?video_path=' +
-      encodeURIComponent(videoPath) + '&at=' + encodeURIComponent(at || 1), 30000);
+      encodeURIComponent(videoPath) + '&at=' + encodeURIComponent(at == null ? 1 : at), 30000);
   };
   /** 保存画面标点（归一化坐标） */
   API.saveMarks = function (payload) {
@@ -466,6 +422,9 @@
   /** 原片的播放地址（给标定页的 <video> 用；后端支持 Range 才能拖动定位） */
   API.videoUrl = function (videoPath) {
     return API.base + '/api/video?video_path=' + encodeURIComponent(videoPath);
+  };
+  API.markVideoUrl = function (videoPath) {
+    return API.base + '/api/mark-video?video_path=' + encodeURIComponent(videoPath);
   };
   /** 机器上现成的视频清单（示例素材 + 已上传）—— 新手上手第一步用 */
   API.samples = function () {

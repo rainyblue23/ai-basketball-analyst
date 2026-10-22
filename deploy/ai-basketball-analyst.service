@@ -1,0 +1,16 @@
+[Unit]
+Description=AI Basketball Analyst local web application
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/data/projects/ai-basketball-analyst
+Environment=PYTHONPATH=/data/projects/ai-basketball-analyst/src
+EnvironmentFile=/data/projects/ai-basketball-analyst/.env
+ExecStart=/data/conda-envs/ai-basketball-analyst/bin/uvicorn aihoop.api:app --host 127.0.0.1 --port 8018 --proxy-headers --forwarded-allow-ips 127.0.0.1
+Restart=on-failure
+RestartSec=5
+UMask=0077
+
+[Install]
+WantedBy=default.target

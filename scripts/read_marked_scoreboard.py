@@ -1,11 +1,11 @@
-"""手动框选记分牌 → 用 Windows OCR 读出得分事件。
+"""手动框选记分牌 → OCR 读出得分事件（Windows / Linux）。
 
 流程（实测可行）：
   1. 用户在画面上框出记分牌的**数字区域**（1 个或 2 个；两个分别是主/客队分），
      并给出起始比分；
   2. 每 step_s 秒抽一帧，把该区域**放大 4 倍**后存成 PNG
      （实测：放大后 Windows OCR 能稳定读出 "KPHS 27 AHS 35"；不放大就认不出）；
-  3. 一次 PowerShell 调用**批量 OCR** 所有小图（避免逐张启动 PowerShell 的开销）；
+  3. Windows 用系统 OCR，Linux 用已预置模型的 EasyOCR 批量读取小图；
   4. 从文字里抠出数字 → 用「比分只增不减 + 一次最多 +3」过滤误读 → 产出得分事件。
 
 为什么不用模板匹配：现有 `scoreboard.py` 依赖样式模板，实测这段视频直接报
@@ -19,7 +19,9 @@
 from __future__ import annotations
 
 import argparse
+from functools import lru_cache
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -46,10 +48,11 @@ def grab_crops(video: str, boxes: dict, step_s: float, zoom: float,
         dur = min(dur, max_seconds)
     step = max(1, int(round(step_s * fps)))
     items = []
+    from aihoop.frame_reader import FrameReader
+    reader = FrameReader(cap)
     f = 0
     while f < total and (f / fps) <= dur:
-        cap.set(cv2.CAP_PROP_POS_FRAMES, f)
-        ok, fr = cap.read()
+        ok, fr = reader.read(f)
         if not ok:
             break
         t = f / fps
@@ -70,7 +73,90 @@ def grab_crops(video: str, boxes: dict, step_s: float, zoom: float,
     return items
 
 
+def _opencv_video(video: str, tmpdir: Path, max_seconds: float = 0.) -> str:
+    """Transcode codecs unsupported by this host's OpenCV only for OCR sampling."""
+    cap = cv2.VideoCapture(str(video))
+    ok, _ = cap.read() if cap.isOpened() else (False, None)
+    cap.release()
+    if ok:
+        return str(video)
+    if max_seconds <= 0:
+        # Reuse the analysis decode cache; repeated OCR must not create another
+        # lossy transcode that changes small scoreboard digits.
+        from aihoop.video_compat import ensure_cv2_decodable
+        return ensure_cv2_decodable(str(video))
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        raise RuntimeError("OpenCV 无法解码视频，且未安装 ffmpeg")
+    target = tmpdir / "scoreboard_compatible.mp4"
+    cmd = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", str(video)]
+    if max_seconds > 0:
+        cmd += ["-t", str(max_seconds + 1)]
+    cmd += ["-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "25",
+            "-pix_fmt", "yuv420p", str(target)]
+    done = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+    if done.returncode or not target.is_file():
+        raise RuntimeError(f"视频转码失败：{done.stderr[-500:]}")
+    cap = cv2.VideoCapture(str(target))
+    ok, _ = cap.read() if cap.isOpened() else (False, None)
+    cap.release()
+    if not ok:
+        raise RuntimeError("转码后 OpenCV 仍无法解码视频")
+    return str(target)
+
+
+def _easyocr_model_dir() -> Path:
+    from aihoop.ocr_assets import ocr_model_directory
+    path = ocr_model_directory(ROOT)
+    missing = [name for name in ("craft_mlt_25k.pth", "english_g2.pth")
+               if not (path / name).is_file()]
+    if missing:
+        raise RuntimeError(f"比分牌 OCR 模型缺失：{path}（{', '.join(missing)}）；"
+                           "先运行 scripts/prepare_jersey_ocr.py")
+    return path
+
+
+@lru_cache(maxsize=2)
+def _easyocr_reader(model_dir: str):
+    try:
+        import easyocr
+        import torch
+    except ImportError as exc:
+        raise RuntimeError("比分牌 OCR 需要 EasyOCR；请安装 requirements-jersey.txt") from exc
+    return easyocr.Reader(["en"], gpu=torch.cuda.is_available(),
+                          model_storage_directory=model_dir,
+                          download_enabled=False, verbose=False)
+
+
+def _run_easyocr(tmpdir: Path, out_json: Path) -> dict:
+    reader = _easyocr_reader(str(_easyocr_model_dir()))
+    rows = []
+    for image in sorted(tmpdir.glob("*.png")):
+        # Keep team labels for whole-overlay parsing; a single-team box only
+        # needs digits and avoids stray letters from the broadcast graphics.
+        team_crop = image.stem.endswith(("_home", "_away"))
+        found = reader.readtext(str(image), detail=1, paragraph=False,
+                                allowlist="0123456789" if team_crop else None)
+        words = []
+        for polygon, value, confidence in found:
+            xs = [float(p[0]) for p in polygon]
+            ys = [float(p[1]) for p in polygon]
+            words.append({"text": str(value), "x": min(xs), "y": min(ys),
+                          "w": max(xs)-min(xs), "h": max(ys)-min(ys),
+                          "confidence": float(confidence)})
+        # EasyOCR may return separate words in a different order. Read each
+        # horizontal line left-to-right before score_text parses the labels.
+        words.sort(key=lambda word: (round(word["y"] / max(12, word["h"])), word["x"]))
+        rows.append({"file": image.name,
+                     "text": " ".join(word["text"] for word in words),
+                     "words": words})
+    out_json.write_text(json.dumps(rows, ensure_ascii=False), encoding="utf-8")
+    return {row["file"]: row["text"] for row in rows}
+
+
 def run_ocr(tmpdir: Path, out_json: Path) -> dict:
+    if os.name != "nt":
+        return _run_easyocr(tmpdir, out_json)
     ps = shutil.which("powershell") or shutil.which("powershell.exe") or \
         shutil.which("pwsh")
     if not ps:
@@ -142,13 +228,25 @@ def read_scoreboard(video, box=None, start=None, step=.5, zoom=4., max_seconds=0
     parent.mkdir(parents=True,exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='sbocr_',dir=parent) as tmp:
         tmpdir=Path(tmp)
+        readable_video=_opencv_video(video,tmpdir,max_seconds)
         method='manual_box' if box is not None else 'auto_ocr_verified'
         if box is None:
+            if os.name != 'nt':
+                # Logo scoreboards have no textual team labels. Their display
+                # sides remain unassigned until aligned to on-court teams.
+                from aihoop.logo_scoreboard import locate, scan as scan_logo
+                reader = _easyocr_reader(str(_easyocr_model_dir()))
+                try:
+                    logo_box = locate(readable_video, reader)
+                    return scan_logo(readable_video, reader, logo_box, step=step,
+                                     max_seconds=max_seconds)
+                except ValueError:
+                    pass
             probe=tmpdir/'probe';probe.mkdir()
-            box=locate_scoreboard_ocr(video,probe,team_names)
+            box=locate_scoreboard_ocr(readable_video,probe,team_names)
         x,y,w,h=box
         crops=tmpdir/'crops';crops.mkdir()
-        items=grab_crops(video,{'all':[x,y,x+w,y+h]},step,zoom,crops,max_seconds)
+        items=grab_crops(readable_video,{'all':[x,y,x+w,y+h]},step,zoom,crops,max_seconds)
         if not items:raise ValueError('没有可读取的比分牌画面，请检查框选区域')
         texts=run_ocr(crops,tmpdir/'ocr.json')
         res=build_events(items,texts,start,team_names=team_names)
@@ -191,7 +289,8 @@ def main(argv=None) -> int:
         shutil.rmtree(tmpdir, ignore_errors=True)
     tmpdir.mkdir(parents=True, exist_ok=True)
     try:
-        items = grab_crops(a.video, boxes, a.step, a.zoom, tmpdir,
+        readable_video = _opencv_video(a.video,tmpdir,a.max_seconds)
+        items = grab_crops(readable_video, boxes, a.step, a.zoom, tmpdir,
                            max_seconds=a.max_seconds)
         print(f"抽样 {len(items)} 张小图（{len(boxes)} 个区域）→ OCR …")
         texts = run_ocr(tmpdir, ROOT / "out" / "tmp" / "sb_ocr.json")

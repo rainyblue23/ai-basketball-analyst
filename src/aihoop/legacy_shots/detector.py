@@ -17,6 +17,14 @@ class Det:
     xyxy: tuple[float, float, float, float]
     track_id: int | None = None
     predicted: bool = False   # True = 由运动模型外推得到，非真实观测（不得用于确认事件）
+    source: str = "model"
+    region: tuple | None = None
+    support_sources: tuple = ()
+
+    @property
+    def is_measurement(self) -> bool:
+        """Motion blobs and linear predictions never confirm ball events."""
+        return not self.predicted and self.cls_name.lower() != 'motion_ball'
 
     @property
     def cx(self) -> float:
@@ -43,7 +51,9 @@ class Det:
             "cls": self.cls_name,
             "conf": round(float(self.conf), 3),
             "xyxy": [round(float(v), 1) for v in self.xyxy],
-            "track_id": self.track_id,
+            "track_id": self.track_id, "source": self.source,
+            "region": list(self.region) if self.region is not None else None,
+            "support_sources": list(self.support_sources),
         }
 
 

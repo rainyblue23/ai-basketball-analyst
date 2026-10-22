@@ -23,7 +23,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional
 
-DATA = Path(__file__).resolve().parents[2] / "data"
+DATA = Path(os.environ.get("AIHOOP_DATA_DIR") or
+            Path(__file__).resolve().parents[2] / "data").expanduser().resolve()
 COOKIE_NAME = "aihoop_session"
 SESSION_TTL_S = int(os.environ.get("AIHOOP_SESSION_TTL", str(8 * 3600)))
 PBKDF2_ROUNDS = 120_000
@@ -85,6 +86,7 @@ def _db():
     c = sqlite3.connect(DATA / "auth.sqlite", timeout=10)
     c.execute("CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, username TEXT, fingerprint TEXT, expires REAL)")
     c.execute("CREATE TABLE IF NOT EXISTS attempts (host TEXT, at REAL)")
+    c.execute("CREATE TABLE IF NOT EXISTS registration_attempts (host TEXT, at REAL)")
     try:
         with c:
             yield c
@@ -135,6 +137,19 @@ def login_allowed(host):
         if count >= 10:
             return False
         c.execute("INSERT INTO attempts VALUES (?,?)", (host, now))
+    return True
+
+
+def register_allowed(host):
+    """限制同一来源每小时最多尝试注册 10 次，跨进程共享计数。"""
+    now = time.time()
+    with _db() as c:
+        c.execute("BEGIN IMMEDIATE")
+        c.execute("DELETE FROM registration_attempts WHERE at<?", (now-3600,))
+        count = c.execute("SELECT COUNT(*) FROM registration_attempts WHERE host=?", (host,)).fetchone()[0]
+        if count >= 10:
+            return False
+        c.execute("INSERT INTO registration_attempts VALUES (?,?)", (host, now))
     return True
 
 

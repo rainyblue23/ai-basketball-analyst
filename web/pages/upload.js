@@ -48,11 +48,15 @@ window.PAGES['upload'] = {
       markSize: { w: 0, h: 0 },
       markPts: [],            // [{name, label, x, y}]（归一化 0~1）
       markIdx: 0,
-      // 可选步骤：选了"量筐宽"里的某一项后，下一次点画面落的就是它
-      // （不选它就是默认路径：只点中心，半径交给检测器量）
-      hoopOptTarget: '',
+      hoopDragStart: null,    // 按下时的归一化坐标；拖动直接画篮筐框
+      hoopDragCurrent: null,
+      hoopSuppressClick: false,
       markSaving: false,
       savedMarks: null,       // 该视频已保存的标点
+      hoopPanels: { left: {at:1, image:'', box:null, loading:false, version:0}, right: {at:1, image:'', box:null, loading:false, version:0} },
+      hoopPanelDrag: null,
+      hoopSession: 0,
+      hoopSide: 'left',       // 当前框的是左半场还是右半场篮筐
       // ---- 标球场：点场地特征点解标定（用户建议：不一定要标篮筐）----
       markKind: 'hoop',       // hoop | court
       courtItems: [],         // [{name,label,hint,dst}] 当前这一份清单里的特征点
@@ -185,12 +189,11 @@ window.PAGES['upload'] = {
       // 否则慢请求会把**旧点位算出来的线**画在新点位上（用户 2026-10-05 指出的风险）
       mfVersion: 0,
       autoPreviewTimer: null,  // 点/拖之后延迟自动解算一次（静默），让球场线立刻出现在画面上
-      // ---- 新手上手（onboard）----
-      // 目标：让第一次拿到软件的人在 5 分钟内看到一份结果，而不是对着表单发愣。
-      // 关闭状态记在 localStorage：看过就不再烦他，但可以随时重新打开。
-      guideOpen: true,
       samples: [],             // 机器上现成的视频（示例 + 已上传）
       samplePick: '',
+      localVideoUrl: '',
+      localVideoPath: '',
+      courtCaptureBusy: [false,false],
       videoUrl: '',            // 原片播放地址（标定页拖动定位用）
       courtPreview: null,      // 「预览」的结果（不落盘）：每点像素误差 + 合规性
       courtPreviewed: false,   // 预览过且可用 → 才允许点「保存」
@@ -206,29 +209,21 @@ window.PAGES['upload'] = {
   computed: {
     canSubmit: function () {
       // 只有 video / jsonl 两种源（合成演示入口已移除）
-      return !!String(this.form.video_path || '').trim();
+      return this.uploadPct < 0 && !!String(this.form.video_path || '').trim();
     },
-    /** 标点顺序：**只要求篮筐中心**；左右缘/上下沿是可选的"量筐宽"步骤。
-     *
-     * 用户反馈（2026-09-27）："标篮筐中心就挺准的吧，可以不需要再标上下左右四个点了"。对 ——
-     * 一开始把 5 个点排成必须依次点的流程，会让人以为不点完就没法分析。
-     * 现在中心是唯一必点项；四边收进「可选：量一下筐宽」里，不点也能保存、也能分析
-     * （半径由后端检测器量，见 sources._visual_attempts 里的 manual_center+detector_radius）。 */
+    /** 用两个角把篮圈框出来。中心点无法提供尺寸，检测器漏筐时仍然救不回来；
+     * 矩形框同时给出中心与宽高，后端可以直接锁定并在附近补检篮球。 */
     markItems: function () {
       return [
-        { name: 'rim_center', label: '篮筐中心', hint: '点篮圈正中心（只有这一项是必点的）' }
+        { name: 'rim_box_tl', label: '篮筐框左上角', hint: '点在篮圈外接框的左上角' },
+        { name: 'rim_box_br', label: '篮筐框右下角', hint: '点在篮圈外接框的右下角' }
       ];
     },
-    /** 可选的四边：量出半径能让"判进球的横向尺度"更准 */
+    /** 旧版可选四边保留为空，避免已有模板分支报错。 */
     markItemsOptional: function () {
-      return [
-        { name: 'rim_left', label: '篮圈左缘', hint: '点篮圈最左边' },
-        { name: 'rim_right', label: '篮圈右缘', hint: '点篮圈最右边' },
-        { name: 'rim_top', label: '篮圈上沿', hint: '点篮圈最上边' },
-        { name: 'rim_bottom', label: '篮圈下沿', hint: '点篮圈最下边' }
-      ];
+      return [];
     },
-    /** 当前模式要点的项（篮筐 5 项，只有"中心"必填 / 球场是点名清单，点够 4 个即可） */
+    /** 当前模式要点的项（篮筐框两个角都必填 / 球场是点名清单，点够 4 个即可） */
     activeItems: function () {
       return this.markKind === 'court' ? this.courtItems : this.markItems;
     },
@@ -432,11 +427,17 @@ window.PAGES['upload'] = {
       if (this.markKind !== 'court') return this.markPts.length;
       return this.mfFrames.length ? this.mfPts.length : this.courtPts.length;
     },
-    /** 新手三步的当前状态：做到哪一步，引导就跟到哪一步（不看教程也能自己走） */
+    /** 顶部四步流程的当前状态。 */
     guideSteps: function () {
       var hasVideo = !!String(this.form.video_path || '').trim();
       var hasCal = !!(this.calInfo && this.calInfo.exists);
       var calReady = !!(this.calInfo && this.calInfo.calibration_ok);
+      var hoopRows = (this.savedMarks && this.savedMarks.hoops) || {};
+      var hasHoop = !!(this.savedMarks && this.savedMarks.hoop) || Object.keys(hoopRows).length > 0;
+      var leftHoop = Number((((hoopRows.left || {}).hoop || [0,0,0])[2]) || 0) > 0;
+      var rightHoop = Number((((hoopRows.right || {}).hoop || [0,0,0])[2]) || 0) > 0;
+      var measuredHoop = leftHoop && rightHoop;
+      var legacyHoop = hasHoop && !leftHoop && !rightHoop;
       var job = (this.S && this.S.job) || {};
       var done = job.status === 'done';
       var rmse = (this.calInfo && this.calInfo.reproj_error_m != null)
@@ -452,8 +453,15 @@ window.PAGES['upload'] = {
             // 一句话说清"怎么做 + 不做的后果"。**必须保留"不标也能分析"这几个字**：
             // 不写用户就以为标定是硬门槛（`tests/test_upload_payload.js` 也在钉这条）。
             : '在画面里点 4~6 个地面点；不标也能分析（热图/战术图要标）',
-          cta: hasCal ? '重新标定' : '去标定' },
-        { key: 'run', n: 3, title: '开始分析', done: done,
+          cta: hasCal ? '重新标定' : '标定球场' },
+        { key: 'hoop', n: 3, title: '标定篮筐（推荐）', done: measuredHoop,
+          desc: measuredHoop ? '左右半场篮筐均已框选'
+            : (leftHoop || rightHoop
+                ? ('已框' + (leftHoop ? '左' : '右') + '半场，还需框' + (leftHoop ? '右' : '左') + '半场')
+                : (legacyHoop ? '已有旧版单篮筐标点，请补齐左右半场'
+                              : '左右半场分别框选，避免检测器漏筐')),
+          cta: measuredHoop ? '重新框选篮筐' : '框选篮筐' },
+        { key: 'run', n: 4, title: '开始分析', done: done,
           desc: done
             // 完成后要指出"判错了去哪儿改"——去掉「训练标注」模块后，
             // 「人工复核」是唯一的纠错入口，界面上必须还找得到（test_ui_home.js 钉这条）。
@@ -523,12 +531,19 @@ window.PAGES['upload'] = {
       this.markPts.forEach(function (p) { m[p.name] = 1; });
       return m;
     },
+    hoopSavedState: function () {
+      var rows = (this.savedMarks && this.savedMarks.hoops) || {};
+      function valid(side) {
+        return Number((((rows[side] || {}).hoop || [0,0,0])[2]) || 0) > 0;
+      }
+      return { left: valid('left'), right: valid('right') };
+    },
     /** 与 guideNext 配套的一句话：已点几个、离能保存还差几个 */
     guideDesc: function () {
       if (this.markKind !== 'court') {
         return '已点 ' + this.markPts.length + ' 个；' +
-          (this.markHoop ? '篮筐中心已标好，现在就能保存（其余 4 项可选，用来量筐宽/高度）'
-                         : '请先点「篮筐中心」');
+          (this.markHoop ? '篮筐框已完成；分析会直接锁定这个篮筐并在附近补检篮球'
+                         : '请依次点篮筐框的左上角、右下角');
       }
       var n = this.guideCount;
       var enough = this.mfFrames.length ? this.mfEnough : this.courtEnough;
@@ -542,13 +557,23 @@ window.PAGES['upload'] = {
         (enough ? '——点数已够试算，请先生成投影，核对两端场线后再保存'
                 : '——每边至少 4 个、建议 5~6 个') + tail;
     },
-    /** 已点出的点里，篮筐中心 + 左右缘 → 算出归一化 rx；中心 + 上下沿 → ry */
+    /** 两个角直接得到篮圈外接框。 */
     markHoop: function () {
       var self = this;
       function g(n) {
         var p = self.markPts.filter(function (q) { return q.name === n; })[0];
         return p ? { x: p.x, y: p.y } : null;
       }
+      var tl = this.hoopDragStart || g('rim_box_tl');
+      var br = this.hoopDragCurrent || g('rim_box_br');
+      if (tl && br) {
+        var left = Math.min(tl.x, br.x), right = Math.max(tl.x, br.x);
+        var top = Math.min(tl.y, br.y), bottom = Math.max(tl.y, br.y);
+        if (right-left < 0.002 || bottom-top < 0.002) return null;
+        return { cx:(left+right)/2, cy:(top+bottom)/2,
+                 rx:(right-left)/2, ry:(bottom-top)/2, measured:true };
+      }
+      // 兼容已保存/旧会话里“中心 + 边缘”的点。
       var c = g('rim_center');
       if (!c) return null;
       var l = g('rim_left'), r = g('rim_right'), t = g('rim_top'), b = g('rim_bottom');
@@ -696,14 +721,13 @@ window.PAGES['upload'] = {
   mounted: function () {
     this.refreshJobs();
     this.fetchHealth();
-    this.loadSamples();          // 上手第一步要给得出"能直接用的视频"，不让新用户自己找路径
-    try {
-      this.guideOpen = localStorage.getItem('aihoop-guide-dismissed') !== '1';
-      this.courtDraftAvailable = !!localStorage.getItem('aihoop-court-draft');
-    } catch (e) { this.guideOpen = true; }
+    this.loadSamples();
+    try { this.courtDraftAvailable = !!localStorage.getItem('aihoop-court-draft'); }
+    catch (e) { this.courtDraftAvailable = false; }
   },
   beforeUnmount: function () {
     if (this.watcher) this.watcher.close();
+    if (this.localVideoUrl) URL.revokeObjectURL(this.localVideoUrl);
   },
   methods: {
     storeCourtDraft: function () {
@@ -761,18 +785,121 @@ window.PAGES['upload'] = {
        在画面上标篮筐（不用敲命令行）
        ------------------------------------------------------------------ */
     openMark: function () {
-      var self = this;
+      var self = this, v = String(this.form.video_path || '').trim();
+      if (!v) { this.$message.warning('先选一个视频'); return; }
       this.markKind = 'hoop';
-      var v = String(this.form.video_path || '').trim();
-      if (!v) { this.$message.warning('先选一个视频（上传或填路径）'); return; }
       this.markOpen = true;
-      this.markIdx = 0;
       this.markPts = [];
-      this.loadPlayer();                 // 挂上原片，用户可以直接拖着定位
-      this.loadMarkFrame();
+      this.hoopPanelDrag = null;
+      var session = ++this.hoopSession;
+      this.hoopPanels = {
+        left: {at:1,image:'',box:null,loading:false,version:0},
+        right: {at:1,image:'',box:null,loading:false,version:0}
+      };
+      this.loadPlayer();
       window.API.getMarks(v).then(function (r) {
-        self.savedMarks = (r && r.exists) ? r.marks : null;
-      }).catch(function () { self.savedMarks = null; });
+        if (session !== self.hoopSession) return;
+        self.savedMarks = r && r.exists ? Object.assign({}, r.marks, {path:r.path}) : null;
+        var hs = (self.savedMarks && self.savedMarks.hoops) || {};
+        ['left','right'].forEach(function (side) {
+          var row = hs[side];
+          if (!row || self.hoopPanels[side].version) return;
+          self.hoopPanels[side].at = row.at;
+          var size = row.frame_size || self.savedMarks.frame_size;
+          var box = row.hoop;
+          var normalized = box && size && size[0] && size[1]
+            ? [box[0]/size[0],box[1]/size[1],box[2]/size[0],box[3]/size[1]] : null;
+          self.loadHoopPanel(side, normalized);
+        });
+      }).catch(function (e) {
+        if (session !== self.hoopSession) return;
+        self.$message.error('读取篮筐标定失败：' + e.message);
+      });
+    },
+    loadHoopPanel: function (side, savedBox) {
+      if (this.markSaving) return;
+      var self = this, panel = this.hoopPanels[side];
+      var session = this.hoopSession, version = ++panel.version;
+      var at = Number(panel.at) || 0;
+      panel.loading = true;
+      panel.image = '';
+      panel.box = null;
+      window.API.getFrame(String(this.form.video_path).trim(), at).then(function (r) {
+        if (session !== self.hoopSession || version !== panel.version) return;
+        panel.image = r.image;
+        panel.frameAt = at;
+        panel.box = savedBox || null;
+        panel.restored = !!savedBox;
+        panel.loading = false;
+      }).catch(function (e) {
+        if (session !== self.hoopSession || version !== panel.version) return;
+        panel.loading = false;
+        self.$message.error('取帧失败：' + e.message);
+      });
+    },
+    captureHoopPanel: function (side) {
+      if (this.markSaving) return;
+      var video = this.$refs['hoopVideo_' + side];
+      if (Array.isArray(video)) video = video[0];
+      if (!video || video.readyState < 2 || video.seeking || !video.videoWidth) { this.$message.warning('请等这一侧画面加载完成'); return; }
+      video.pause();
+      var panel = this.hoopPanels[side];
+      var canvas = document.createElement('canvas');
+      canvas.width=video.videoWidth;canvas.height=video.videoHeight;
+      try {
+        canvas.getContext('2d').drawImage(video,0,0);
+        var image=canvas.toDataURL('image/jpeg',.9);
+        ++panel.version;
+        panel.image=image;panel.at=video.currentTime;panel.frameAt=video.currentTime;
+        panel.box=null;panel.restored=false;panel.loading=false;
+      } catch(e) { this.$message.error('当前画面无法截取，请重新加载视频'); }
+    },
+    hoopVideoTime: function (side, event) {
+      this.hoopPanels[side].at = event.target.currentTime;
+    },
+    seekHoopPanel: function (side, at) {
+      var video=this.$refs['hoopVideo_'+side];
+      if(Array.isArray(video))video=video[0];
+      if(video) {video.pause();video.currentTime=Math.max(0,Number(at)||0);}
+    },
+    swapHoopPanels: function () {
+      if (this.markSaving || this.hoopPanels.left.loading || this.hoopPanels.right.loading) return;
+      var left = this.hoopPanels.left;
+      this.hoopPanels.left = this.hoopPanels.right;
+      this.hoopPanels.right = left;
+      this.hoopPanelDrag = null;
+      this.$nextTick(function () {
+        ['left','right'].forEach(function (side) {
+          var video = this.$refs['hoopVideo_' + side];
+          if (Array.isArray(video)) video = video[0];
+          if (video) video.currentTime = this.hoopPanels[side].at;
+        }, this);
+      });
+    },
+    hoopPanelDown: function (side, ev) {
+      if (this.markSaving || !this.hoopPanels[side].image) return;
+      var point = this.markEventPoint(ev);
+      if (!point) return;
+      ev.preventDefault();
+      this.hoopPanelDrag = {side:side, start:point};
+      this.hoopPanels[side].box = null;
+      this.hoopPanels[side].restored = false;
+    },
+    hoopPanelMove: function (side, ev) {
+      var drag = this.hoopPanelDrag;
+      if (!drag || drag.side !== side) return;
+      var b = this.markEventPoint(ev), a = drag.start;
+      if (!b) return;
+      this.hoopPanels[side].box = Math.abs(a.x-b.x) >= 0.002 && Math.abs(a.y-b.y) >= 0.002
+        ? [(a.x+b.x)/2,(a.y+b.y)/2,Math.abs(a.x-b.x)/2,Math.abs(a.y-b.y)/2] : null;
+    },
+    hoopPanelUp: function (side, ev) {
+      this.hoopPanelMove(side, ev);
+      this.hoopPanelDrag = null;
+    },
+    hoopPanelStyle: function (box) {
+      return {left:(box[0]-box[2])*100+'%', top:(box[1]-box[3])*100+'%',
+        width:box[2]*200+'%', height:box[3]*200+'%'};
     },
     /** 打开「标球场」：抽帧 → 在画面里点地标 → 解算（走 /api/calibrate_multi） */
     openCourt: function () {
@@ -798,12 +925,42 @@ window.PAGES['upload'] = {
       // 后端那 17 个里有一半是"另一侧/中圈那一头"的点，在这种机位下画面里根本不存在，
       // 列出来只会让用户去点不存在的东西（实测：把"底线右角"点成了罚球区右角，偏 9.17m）。
       this.setCourtSide('left');
-      // 默认直接走"自动挑同一镜头的两帧"：用户不用自己拖，也就不会拖到两个镜头里。
-      // （原来的"在 mfCenter 附近抽 6 帧"已删掉：那批帧是**同一秒附近**的，
-      //   对"两侧半场各标一遍"没意义，还会和自动挑的两帧抢 mfFrames。）
-      this.$message.info('正在判断镜头有没有切…（约 3 秒）');
-      this.pickStableFrames();
+      // 先显示可标定画面，不让分镜识别或不支持的编码挡住入口。
+      this.mfFrames = [{t:-1,w:0,h:0,image:''},{t:-2,w:0,h:0,image:''}];
+      this.mfIdx=0;this.mfIdx2=1;
+      this.mfVersion++;
+      this.syncCourtSideForActive();
       this.loadCalInfo();                // 顺便读回"这段视频已有标定没有"
+    },
+    captureCourtPanel: function (panel) {
+      if (this.markSaving || this.courtCaptureBusy[panel]) return;
+      var video = this.$refs['courtVideo_'+panel];
+      if (Array.isArray(video)) video=video[0];
+      if (!video || video.readyState<2 || !video.videoWidth) {
+        this.$message.warning('先在这一侧播放器选好画面'); return;
+      }
+      video.pause();
+      var t=Number(video.currentTime.toFixed(2));
+      var other=panel===0 ? this.mfCurrentRight : this.mfCurrent;
+      if (other && other.image && Math.abs(other.t-t)<.01) {
+        this.$message.warning('两侧请分别选取不同时间的半场画面'); return;
+      }
+      var canvas=document.createElement('canvas');
+      canvas.width=video.videoWidth;canvas.height=video.videoHeight;
+      var image;
+      try {
+        canvas.getContext('2d').drawImage(video,0,0);
+        image=canvas.toDataURL('image/jpeg',.9);
+      } catch (e) { this.$message.error('当前播放器无法截取画面，请重新加载视频'); return; }
+      var index=panel===0 ? this.mfIdx : this.mfIdx2;
+      var previous=this.mfFrames[index];
+      var side=this.frameCourtSide(previous ? previous.t : -1,panel);
+      this.mfPts=this.mfPts.filter(function(p){return !previous || p.t!==previous.t;});
+      this.mfFrames.splice(index,1,{t:t,w:canvas.width,h:canvas.height,image:image});
+      this.mfSideByT=Object.assign({},this.mfSideByT,{[String(t)]:side});
+      this.mfActive=panel;this.mfTarget='';this.mfResult=null;this.mfPreviewed=false;
+      this.showCourtOverlay=false;this.overlayLines=[];this.overlayLinesLeft=[];this.overlayLinesRight=[];
+      this.mfVersion++;this.syncCourtSideForActive();this.storeCourtDraft();
     },
     /** 读回"这段视频有没有标定"（保存/撤销之后要刷新状态与 revision） */
     loadCalInfo: function () {
@@ -817,7 +974,8 @@ window.PAGES['upload'] = {
     /** 把原片挂到弹窗里的播放器上（拖动定位用；后端 /api/video 支持 Range） */
     loadPlayer: function () {
       var v = String(this.form.video_path || '').trim();
-      this.videoUrl = v ? window.API.videoUrl(v) : '';
+      this.videoUrl = v ? (this.localVideoPath===v && this.localVideoUrl ? this.localVideoUrl :
+        (window.API.markVideoUrl ? window.API.markVideoUrl(v) : window.API.videoUrl(v))) : '';
     },
     /** 数字框改了秒数 → 播放器跟着跳过去（两边保持同步） */
     seekVideo: function (t) {
@@ -952,7 +1110,7 @@ window.PAGES['upload'] = {
     mfClick: function (ev) {
       if (!this.mfCurrent) return;
       var t = this.mfClickT(ev);
-      if (t === null) return;
+      if (t === null || !this.mfFrames.some(function(f){return f.t===t && f.image;})) return;
       var el = (ev.target && ev.target.tagName === 'IMG') ? ev.target
                                                           : ev.currentTarget;
       var box = el.getBoundingClientRect();
@@ -1077,34 +1235,9 @@ window.PAGES['upload'] = {
     },
     /** 点/拖之后延迟自动解算一次（静默、不弹提示），只为把球场线立刻叠上去 */
     scheduleAutoPreview: function () {
-      var self = this;
-      if (this.markKind !== 'court' || !this.mfFrames.length) return;
+      // 用户点「生成投影」才请求试算，点选期间不反复解码、计算。
       if (this.autoPreviewTimer) clearTimeout(this.autoPreviewTimer);
-      this.autoPreviewTimer = setTimeout(function () {
-        self.autoPreviewTimer = null;
-        if (self.markSaving) return;
-        // 接口层还没就绪（页面刚加载 / 单测环境里没有 window.API）时直接跳过：
-        // 自动叠线是"锦上添花"，绝不能因为它把页面搞崩（实测：单测里定时器抛出
-        // TypeError 直接把进程带走了）。
-        if (!window.API || !window.API.calibrateMulti) return;
-        var enough = self.mfDualSplit
-          ? (self.mfLeftCov.enough || self.mfRightCov.enough)
-          : (self.mfPtsHere.length >= 4);
-        if (!enough) return;                 // 还不够 4 个点：静默等着，别弹错误
-        // ★ 两幅画面只要**有一幅还没点够 4 个点**就别自动解算。
-        //   为什么（实测复现）：用户在第二幅画面点下**第 1 个点**的那一刻（6 点/2 幅），
-        //   两边的点会被后端合到一起解 —— 5 个属于左镜头、1 个属于右镜头，
-        //   RANSAC 一个内点都找不到 → 直接报"跨画面的点混在一起解不了"，
-        //   而且那条路要 40+ 秒（浏览器 30 秒就中断了）。用户看到的就是
-        //   "点完点之后显示解算不了"——**纯属中间状态被自动算了一次**。
-        //   正式解算必须等两边各自够 4 个（后端那时才走"每幅一份 H"的正确路径）；
-        //   想提前看效果的人可以自己按「先预览（不保存）」。
-        if (self.mfDualSplit &&
-            !(self.mfLeftCov.enough && self.mfRightCov.enough)) {
-          return;
-        }
-        self.previewCourtMulti(true);
-      }, 600);
+      this.autoPreviewTimer = null;
     },
     mfUndo: function () {
       // 「4 点试算」模式下点不在 mfPts 里（走 mfMiniPts），不单独处理的话
@@ -1300,7 +1433,7 @@ window.PAGES['upload'] = {
       }
       // 要得到完整球场坐标，A、B 两端必须各有独立的有效画面。
       if (!this.mfFullCourtReady) {
-        if (!silent) this.$message.warning('还不能预览完整球场：A端、B端必须各有一幅至少 4 个地面点的画面。请在每幅画面上选对端点；同一端的相邻帧不能代替另一端。');
+        if (!silent) this.$message.warning('还不能保存完整球场：A端、B端必须各有一幅至少 4 个地面点的画面。请在每幅画面上选对端点；同一端的相邻帧不能代替另一端。');
         return null;
       }
       var note = solvable > 1
@@ -1349,7 +1482,7 @@ window.PAGES['upload'] = {
       if ((e && e.name === 'AbortError') ||
           /aborted|abort|signal is aborted/i.test(msg)) {
         return '后端算太久被浏览器中断了（不是标定点的问题）。'
-          + '跨镜头标定要定位切镜、逐段解算，本身比较慢；请再点一次「先试算」。'
+          + '跨镜头标定要逐段解算，请稍后重试保存。'
           + '若反复超时，请确认后端窗口还在跑（没被关掉）。';
       }
       return msg || '未知错误';
@@ -1469,26 +1602,10 @@ window.PAGES['upload'] = {
           ' 个）；左右画面各自至少 4 个才能解算，建议 5~6 个并分散到场地线上；最后仍要通过吻合度校验');
         return;
       }
-      if (!this.mfPreviewed || !this.mfResult || !this.mfResult.calibration_fit) {
-        this.$message.warning('先生成球场投影预览，并确认各镜头段通过质量校验，再保存。');
-        return;
-      }
-      var badQuality = this.weakSegs.length > 0 ||
-        (this.fitSegRows.length && this.fitSegRows.some(function (s) { return !s.ok; })) ||
-        (this.mfResult.rmse_m != null && Number(this.mfResult.rmse_m) > 1.5);
-      if (badQuality) {
-        this.$message.warning('当前标定仍有镜头段未通过校验（吻合度需 ≥1.25，重投影误差需 ≤1.5m），不能保存为热区/战术标定。');
-        return;
-      }
-      if (this.fitRatio < 1.25) {
-        this.$message.warning('当前最差镜头段吻合度只有 ' + this.fitRatio +
-          '（门槛 1.25），不能保存成热区/战术标定。按逐段读数只重标失败的镜头段。');
-        return;
-      }
       var got = this.courtMultiPayload();
       if (!got) return;
       var ver2 = this.mfVersion;
-      // 保存必须与预览使用相同的跨端处理方式，避免预览通过而保存超时。
+      // 保存时由后端直接解算并检查地面标定。
       var compensateFrames = !this.mfFullCourtReady;
       this.markSaving = true;
       window.API.calibrateMulti({
@@ -1502,7 +1619,6 @@ window.PAGES['upload'] = {
         self.markSaving = false;
         if (ver2 !== self.mfVersion) return;   // 同上：旧响应不覆盖新点位
         self.mfResult = r;
-        self.refreshOverlay();
         if (r.saved) {
           if (r.position_unverified) {
             self.$message.warning('标定已保存，但位置结论会被判为**未校验**：' +
@@ -1940,10 +2056,12 @@ window.PAGES['upload'] = {
       this.overlayLines = [];
       this.overlayLinesLeft = [];
       this.overlayLinesRight = [];
+      var version = ++this.mfVersion;
       var jobs = [[t1, 0], [t2, 1]];
       jobs.forEach(function (it) {
         var t = it[0], slot = it[1];
         window.API.getFrame(v, t).then(function (r) {
+          if (version !== self.mfVersion || !self.markOpen) return;
           var fr = { t: Number(Number(t).toFixed(2)), w: r.w, h: r.h,
                      image: r.image, slot: slot };
           self.mfFrames.push(fr);
@@ -1964,6 +2082,7 @@ window.PAGES['upload'] = {
               's / t=' + self.mfFrames[1].t + 's）。请核对每帧实际拍到的篮筐端点，分别设为 A端、B端后标点。');
           }
         }).catch(function (e) {
+          if (version !== self.mfVersion || !self.markOpen) return;
           self.$message.error('取帧失败：' + (e && e.message ? e.message : e));
         });
       });
@@ -2155,64 +2274,92 @@ window.PAGES['upload'] = {
     },
     /** 鼠标在画面上移动 → 记下位置，用来画准星（点之前就知道会落在哪） */
     onMarkMove: function (ev) {
+      if (this.markKind !== 'court' && this.hoopDragStart) {
+        this.hoopDragCurrent = this.markEventPoint(ev);
+        this.hoverPt = null;
+        return;
+      }
       // 拖动修正优先：按住了某个已标的点就实时改它的坐标，不再画准星
       if (this.mfDrag && this.mfDragMove(ev)) { this.hoverPt = null; return; }
-      var el = (ev.target && ev.target.tagName === 'IMG') ? ev.target
-                                                          : ev.currentTarget;
-      var box = el.getBoundingClientRect();
-      if (!box.width || !box.height) return;
+      this.hoverPt = this.markEventPoint(ev, false);
+    },
+    markEventPoint: function (ev, clamp) {
+      var el = ev.currentTarget;
+      var box = el && el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+      if (!box || !box.width || !box.height) return null;
       var x = (ev.clientX - box.left) / box.width;
       var y = (ev.clientY - box.top) / box.height;
-      if (x < 0 || x > 1 || y < 0 || y > 1) { this.hoverPt = null; return; }
-      this.hoverPt = { x: x, y: y };
+      if (clamp !== false) {
+        x = Math.max(0, Math.min(1, x));
+        y = Math.max(0, Math.min(1, y));
+      } else if (x < 0 || x > 1 || y < 0 || y > 1) {
+        return null;
+      }
+      return { x: x, y: y };
     },
-    onMarkLeave: function () { this.hoverPt = null; this.mfDragEnd(); },
+    finishHoopDrag: function (ev) {
+      if (!this.hoopDragStart) return;
+      if (ev) this.hoopDragCurrent = this.markEventPoint(ev);
+      var a = this.hoopDragStart, b = this.hoopDragCurrent;
+      if (a && b && Math.abs(a.x-b.x) >= 0.002 && Math.abs(a.y-b.y) >= 0.002) {
+        this.markPts = [
+          { name:'rim_box_tl', label:'篮筐框', x:Math.min(a.x,b.x), y:Math.min(a.y,b.y) },
+          { name:'rim_box_br', label:'', x:Math.max(a.x,b.x), y:Math.max(a.y,b.y) }
+        ];
+        this.markIdx = 2;
+      }
+      this.hoopDragStart = null;
+      this.hoopDragCurrent = null;
+      this.hoopSuppressClick = true;
+    },
+    onMarkLeave: function (ev) {
+      this.hoverPt = null;
+      if (this.markKind !== 'court' && this.hoopDragStart) this.finishHoopDrag(ev);
+      this.mfDragEnd();
+    },
     /** 关闭标定窗口：叠线与在途结果一律作废（否则关掉再打开会看到上一轮的线） */
     onMarkClosed: function () {
+      this.hoopSession++;
+      this.hoopPanelDrag = null;
       this.mfVersion++;
       this.overlayLines = [];
       this.overlayLinesLeft = [];    // 左右各一份，关窗时都要清（不然重开会看到上一轮的线）
       this.overlayLinesRight = [];
       this.hoverPt = null;
       this.mfDrag = null;
+      this.hoopDragStart = null;
+      this.hoopDragCurrent = null;
     },
     /** 画面上的按下/松开：按住已标的点 = 拖动修正；普通单击 = 新增（原有行为不变） */
     onMarkDown: function (ev) {
-      if (this.markKind === 'court' && this.mfFrames.length) this.mfDragStart(ev);
-    },
-    onMarkUp: function () { this.mfDragEnd(); },
-    onMarkClick: function (ev) {
-      if (this.markKind === 'court') { this.onCourtClick(ev); return; }
-      // 必点项（篮筐中心）已点完时，如果用户选了"可选：量筐宽"的某一项，就落那一项。
-      // 这样"只点中心"是默认路径，想量精确半径的人也不用被困在 5 步流程里。
-      var target = (this.markDone && this.hoopOptTarget) ? this.hoopOptTarget : null;
-      if (!target && (this.markDone || !this.markCurrent)) return;
-      var el = (ev.target && ev.target.tagName === 'IMG') ? ev.target
-                                                          : ev.currentTarget;
-      var box = el.getBoundingClientRect();
-      var x = (ev.clientX - box.left) / box.width;
-      var y = (ev.clientY - box.top) / box.height;
-      x = Math.max(0, Math.min(1, x));
-      y = Math.max(0, Math.min(1, y));
-      if (target) {
-        var item = this.markItemsOptional.filter(function (o) {
-          return o.name === target; })[0] || { name: target, label: target };
-        // 同名点只能有一个：再点一次就是覆盖（避免越点越多）
-        this.markPts = this.markPts.filter(function (p) { return p.name !== target; });
-        this.markPts.push({ name: item.name, label: item.label, x: x, y: y });
-        this.hoopOptTarget = '';
+      if (this.markKind !== 'court') {
+        var p = this.markEventPoint(ev);
+        if (!p) return;
+        this.markPts = [];
+        this.markIdx = 0;
+        this.hoopDragStart = p;
+        this.hoopDragCurrent = p;
+        this.hoopSuppressClick = false;
+        if (ev.preventDefault) ev.preventDefault();
         return;
       }
-      this.markPts.push({ name: this.markCurrent.name,
-                          label: this.markCurrent.label, x: x, y: y });
-      this.markIdx += 1;
+      if (this.mfFrames.length) this.mfDragStart(ev);
+    },
+    onMarkUp: function (ev) {
+      if (this.markKind !== 'court') { this.finishHoopDrag(ev); return; }
+      this.mfDragEnd();
+    },
+    onMarkClick: function (ev) {
+      if (this.markKind === 'court') { this.onCourtClick(ev); return; }
+      // mouseup 后浏览器会再派发 click；框选已经在拖动结束时完成，这里只吞掉它。
+      if (this.hoopSuppressClick) this.hoopSuppressClick = false;
     },
     markUndo: function () {
       if (this.markKind === 'court') { this.courtUndo(); return; }
-      if (this.markIdx > 0) {
-        this.markIdx -= 1;
-        this.markPts.pop();
-      }
+      this.markPts = [];
+      this.markIdx = 0;
+      this.hoopDragStart = null;
+      this.hoopDragCurrent = null;
     },
     markSkip: function () {
       if (this.markKind === 'court') { this.courtSkip(); return; }
@@ -2225,31 +2372,38 @@ window.PAGES['upload'] = {
     markPct: function (p) { return { left: (p.x * 100) + '%', top: (p.y * 100) + '%' }; },
     /** 保存标点：POST /api/marks（归一化坐标，后端换回像素） */
     saveMarks: function () {
-      var self = this;
       if (this.markKind === 'court') { this.saveCourt(); return; }
-      var h = this.markHoop;
-      if (!h) { this.$message.warning('至少要点出「篮筐中心」'); return; }
-      var lm = {};
-      this.markPts.forEach(function (p) { lm[p.name] = [p.x, p.y]; });
+      if (this.markSaving) return;
+      var self = this, sides = ['left','right'];
+      if (!this.hoopPanels.left.box || !this.hoopPanels.right.box ||
+          this.hoopPanels.left.loading || this.hoopPanels.right.loading) {
+        this.$message.warning('请分别框选左右半场篮筐'); return;
+      }
+      // 串行合并两侧，避免两个写文件请求互相覆盖。
+      var payloads = sides.map(function (side) {
+        var panel = self.hoopPanels[side];
+        return {video_path:String(self.form.video_path).trim(), at:panel.frameAt,
+          landmarks:{}, hoop:panel.box.slice(), hoop_side:side};
+      });
       this.markSaving = true;
-      window.API.saveMarks({
-        video_path: String(this.form.video_path).trim(),
-        at: this.markAt,
-        landmarks: lm,
-        hoop: [h.cx, h.cy, h.rx, h.ry]
+      window.API.saveMarks(payloads[0]).then(function (r) {
+        self.savedMarks = Object.assign({}, r.marks, {path:r.path});
+        return window.API.saveMarks(payloads[1]);
       }).then(function (r) {
+        self.savedMarks = Object.assign({}, r.marks, {path:r.path});
         self.markSaving = false;
         self.markOpen = false;
-        self.savedMarks = r.marks;
-        self.$message.success('标点已保存，分析时会直接用它（不再跑篮筐检测器）');
+        self.$message.success('左右半场篮筐已保存');
       }).catch(function (e) {
         self.markSaving = false;
-        self.$message.error('保存失败：' + (e && e.message ? e.message : e));
+        self.$message.error('保存未完成，请重试：' + (e.message || e));
       });
     },
     clearMarks: function () {
       if (this.markKind === 'court') { this.courtPts = []; this.courtIdx = 0; return; }
+      this.hoopPanels.left.box = null; this.hoopPanels.right.box = null;
       this.markPts = []; this.markIdx = 0;
+      this.hoopDragStart = null; this.hoopDragCurrent = null;
     },
     /** 把已保存的标点画回去（只读展示） */
     savedMarkPct: function (p) { return { left: (p[0] * 100) + '%', top: (p[1] * 100) + '%' }; },
@@ -2262,10 +2416,7 @@ window.PAGES['upload'] = {
         .catch(function () { self.health = null; });
     },
     /** 浏览器上传视频：POST /api/upload（带 x-filename 头）→ 得到后端可见的路径 */
-    /* ------------------------------------------------------------------
-       新手上手引导（onboard）：让第一次拿到软件的人 5 分钟内看到一份结果
-       ------------------------------------------------------------------ */
-    /** 拉取"机器上现成的视频"清单（示例素材 + 已上传），给引导里的下拉用 */
+    /** 拉取机器上现成的视频清单（示例素材 + 已上传）。 */
     loadSamples: function () {
       var self = this;
       window.API.samples().then(function (r) {
@@ -2275,7 +2426,15 @@ window.PAGES['upload'] = {
         }
       }).catch(function () { self.samples = []; });
     },
-    /** 一键用现成视频（新手上手最省事的一步） */
+    loadSavedMarks: function () {
+      var self = this;
+      var v = String(this.form.video_path || '').trim();
+      if (!v || !this.S.backendOk) { this.savedMarks = null; return; }
+      window.API.getMarks(v).then(function (r) {
+        self.savedMarks = (r && r.exists) ? Object.assign({}, r.marks, { path: r.path }) : null;
+      }).catch(function () { self.savedMarks = null; });
+    },
+    /** 一键使用现成视频。 */
     useSample: function () {
       var p = this.samplePick || (this.samples[0] && this.samples[0].path);
       if (!p) {
@@ -2286,10 +2445,12 @@ window.PAGES['upload'] = {
       // 一定要填**绝对路径**：/api/samples 返回的就是绝对路径；
       // 手抄成相对路径（data\uploads\xxx.mp4）在浏览器/资源管理器里会解析到别的地方，
       // 表现是"路径不存在"（用户实测踩过）。
+      this.form.source = 'video';
       this.form.video_path = p;
       this.loadCalInfo();
+      this.loadSavedMarks();
       if (this.loadScoreboardEvents) { this.loadScoreboardEvents(); }
-      this.$message.success('已选好视频（绝对路径已填进「文件路径」）：' + this.videoBaseName);
+      this.$message.success('已选好视频：' + this.videoBaseName);
     },
     /** 把当前视频的绝对路径复制到剪贴板（给"想用别的播放器打开"的人用） */
     copyVideoPath: function () {
@@ -2304,7 +2465,7 @@ window.PAGES['upload'] = {
       } catch (e) { /* 下面兜底 */ }
       this.$message.info('绝对路径：' + p);
     },
-    /** 引导里的按钮：按步骤分发（1 选视频 / 2 标定 / 3 分析或看结果） */
+    /** 四步主流程按钮分发。 */
     guideAct: function (st) {
       if (!st) { return; }
       if (st.key === 'video') {
@@ -2312,48 +2473,50 @@ window.PAGES['upload'] = {
         return;
       }
       if (st.key === 'calib') { this.openCourt(); return; }
+      if (st.key === 'hoop') { this.openMark(); return; }
       if (st.key === 'run') {
         var job = (this.S && this.S.job) || {};
         if (job.status === 'done') { location.hash = '#/overview'; return; }
         this.start();
       }
     },
-    /** 收起引导：记在 localStorage，别每次都来烦人（但随时可以重新打开） */
-    dismissGuide: function () {
-      this.guideOpen = false;
-      try { localStorage.setItem('aihoop-guide-dismissed', '1'); } catch (e) { /* 无痕模式 */ }
-      this.$message.info('已收起上手引导；需要时在同一位置点「重新打开上手引导」');
-    },
-    openGuide: function () {
-      this.guideOpen = true;
-      try { localStorage.removeItem('aihoop-guide-dismissed'); } catch (e) { /* 忽略 */ }
-    },
-    /** 选本地文件上传（引导第 1 步的兜底路径） */
+    /** 选本地文件上传。 */
     pickFile: function () {
       var self = this;
       if (!this.S.backendOk) {
-        this.$message.warning('未连接后端，无法上传文件；可先填写后端机器上的绝对路径');
+        this.$message.warning('服务暂不可用，恢复连接后再选择本地文件');
         return;
       }
       if (this.health && this.health.stale) {
         this.$message.warning('后端正在自动重启或仍载入旧代码，请等几秒后点「刷新」再上传');
         return;
       }
+      if (this.uploadPct >= 0) { this.$message.info('视频正在上传，请等待完成'); return; }
       var input = document.createElement('input');
       input.type = 'file';
       input.accept = 'video/*';
       input.onchange = function () {
         var f = input.files && input.files[0];
         if (!f) return;
+        if (self.localVideoUrl) URL.revokeObjectURL(self.localVideoUrl);
+        self.localVideoUrl=URL.createObjectURL(f);
+        self.localVideoPath='';
         self.fileName = f.name;
+        self.form.video_path = '';
+        self.savedMarks = null;
+        self.calInfo = null;
+        self.videoUrl = '';
         self.uploadPct = 0;
         self.log('POST /api/upload（x-filename=' + f.name + '，' + (f.size / 1048576).toFixed(1) + ' MB）');
         window.API.uploadVideo(f, function (p) { self.uploadPct = p; }).then(function (r) {
           self.uploadPct = -1;
           self.form.source = 'video';
           self.form.video_path = r.path;
+          self.localVideoPath = r.path;
+          self.loadCalInfo();
+          self.loadSavedMarks();
           self.log('上传完成：' + r.path + '（' + r.bytes + ' 字节）');
-          self.$message.success('视频已上传到后端：' + r.path);
+          self.$message.success('视频上传完成，可以标定或开始分析');
         }).catch(function (e) {
           self.uploadPct = -1;
           self.log('上传失败：' + e.message);
@@ -2379,7 +2542,8 @@ window.PAGES['upload'] = {
         }, d.highlights);
         self.S.demoMode = true;
         self.S.jobId = 'demo';
-        self.$message.success('已载入演示数据');
+        self.S.notice = '合成样例，仅供界面演示，不代表视频分析结果';
+        self.$message.success('已载入合成演示数据');
         location.hash = '#/overview';
       });
     },
@@ -2413,6 +2577,7 @@ window.PAGES['upload'] = {
         this.$message.warning('未连接后端，无法新建任务；可先点「载入演示数据」走完整演示流程');
         return;
       }
+      if (this.uploadPct >= 0) { this.$message.warning('请等待视频上传完成再开始分析'); return; }
       if (!this.canSubmit) { this.$message.warning('请填写视频路径或 JSONL 文件路径'); return; }
       this.busy = true;
       this.logs = [];
@@ -2428,7 +2593,10 @@ window.PAGES['upload'] = {
         make_highlights: !!this.form.make_highlights
       };
       if (this.form.source === 'video') {
-        // 快速模式：跳过逐帧 YOLO，只走「比分牌 + 颜色追球」
+        // 自动模式：能可靠读到比分牌得分事件时用于逐球匹配；没有比分牌时
+        // 自然回退到球+篮筐视觉路径，不要求用户先配置 OCR。
+        payload.score_policy = 'auto';
+        // 快速模式只跳过球员检测；球、篮筐和可用比分牌仍会检查。
         payload.detect_players = !this.form.fast;
         payload.stride = this.form.fast ? 1 : 2;
         // 如果标过篮筐，把标点文件带上：后端直接用你的坐标，跳过检测器
@@ -2517,131 +2685,42 @@ window.PAGES['upload'] = {
     // 旧版独立标定页（HoopAI 那套 /api/hoopai/court + /api/calibrate）已不在界面上出现：
     // 标定统一走下面那个多帧地标面板（与队友的 multical 一致）。
     // 文件 web/hoopai-calibration.html / .js 仍在磁盘上，需要时可以临时挂回来。
-    // ---- 新手上手引导：3 步走到"看到一份结果" ----
-    // 为什么放最上面：第一次拿到软件的人面对 ①②③ 三张卡会一头雾水 ——
-    // 不知道该先干什么、标定是不是必须、结果在哪看。这里把最短路径摊开，
-    // 并**跟着用户的实际进度**打勾（状态驱动，不是一段死教程）。
-    '  <div class="card" v-if="guideOpen">',
+    // 顶端四步是本页唯一主流程；视频、球场和篮筐入口不在下方重复出现。
+    '  <div class="card">',
     '    <div class="row" style="align-items:center;justify-content:space-between">',
-    // 注意：**不要**给卡片加左侧彩色竖条（border-left:3px 是 AI 生成界面的典型痕迹，
-    // 检测器会直接判为 slop）。这里改用一个小标签来区分"这是引导，不是普通表单"。
-    '      <h3 class="card-title" style="margin:0"><el-tag size="small" type="primary" effect="plain">上手引导</el-tag>',
-    '        3 步跑出第一份分析',
-    '        <span class="sub">已完成 {{ guideDoneCount }}/3</span></h3>',
-    '      <el-button size="small" text @click="dismissGuide">收起（不再自动显示）</el-button>',
+    '      <h3 class="card-title" style="margin:0">4 步完成视频分析',
+    '        <span class="sub">已完成 {{ guideDoneCount }}/4</span></h3>',
     '    </div>',
-    // 灰色说明一律压到一行；原来这里是一段 60 多字的灰字，用户反馈"灰色说明太多"。
-    '    <div class="grid grid-3" style="gap:10px">',
+    '    <div class="grid grid-4" style="gap:10px">',
     '      <div v-for="st in guideSteps" :key="st.key" class="src-card" :class="{active: !st.done}">',
     '        <div class="t">{{ st.done ? \'✓\' : st.n }}. {{ st.title }}</div>',
     '        <div class="d" style="margin-bottom:8px">{{ st.desc }}</div>',
-    '        <el-button size="small" :type="st.done ? \'default\' : \'primary\'" @click="guideAct(st)">{{ st.cta }}</el-button>',
+    '        <template v-if="st.key===\'video\'">',
+    '          <el-select v-model="samplePick" size="small" style="width:100%;margin-bottom:8px" placeholder="选择示例视频" filterable>',
+    '            <el-option v-for="s in samples" :key="s.path" :label="s.name" :value="s.path" />',
+    '          </el-select>',
+    '          <div class="row" style="gap:6px;flex-wrap:wrap">',
+    '            <el-button size="small" @click="useSample" :disabled="uploadPct>=0 || !samples.length">用示例视频</el-button>',
+    '            <el-button size="small" type="primary" plain :disabled="uploadPct>=0 || !S.backendOk || !!(health && health.stale)" @click="pickFile">选取本地文件</el-button>',
+    '          </div>',
+    '          <el-progress v-if="uploadPct>=0" :percentage="Math.round(uploadPct*100)" :stroke-width="7" style="margin-top:8px" />',
+    '        </template>',
+    '        <el-button v-else size="small" :type="st.done ? \'default\' : \'primary\'" :disabled="uploadPct>=0 || (st.key!==\'run\' && !hasVideoPath)" @click="guideAct(st)">{{ st.cta }}</el-button>',
     '      </div>',
     '    </div>',
-    '    <div class="row" style="margin-top:10px;align-items:center;flex-wrap:wrap;gap:6px">',
-    '      <span class="hint">没有素材？选一段现成的：</span>',
-    '      <el-select v-model="samplePick" size="small" style="width:340px" placeholder="选择现成的视频" filterable>',
-    '        <el-option v-for="s in samples" :key="s.path"',
-    '          :label="s.group + \' · \' + s.name + \'（\' + s.size_mb + \' MB）\'" :value="s.path" />',
-    '      </el-select>',
-    '      <el-button size="small" @click="useSample" :disabled="!samples.length">用它</el-button>',
-    '      <span class="hint" v-if="!samples.length">（没有现成素材）</span>',
-    '      <span class="grow"></span>',
-    // 后端没连上：可见部分只留"怎么办 + 会自动重连"；窗口里该看到哪几行折进说明。
-    // ⚠️ 这一行在上一轮移植里被误删过（只剩注释），别再加回去时漏掉。
-    '      <span class="hint" v-if="!S.backendOk" style="color:#c45656">后端没连上：双击「启动后端.bat」，本页会自动重连<copy-note label="说明">那个窗口要一直开着（里面有「接口文档 / 健康检查 / 自动重启」三行才算起来了）。也可以点右上角「重新探测」或按 F5。</copy-note></span>',
-    '    </div>',
+    '    <p v-if="!S.backendOk" class="hint" style="color:#c45656;margin:10px 0 0">服务暂不可用，本页会自动重连</p>',
     '  </div>',
-    '  <div class="card" v-else style="padding:10px 14px">',
-    '    <div class="row" style="align-items:center;gap:8px">',
-    '      <el-button size="small" text type="primary" @click="openGuide">重新打开上手引导</el-button>',
-    '      <span class="grow"></span>',
+    '  <details class="card">',
+    '    <summary>高级：用已有 JSONL 检测结果重跑统计</summary>',
+    '    <div class="row" style="margin-top:12px;gap:8px">',
+    '      <el-input v-model="form.video_path" @focus="form.source=\'jsonl\'" placeholder="已有 raw_track.json 的后端绝对路径" clearable />',
+    '      <el-button size="small" @click="form.source=\'jsonl\'">使用 JSONL</el-button>',
     '    </div>',
-    '  </div>',
-    '  <div class="card">',
-    '    <h3 class="card-title">① 选择数据源</h3>',
-    '    <div class="grid grid-2">',
-    '      <div class="src-card" :class="{active: form.source===\'video\'}" @click="form.source=\'video\'">',
-    '        <div class="t">🎥 上传视频（video）</div>',
-    '        <div class="d">上传文件，或填后端绝对路径</div>',
-    '      </div>',
-    '      <div class="src-card" :class="{active: form.source===\'jsonl\'}" @click="form.source=\'jsonl\'">',
-    '        <div class="t">📄 已有 JSONL（jsonl）</div>',
-    '        <div class="d">用已有检测结果重跑统计</div>',
-    '      </div>',
-    '    </div>',
-    '  </div>',
+    '  </details>',
     '  <div class="grid grid-2">',
     '    <div class="card">',
-    '      <h3 class="card-title">② 分析参数</h3>',
+    '      <h3 class="card-title">分析设置</h3>',
     '      <el-form label-width="112px" label-position="left">',
-    '        <el-form-item label="文件路径">',
-    '          <el-input v-model="form.video_path" @change="loadScoreboardEvents" placeholder="例如 D:\\\\videos\\\\game1.mp4 或 out\\\\xxx\\\\raw_track.json" clearable />',
-    '          <div class="row" style="margin-top:8px">',
-    '            <el-button size="small" :disabled="!S.backendOk || !!(health && health.stale)" @click="pickFile">选择本地视频上传</el-button>',
-    '            <el-button size="small" text type="primary" :disabled="!hasVideoPath" @click="copyVideoPath">复制绝对路径</el-button>',
-    '            <span class="hint" v-if="fileName">已选：{{ fileName }}</span>',
-    '            <span class="hint" v-if="uploadPct>=0">上传中 {{ Math.round(uploadPct*100) }}%</span>',
-    '          </div>',
-    // 为什么必须显式说清楚：这个按钮在「后端进程比源码旧」时会被禁用（避免新代码没生效时上传），
-    // 但以前**只是灰着**、一个字都不说 —— 用户遇到的就是"我没法上传视频"，
-    // 而且他改过的源码正是让他自己上传不了的原因，根本猜不到（实测反馈）。
-    '          <el-alert v-if="health && health.stale" type="warning" :closable="false" show-icon style="margin-top:8px"',
-    '            title="上传按钮暂时禁用：后端代码没生效"',
-    '            ><copy-note label="说明">改过 .py 源码后，正在跑的后端进程里还是老模块，所以这里刻意不让你上传，免得用旧代码分析。重启后端即可（关掉后端窗口 → 重新双击「启动后端.bat」；那个脚本平时会在约 2 秒内自动重启，这次没自动重启）。点右边的「重新探测」也可以再查一次状态。</copy-note></el-alert>',
-    '          <el-progress v-if="uploadPct>=0" :percentage="Math.round(uploadPct*100)" :stroke-width="8" style="margin-top:8px;max-width:420px" />',
-    '        </el-form-item>',
-    '        <el-form-item v-if="form.source===\'video\'" label="篮筐标点">',
-    '          <div class="row">',
-    '            <el-button size="small" type="primary" plain :disabled="!S.backendOk || !hasVideoPath" @click="openMark">在画面上标篮筐</el-button>',
-    // 这里原来还有一个「标球场」按钮，跟下面「球场标定」那一行完全重复 ——
-    // 用户反馈（2026-09-27）："篮筐标点的地方就已经有标球场的选项了，后面又有一个球场标注就重复了"。
-    // 现在只有「篮筐标点」管篮筐，「球场标定」管球场，各一处。
-    '            <el-tag v-if="savedMarks && savedMarks.hoop" size="small" type="success" effect="plain">',
-    '              已标：中心 {{ Math.round(savedMarks.hoop[0]) }},{{ Math.round(savedMarks.hoop[1]) }}',
-    '              <template v-if="savedMarks.hoop[2] > 0">，半径 {{ Math.round(savedMarks.hoop[2]) }}×{{ Math.round(savedMarks.hoop[3]) }}</template>',
-    '              <template v-else>（半径由检测器量）</template>',
-    '            </el-tag>',
-    // 这里原来还有一个「未标点（走自动检测）」标签 —— 用户反馈（2026-09-27）"把未标点删了"。
-    // 没标点时不显示任何标签：没有徽章就是"还没标"，不需要多一个灰标签占地方。
-    '          </div>',
-    // 用户反馈（2026-09-27）："标定球筐和球场不行，没法取帧" —— 实际原因是**表单里没有视频路径**
-    // （没上传/没填/没选示例），此时按钮以前只是弹一个一闪而过的提示就 return 了，
-    // 连取帧请求都没发出去，看起来像功能坏了。现在按钮直接灰掉并常驻说明原因。
-    '          <el-alert v-if="!hasVideoPath" type="warning" :closable="false" show-icon',
-    '            style="margin-top:6px" title="先选一段视频，按钮才会亮"',
-    '            ><copy-note label="说明">取帧、标篮筐、标球场都需要先有视频：用上面的「示例视频 → 用它」、或「选择本地视频上传」、或直接在「文件路径」里填绝对路径。</copy-note></el-alert>',
-    '        </el-form-item>',
-    // 用户反馈的误解：以为"点一个筐心就够了"，标完筐就等着看热区 —— 这两件事必须当面说清：
-    // 筐只影响判进球的尺度与筐位，热区/战术图/2/3 分分区靠的是球场标定。折在 copy-note 里不吃预算。
-    '        <el-form-item v-if="form.source===\'video\'" label="球场标定">',
-    '          <div class="row">',
-    '            <el-button size="small" plain :disabled="!S.backendOk || !hasVideoPath" @click="openCourt">标球场（点场地特征点）</el-button>',
-    '            <el-button v-if="courtDraftAvailable" size="small" :disabled="markSaving" @click="restoreCourtDraft()">恢复标点草稿</el-button>',
-    '            <el-button size="small" @click="$refs.courtDraftFile.click()">导入标点草稿</el-button>',
-    '            <input ref="courtDraftFile" type="file" accept=".json" style="display:none" @change="importCourtDraft" />',
-            '            <el-tag v-if="calInfo && calInfo.calibration_ok" size="small" type="success" effect="plain">',
-            '              球场位置校验通过',
-            '            </el-tag>',
-            '            <el-tag v-else-if="calInfo" size="small" type="danger" effect="plain">',
-            '              已存标定未通过校验',
-    '            </el-tag>',
-            '            <el-tag v-else size="small" type="warning" effect="plain">未标定</el-tag>',
-    '          </div>',
-            '          <el-alert v-if="calInfo && !calInfo.calibration_ok" type="warning" :closable="false" show-icon style="margin-top:6px"',
-            '            title="这份旧标定不能用于球场热区或战术坐标。重投影误差很小并不代表点名正确。"',
-            '            :description="calInfoPointSummary || \'缺少逐段拟合或独立篮筐校验；请重新标定。\'" />',
-            '          <el-alert v-if="calInfo && calInfo.calibration_ok" type="info" :closable="false" show-icon style="margin-top:6px"',
-            '            title="位置标定已通过校验" description="上传页不显示红色球场矩阵；只有通过校验的数据才会用于热区和战术坐标。" />',
-    '          <el-alert v-if="!hasVideoPath" type="info" :closable="false" show-icon style="margin-top:6px"',
-    '            title="先选一段视频才能抽帧标定" />',
-    '          <div class="hint">同帧标 4–6 个分散的地面点<copy-note label="说明">（底线两角 / 中线两端 / 中圈中心 / 罚球区两角），',
-    '            自动解出这段视频的球场标定。<b>热区、战术图、球场坐标全靠它</b> —— 用别的视频的标定会整片错位。',
-    '            ⚠️ <b>不要在这里点篮筐</b>：篮圈离地 3.05m，而这份标定只能映射<b>地面</b>，',
-    '            把篮筐当球场地点标进去会把整份标定拉偏（实测平均误差 1.00m → 0.03m 是去掉它之后的结果）。',
-    '            篮筐请用上面的「在画面上标篮筐」，那条路直接存画面坐标。',
-    '            没有标定时：战术图仍会用<b>自动逐帧标定</b>算球员坐标（结果上会明确标注「位置未校验」），但热区不出。</copy-note></div>',
-    '        </el-form-item>',
     // 这里原来是「进球标注(可选)」输入框（要用户先准备一份 label_baskets.py 的产出当准绳）。
     // 用户反馈（2026-09-27）："本来就是一个投篮判定软件，却有一个进球标注的选项，这合适吗，
     // 你还不如在视频分析完以后加一个报错的选项" —— 那本质是开发/评测用的基准输入，
@@ -2657,50 +2736,11 @@ window.PAGES['upload'] = {
     '        </el-form-item>',
     '        <el-form-item v-if="form.source===\'video\'" label="快速模式">',
     '          <el-switch v-model="form.fast" />',
-    '          <span class="hint" style="margin-left:10px"><copy-note label="说明">跳过逐帧 YOLO（球员检测）：只读比分牌 + 颜色线索追球。CPU 上快十几倍；代价是没有球员个体归属，1v1/野球场视频会把进球都算在一边</copy-note></span>',
-    '        </el-form-item>',
-    '        <el-form-item v-if="form.source===\'video\'" label="比分牌（可选）">',
-    '          <div class="row" style="flex-wrap:wrap;align-items:center;gap:8px">',
-    '            <el-button size="small" type="primary" :loading="sbBusy" @click="readScoreboard">',
-    '              读比分牌（自动定位 + OCR）</el-button>',
-    '            <span class="hint">起始比分（可选）：</span>',
-    '            <el-input-number v-model="sbStartHome" :min="0" :max="199" size="small" style="width:100px" placeholder="主队" />',
-    '            <el-input-number v-model="sbStartAway" :min="0" :max="199" size="small" style="width:100px" placeholder="客队" />',
-    '          </div>',
-    '          <el-input v-model="form.scoreboard_events" size="small" clearable style="margin-top:6px"',
-    '            placeholder="得分事件文件路径（可手填）" />',
-    '          <el-input v-model="sbBox" size="small" clearable style="margin-top:6px"',
-    '            placeholder="手动框选（留空=自动定位）" />',
-    '          <el-alert v-if="sbResult" style="margin-top:8px" :closable="false" show-icon',
-    '            :type="sbResult.loading ? \'info\' : (sbResult.ok ? \'success\' : \'error\')"',
-    '            :title="sbResult.loading ? \'正在定位并 OCR…（十几秒到一分钟）\' : (sbResult.ok ? (\'读出 \' + (sbResult.n_events||0) + \' 个得分事件，最终 \' + ((sbResult.final||{}).home) + \' : \' + ((sbResult.final||{}).away)) : \'没读出比分\')"',
-    '            ><copy-note label="说明">{{ sbResult.loading ? \'\' : (sbResult.note || \'\') }}</copy-note></el-alert>',
-    '        </el-form-item>',
-    '        <el-form-item label="后端状态">',
-    '          <el-tag :type="S.backendOk ? \'success\' : \'warning\'" effect="plain">{{ api.base }}</el-tag>',
-    '          <span class="hint" style="margin-left:10px">{{ S.backendOk ? \'已连接\' : \'未连接（演示数据模式）\' }}</span>',
-    '          <div class="row" style="margin-top:8px" v-if="health">',
-    '            <el-tag size="small" :type="health.ffmpeg ? \'success\' : \'info\'" effect="plain">ffmpeg {{ health.ffmpeg ? \'就绪\' : \'缺失\' }}</el-tag>',
-    '            <el-tag size="small" :type="health.opencv ? \'success\' : \'info\'" effect="plain">OpenCV {{ health.opencv ? \'就绪\' : \'缺失\' }}</el-tag>',
-    '            <el-tag size="small" :type="health.ultralytics ? \'success\' : \'info\'" effect="plain">检测模型 {{ health.ultralytics ? \'就绪\' : \'未装\' }}</el-tag>',
-    '            <el-tag size="small" effect="plain" v-if="health.code_rev">代码 {{ health.code_rev }}</el-tag>',
-    '            <el-tag size="small" effect="plain" type="info" v-if="health.code_loaded_at">进程载入 {{ health.code_loaded_at }}</el-tag>',
-    '            <el-button size="small" text @click="fetchHealth">刷新</el-button>',
-    '          </div>',
-    '          <el-alert v-if="health && health.stale" type="warning" :closable="false" show-icon style="margin-top:8px"',
-    '            title="后端正在重启"',
-    '            ><copy-note label="说明">源码（代码时间）比进程载入时间新，说明后端还没切到最新代码。用「启动后端.bat」启动的话会在 2 秒内自动重启；稍等片刻点「刷新」即可。若一直不变，请关掉后端窗口重新双击「启动后端.bat」。</copy-note></el-alert>',
-    '          <el-alert v-else-if="health && health.has_ball_rim_path === false" type="error" :closable="false" show-icon style="margin-top:8px"',
-    '            title="需要检查"',
-    '            ><copy-note label="说明">后端进程跑的是旧代码，新功能不会生效。uvicorn 只在启动时加载一次源码：改了 .py 但没重启，进程里还是老模块，而且不报错（表现就是「改了跟没改一样」）。请关掉后端窗口后重新双击项目根目录的「启动后端.bat」（它有自动重启，之后就不用管了）。</copy-note></el-alert>',
+    '          <span class="hint" style="margin-left:10px"><copy-note label="说明">跳过球员检测，仍会检查篮球、篮筐和可用的比分牌线索；速度更快，但没有球员个体归属。</copy-note></span>',
     '        </el-form-item>',
     '      </el-form>',
     '      <div class="row">',
-    '        <el-button type="primary" :loading="busy" @click="start">开始分析</el-button>',
     '        <el-button @click="refreshJobs">刷新任务列表</el-button>',
-    // 说明清楚它是什么：这是**界面演示用的离线样例**（仓库里的合成比赛产物），
-    // 不是从视频分析出来的结果。不写清楚会被当成"假数据"（用户反馈 2026-09-27）。
-    '        <el-button plain type="warning" @click="loadDemo">载入离线样例</el-button>',
     '      </div>',
     // 用户反馈（2026-09-27）："你还不如在视频分析完以后加一个报错的选项" ——
     // 纠错入口本来就有（人工复核页逐球改判、立刻写回比分/统计），但在这里没有指路，
@@ -2732,8 +2772,12 @@ window.PAGES['upload'] = {
     '    </div>',
     '  </div>',
     '  <div class="card" v-if="S.backendOk">',
-    '    <h3 class="card-title">历史任务 <span class="sub">最近 20 条 · 点「查看」回看</span></h3>',
+    '    <h3 class="card-title">服务器历史任务 <span class="sub">所有登录用户共享 · 最近 20 条</span></h3>',
     '    <el-table :data="jobs" size="small" border empty-text="暂无任务">',
+    '      <el-table-column prop="video_name" label="视频文件" min-width="220" show-overflow-tooltip />',
+    '      <el-table-column label="数据来源" width="110">',
+    '        <template #default="s">{{ {video:\'视频分析\',jsonl:\'导入记录\',synthetic:\'合成演示\'}[s.row.source] || \'来源未知\' }}</template>',
+    '      </el-table-column>',
     '      <el-table-column prop="job_id" label="任务 ID" min-width="200" show-overflow-tooltip />',
     '      <el-table-column prop="status" label="状态" width="100">',
     '        <template #default="s"><el-tag size="small" :type="{done:\'success\',running:\'warning\',error:\'danger\',queued:\'info\'}[s.row.status]">{{ s.row.status }}</el-tag></template>',
@@ -2748,57 +2792,39 @@ window.PAGES['upload'] = {
     '      </el-table-column>',
     '    </el-table>',
     '  </div>',
-    '  <el-dialog v-model="markOpen" @closed="onMarkClosed" :title="markKind===\'court\' ? \'标球场：点场地特征点（4 个以上）\' : \'在画面上标篮筐\'" width="82%" top="4vh" :close-on-click-modal="false">',
-    '    <div class="row" style="margin-bottom:8px;align-items:center">',
-    '      <span class="hint">取帧时刻</span>',
-    '      <el-input-number v-model="markAt" :min="0" :step="0.5" :precision="1" size="small" style="width:120px" @change="seekVideo(markAt)" />',
-    '      <el-button size="small" @click="loadMarkFrame(false)">重新取帧（会清空已点的点）</el-button>',
-    '      <span class="hint">选清晰画面</span>',
+    '  <el-dialog v-model="markOpen" @closed="onMarkClosed" :title="markKind===\'court\' ? \'标球场：点场地特征点（4 个以上）\' : \'在画面上标篮筐\'" width="82%" top="4vh" :close-on-click-modal="false" :close-on-press-escape="!markSaving" :show-close="!markSaving">',
+    '    <div v-if="markKind===\'court\'" class="row" style="margin-bottom:8px;gap:8px">',
+    '      <el-button v-if="courtDraftAvailable" size="small" :disabled="markSaving" @click="restoreCourtDraft()">恢复标点草稿</el-button>',
+    '      <el-button size="small" :disabled="markSaving" @click="$refs.courtDraftFile.click()">导入标点草稿</el-button>',
+    '      <input ref="courtDraftFile" type="file" accept=".json" style="display:none" @change="importCourtDraft" />',
     '    </div>',
-    // 原片播放器：拖动进度条定位 —— 光靠手输秒数等于碰运气（用户实测反馈：
-    // "只调时间秒数不好整，一点也不方便"）。旧版标定页就是内嵌播放器 + 现场截帧。
-    '    <div v-if="videoUrl" style="margin-bottom:8px">',
-    '      <div class="row" style="align-items:center;margin-bottom:6px">',
-    '        <b>原片</b>',
-    '        <span class="grow"></span>',
-    '        <el-button size="small" type="primary" @click="useVideoMoment()">',
-    '          {{ markKind===\'court\' ? (dualView ? (mfActive===1 ? \'把这一帧放到右画面\' : \'把这一帧放到左画面\') : \'把这帧加进来标点\') : \'用当前画面取帧\' }}</el-button>',
+    '    <div v-if="markKind===\'court\'" class="mf-panels" style="margin-bottom:12px">',
+    '      <div v-for="panel in [0,1]" :key="panel" class="mf-panel-wrap">',
+    '        <b>{{ panel===0 ? \'左画面\' : \'右画面\' }}</b>',
+    '        <video v-if="videoUrl" :ref="\'courtVideo_\'+panel" :src="videoUrl" controls preload="metadata" style="width:100%;max-height:26vh;background:var(--bg)" />',
+    '        <el-button size="small" type="primary" :disabled="markSaving" @click="captureCourtPanel(panel)">{{ panel===0 ? \'选作左画面\' : \'选作右画面\' }}</el-button>',
     '      </div>',
-    '      <video ref="markVideo" :src="videoUrl" controls preload="metadata"',
-    '             @loadedmetadata="seekVideo(markAt)"',
-    '             style="width:100%;max-height:38vh;background:var(--bg);border-radius:var(--r-sm)" />',
     '    </div>',
     // 第一步：先说清「这件事要干到什么程度」——用户实测反馈"标完篮筐中心就不知道怎么办了"
     // ⚠️ 「4 点试算」模式下点名那套流程不适用，换一句"怎么标"（否则会教用户去选点名）
     '    <el-alert v-if="markKind===\'court\' && courtMini" type="info" :closable="false" show-icon style="margin-bottom:8px"',
-    '      :title="courtMini ? \'怎么标：依次点罚球线左角、罚球线右角、篮下右角、篮下左角；再生成仅供检查的投影\' : \'怎么标：选命名地标后，在画面点至少 5~6 个分散的地面点\'"',
-    '      :description="\'左边画面已点 \' + miniPtsHere.length + \' 个、右边 \' + miniPtsRight.length + \' 个 —— 要试算的那一幅必须正好 4 个；只有这四个角都能看清时才试算；正式标定请切回命名地标。\'" />',
-    '    <el-alert v-else type="info" :closable="false" show-icon style="margin-bottom:8px"',
-    '      :title="markKind===\'court\' ? \'怎么标：A端、B端各选一幅画面，每端点 5~6 个地面点\' : \'怎么标：只标「篮筐中心」就能保存，另外 4 项是可选的\'"',
-    '      :description="markKind===\'court\' ? (\'球场标定只点地面线交点：底线角、罚球区角、罚球线中点、三分弧顶或中线；不要点篮筐。A端、B端的地标名称和球场坐标互相独立，不会复用同一个点。请先核对画面拍到哪一端，再选 A端或B端。\' + (mfFrames.length ? \'若两幅画面都拍到同一端，请先把另一幅切到另一端篮筐出现的时刻。\' : \'画面还在抽，抽完会出现 A端/B端选择器。\') + \' ★每端建议 5~6 个分散点；4 个只能算出矩阵，不代表点名正确或能通过校验。最终要看白线吻合度，低于 1.25 就不能生成热区/战术坐标。看不清的点按「跳过这一项」。\') : \'另外 4 项只用来量筐宽和篮筐高度，跳过也行；标了中心就能保存。\'" />',
+    '      title="依次点罚球线两角、篮下两角，再试算（仅预览）" />',
+    '    <el-alert v-else-if="markKind===\'court\'" type="info" :closable="false" title="A端、B端各标 5~6 个地面点" description="先确认 A/B 端，再选点名、点地面线角。" />',
+    '    <p v-if="markKind===\'hoop\'" class="hint">左右半场由你指定：各自拖动视频选截图，再框篮筐。</p>',
     // 当前目标 + 实时反馈（点了几个、离"能保存"还差几个）
     // 条件必须用 guideNext（它是模式感知的）；用 markCurrent 的话，多帧模式下
     // courtCurrent 恒为真而 guideNext 为 null，模板会取 null.idx 直接报错。
-    '    <el-alert v-if="guideNext" type="info" :closable="false" show-icon style="margin-bottom:8px"',
-    '      :title="\'第 \' + guideNext.idx + \' 个点：\' + guideNext.label + \'（\' + guideNext.hint + \'）\'"',
-    '      :description="guideDesc" />',
+    '    <el-alert v-if="markKind===\'court\' && guideNext" type="info" :closable="false" show-icon style="margin-bottom:8px"',
+    '      :title="markKind===\'court\' ? (\'当前：\' + guideNext.label) : \'拖动框住篮筐\'" />',
     // 多帧模式还没选点名：明确说"先去下面的点名列表里选一个"（不能沿用 courtIdx，那永远停在第一个点名）。
     // 方位词必须对：这条 alert 在**点名按钮上方**，按钮在它下面。
     // 「4 点试算」模式下不需要选点名 → 不显示（否则会教用户去点没用的名字）
     '    <el-alert v-else-if="markKind===\'court\' && !courtMini" type="info" :closable="false" show-icon style="margin-bottom:8px"',
-    '      title="下一步：选择一个地面点名，再在画面里点它实际所在的白线交点；不要把篮筐当作地面点"',
-    '      :description="guideDesc" />',
-    '    <el-alert v-else-if="markKind!==\'court\'" type="success" :closable="false" show-icon style="margin-bottom:8px"',
-    '      title="篮筐中心已标好 —— 可以直接保存（点多一下就是一步）"',
-    '      :description="markHoop && markHoop.measured',
-    '        ? (\'中心 \' + Math.round(markHoop.cx*markSize.w) + \',\' + Math.round(markHoop.cy*markSize.h)',
-    '           + \'，半径 \' + Math.round(markHoop.rx*markSize.w) + \'×\' + Math.round(markHoop.ry*markSize.h) + \' 像素（你量的）\')',
-    '        : (\'中心 \' + Math.round((markHoop?markHoop.cx:0)*markSize.w) + \',\' + Math.round((markHoop?markHoop.cy:0)*markSize.h)',
-    '           + \'。没量筐宽也没关系：半径会由检测器量；想让判进球的尺度由你定，就再点一下「篮圈左缘」或「右缘」（可选）\')" />',
+    '      title="先选点名，再点画面中的对应位置" />',
     // 球场模式下点不够 4 个的提示（4 点试算的点不在 mfPts 里，这条在这儿是假警报）
     '    <el-alert v-if="markKind===\'court\' && !courtMini && guideCount < 4" type="warning" :closable="false" show-icon style="margin-bottom:8px"',
     '      title="至少要 4 个点才能解出标定"',
-    '      :description="\'现在两边合计 \' + guideCount + \' 个。\' + (mfDualSplit ? (\'左画面 \' + mfLeftCov.n + \' 个、右画面 \' + mfRightCov.n + \' 个 —— 每边各自要有 4 个以上。\') : \'\') + \'画面里看不清的点按「跳过这一项」。\'" />',
+    '      :description="\'左画面 \' + mfLeftCov.n + \' 个，右画面 \' + mfRightCov.n + \' 个\'" />',
     // 标定失败时的原因（重投影误差偏大 / 点位退化 / 解释不了画面里的真篮筐）
     '    <el-alert v-if="courtResult && !courtResult.usable" type="error" :closable="false" show-icon style="margin-bottom:8px"',
     "      :title=\"'标定结果不可用' + (courtResult.rmse_m != null ? ('（重投影误差 ' + courtResult.rmse_m + ' m）') : '')\"",
@@ -2806,10 +2832,10 @@ window.PAGES['upload'] = {
     // 多帧标定的结果与"未校验"提示（宽容规则：能存但位置结论会关掉）
     '    <el-alert v-if="markKind===\'court\' && mfResult" :type="(courtMini || mfResult.position_unverified) ? \'warning\' : (mfResult.ok ? \'success\' : \'error\')"',
     '      :closable="false" show-icon style="margin-bottom:8px"',
-    '      :title="courtMini ? \'四点矩阵预览（未校验、未保存；禁止用于热区/战术图）\' : (!mfResult.ok ? \'这份点法还不能用\' : (mfResult.saved ? \'标定已保存\' : \'试算完成（尚未保存）\'))"',
+    '      :title="!mfResult.ok ? \'这份点法还不能用\' : (mfResult.saved ? \'标定已保存\' : \'尚未保存\')"',
     // 后端的多机位告警（`_multical_note`）在"哪一段不可信 + 去看叠加自检"后面还有一大段
     // 解释 —— 直接整段摆出来就是一条长句。做法：框里只留前面那段读数，全文折进「说明」。
-    '      >{{ courtMini ? \'请核对青色线框是否贴合罚球区地面白线；四点精确拟合不代表真实对应。\' : String(mfResult.note || \'\').slice(0, 200) }}',
+    '      >{{ String(mfResult.note || \'\').slice(0, 200) }}',
     '      <copy-note v-if="!courtMini && String(mfResult.note || \'\').length > 200" label="说明">{{ mfResult.note }}</copy-note></el-alert>',
     // 逐点责任诊断：直接点名"哪个点跟其余对不上"。
     // 为什么必须有：以前只说"有 N 个点互相矛盾"，不说是哪个 —— 用户只能反复重标，
@@ -2837,7 +2863,7 @@ window.PAGES['upload'] = {
     // 标题里必须写清"这是**最差那一段**的读数"：分时段标定（两个机位各一份 H）
     // 时只显示一个数字，用户会以为整份都差 —— 实测就卡在这（"那条 0.17 是怎么来的"）。
     '      :title="(fitIsWorstOfSegments ? \'吻合度读数（分时段，取最差的一段）：\' : \'吻合度读数：\') + (mfResult.calibration_fit.ratio != null ? mfResult.calibration_fit.ratio : \'—\') + \'（门槛 1.25）\' + (fitRatio >= 1.25 ? \' —— 这份标定会被分析端接受，战术图/热图能出\' : \' —— 太低，分析端会拒收：战术图、热图、2/3 分区分都不会生成（只判进球）\')"',
-    '      description="低于 1.25 时，重新抽取该镜头的清晰画面并调整地面标点。红色球场矩阵不会显示。" />',
+    '      description="白线对比分数不是准确率；请结合当前截图、投影线与点位误差核对。" />',
     // 分时段标定：**逐段**把吻合度摆出来。
     // 为什么必须有（用户实测反馈）：每一段各解一份 H，只报一个"最差 0.17"看不出
     // "是整份都差，还是只有那一段差" —— 于是要么以为工具坏了、要么白重标一遍。
@@ -2872,110 +2898,18 @@ window.PAGES['upload'] = {
     '    <div v-if="markKind===\'court\' && mfFrames.length" style="margin-bottom:8px">',
     // 一句总纲：这件事现在是「左右两个画面各自标一个半场」
     '      <div class="row" style="align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap">',
-    '        <el-switch :model-value="dualView" active-text="左右两个画面" inactive-text="一张一张切" @change="setDualView" />',
     '        <span class="hint">两幅画面分别标点</span>',
     '        <span style="margin-left:16px">球场规格：</span>',
     '        <el-radio-group v-model="courtStandard" size="small"><el-radio-button value="fiba">FIBA</el-radio-button><el-radio-button value="nba">NBA</el-radio-button></el-radio-group>',
     '      </div>',
-    // ---- 单画面：老的「一张一张切」----
-    '      <template v-if="!dualView">',
-    '        <div class="row" style="align-items:center;margin-bottom:6px">',
-    '          <b>画面 {{ mfIdx+1 }}/{{ mfFrames.length }}</b>',
-    '          <span class="hint">t={{ mfCurrent ? mfCurrent.t : 0 }}s</span>',
-    '          <el-button size="small" @click="mfPrev" :disabled="mfIdx<=0">上一张画面</el-button>',
-    '          <el-button size="small" @click="mfNext" :disabled="mfIdx>=mfFrames.length-1">下一张画面</el-button>',
-    '          <span class="grow"></span>',
-    '          <el-tag size="small" :type="mfEnough?\'success\':\'info\'" effect="plain">已标 {{ mfPts.length }} 个点（本画面 {{ mfPtsHere.length }} 个）</el-tag>',
+    '      <div class="row" style="gap:12px;margin-bottom:8px;flex-wrap:wrap">',
+    '        <div v-for="panel in [0,1]" :key="panel" class="row" style="gap:8px">',
+    '          <b>{{ panel===0 ? \'左画面\' : \'右画面\' }}</b>',
+    '          <el-radio-group :model-value="frameCourtSide(panel===0 ? mfCurrent.t : mfCurrentRight.t,panel)" size="small" @change="setPanelCourtSide(panel,$event)">',
+    '            <el-radio-button label="right">A端</el-radio-button><el-radio-button label="left">B端</el-radio-button>',
+    '          </el-radio-group>',
     '        </div>',
-    '      </template>',
-    // ---- 左右两个画面：各选一幅、各自点各自的点 ----
-    '      <template v-else>',
-    '        <div class="row" style="align-items:stretch;gap:8px;margin-bottom:6px;flex-wrap:wrap">',
-    '          <div class="mf-panel-head" :class="{on: mfActive===0}" @click="setMfActive(0)">',
-    '            <div class="row" style="align-items:center;gap:6px">',
-    '              <b>左画面</b>',
-    '              <el-tag size="small" :type="mfLeftCov.enough ? \'success\' : \'warning\'" effect="plain">',
-    '                {{ mfLeftCov.n }} 个点{{ mfLeftCov.enough ? \'\' : \'（不够 4 个）\' }}</el-tag>',
-    '            </div>',
-    '            <div class="row" style="align-items:center;gap:5px;margin-top:4px;flex-wrap:wrap">',
-    '              <span class="hint">这一幅对应</span>',
-    '              <el-radio-group :model-value="frameCourtSide(mfCurrent ? mfCurrent.t : 0, 0)" size="small" @change="setPanelCourtSide(0,$event)">',
-    '                <el-radio-button label="right">A端</el-radio-button><el-radio-button label="left">B端</el-radio-button>',
-    '              </el-radio-group>',
-    '            </div>',
-    '            <div class="row" style="align-items:center;gap:4px;margin-top:4px">',
-    '              <span class="hint">换这一幅：</span>',
-    '              <el-select :model-value="mfIdx" size="small" style="width:150px" @change="setLeftFrame">',
-    '                <el-option v-for="(f,i) in mfFrames" :key="\'L\'+i" :value="i"',
-    '                  :label="\'第\' + (i+1) + \'幅 t=\' + f.t + \'s（\' + (mfFrameCov[i] ? mfFrameCov[i].n : 0) + \'点）\'" />',
-    '              </el-select>',
-    '            </div>',
-    '          </div>',
-    '          <div class="mf-panel-head" :class="{on: mfActive===1}" @click="setMfActive(1)">',
-    '            <div class="row" style="align-items:center;gap:6px">',
-    '              <b>右画面</b>',
-    '              <el-tag size="small" :type="mfRightCov.enough ? \'success\' : \'warning\'" effect="plain">',
-    '                {{ mfRightCov.n }} 个点{{ mfRightCov.enough ? \'\' : \'（不够 4 个）\' }}</el-tag>',
-    '            </div>',
-    '            <div class="row" style="align-items:center;gap:5px;margin-top:4px;flex-wrap:wrap">',
-    '              <span class="hint">这一幅对应</span>',
-    '              <el-radio-group :model-value="frameCourtSide(mfCurrentRight ? mfCurrentRight.t : 0, 1)" size="small" @change="setPanelCourtSide(1,$event)">',
-    '                <el-radio-button label="right">A端</el-radio-button><el-radio-button label="left">B端</el-radio-button>',
-    '              </el-radio-group>',
-    '            </div>',
-    '            <div class="row" style="align-items:center;gap:4px;margin-top:4px">',
-    '              <span class="hint">换这一幅：</span>',
-    '              <el-select :model-value="mfIdx2" size="small" style="width:150px" @change="setRightFrame">',
-    '                <el-option v-for="(f,i) in mfFrames" :key="\'R\'+i" :value="i"',
-    '                  :label="\'第\' + (i+1) + \'幅 t=\' + f.t + \'s（\' + (mfFrameCov[i] ? mfFrameCov[i].n : 0) + \'点）\'" />',
-    '              </el-select>',
-    '              <el-button size="small" @click="addRightFrame">把原片当前这帧放到右画面</el-button>',
-    '            </div>',
-    '          </div>',
-    '        </div>',
-    '        <div class="hint" style="margin-bottom:6px">全场覆盖：A端 {{ mfSideCoverage.A }} 幅画面达标，B端 {{ mfSideCoverage.B }} 幅画面达标；两端都至少要有一幅自己的 4 点画面，才可生成预览。</div>',
-    '        <div class="hint" style="margin-bottom:6px">',
-    '          <span :style="{color: mfActive===0 ? \'#409eff\' : \'#909399\'}">现在点在<b>左画面</b>上</span>',
-    '          /',
-    '          <span :style="{color: mfActive===1 ? \'#409eff\' : \'#909399\'}">点在<b>右画面</b>上</span>',
-    '          —— 直接在画面里点一下就会切过去；两边合计已标 {{ mfPts.length }} 个点',
-    '          <span v-if="!mfDualSplit">｜ 当前两边还是同一幅画面：将原片拖到另一端篮筐出现的时刻，再按「把原片当前这帧放到右画面」</span>',
-    '        </div>',
-    '      </template>',
-    '      <div class="row" style="align-items:center;margin-bottom:6px;flex-wrap:wrap">',
-    '        <span class="hint">在</span>',
-    '        <el-input-number v-model="mfCenter" :min="0" :step="1" :precision="1" size="small" style="width:110px" />',
-    '        <span class="hint">秒附近抽</span>',
-    '        <el-input-number v-model="mfSpan" :min="0.5" :max="30" :step="0.5" size="small" style="width:100px" />',
-    '        <span class="hint">秒内的帧</span>',
-    '        <el-button size="small" @click="mfResample">按这个时刻重抽</el-button>',
-    '        <span class="hint"></span>',
     '      </div>',
-    // 「只点 4 个点」试算：不给点命名，按点选顺序记 4 个，后端穷举地物组合自动定向。
-    // 只用于预览 —— 4 个点恰好确定一个单应矩阵，**没有冗余点能验证"这 4 个点配对的是
-    // 哪几条球场线"**，所以吻合度再高也不能当正式标定（保存按钮在这个模式下隐藏）。
-    '      <div v-if="!dualView" class="row" style="align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">',
-    '        <el-switch :model-value="courtMini" active-text="4 点试算（仅预览）" @change="setCourtMini" />',
-    '        <span class="hint">按罚球区四角固定顺序点；仅作诊断预览，不能当正式标定。</span>',
-    '      </div>',
-    '      <el-alert v-if="courtMini" type="info" :closable="false" show-icon style="margin-bottom:6px"',
-    '        title="4 点模式固定按罚球区四角解释，按顺序点；结果只作未校验预览">',
-    '        <copy-note label="说明">依次点：罚球线左角、罚球线右角、篮下右角、篮下左角。必须是同一个罚球区的四个地面角点。四点可以精确拟合出矩阵，但无法靠重投影误差验证点位对应；投影明显贴不住真实白线就清空重标。正式标定请切回命名地标并标 6 点以上。</copy-note></el-alert>',
-    // 4 点的槽位：按点选顺序显示 1~4，点满 4 个才允许试算
-    '      <div v-if="courtMini" class="row" style="align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">',
-    '        <span class="hint">这一幅已点：</span>',
-    '        <el-tag v-for="n in 4" :key="\'mq\'+n" size="small"',
-    '          :type="miniPtsActive.length >= n ? \'success\' : \'info\'" effect="plain">',
-    '          {{ n }}. {{ miniPtsActive[n-1] ? ([\'罚球线左角\', \'罚球线右角\', \'篮下右角\', \'篮下左角\'][n-1] + \' (\' + miniPtsActive[n-1].x.toFixed(3) + \', \' + miniPtsActive[n-1].y.toFixed(3) + \')\') : \'未点\' }}',
-    '        </el-tag>',
-    '        <el-button size="small" @click="miniClearHere" :disabled="!miniPtsActive.length">重点这一幅</el-button>',
-    '        <el-button size="small" @click="miniClearAll" :disabled="!mfMiniPts.length">全清</el-button>',
-    '      </div>',
-    // 四点试算的结果只展示为预览，不把白线评分包装成"已验证"
-    '      <el-alert v-if="courtMini && mfResult && mfResult.mini" :closable="false" show-icon style="margin-bottom:6px"',
-    '        type="warning"',
-    '        :title="mfResult.mini.ok ? (\'仅供诊断预览：\' + mfResult.mini.which + \'；绝非校验通过\') : (\'试算没成：\' + (mfResult.mini.note || \'\'))">',
-    '        <copy-note label="说明">青色线框是四点矩阵的外推结果，不是校验通过。检查罚球区线是否贴住真实白线；若球场线跑到墙面或看台，就说明对应仍错。四点吻合度和 0 米重投影误差都不能证明正确。此模式不保存、不供热区或战术分析使用；正式标定请用命名地标，至少标 6 个可见地面点。</copy-note></el-alert>',
     // 「点名表列哪些点」选一次：默认全场 A端/B端 15 个地标（同一个物理地标在两幅
     // 画面里同名），也能临时只列某一侧半场的 6 个点（机位只拍得到半场时更清爽）。
     '      <div v-if="!dualView" class="row" style="align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">',
@@ -2985,7 +2919,6 @@ window.PAGES['upload'] = {
     '          <el-radio-button label="left">只看B端</el-radio-button>',
     '          <el-radio-button label="right">只看A端</el-radio-button>',
     '        </el-radio-group>',
-    '        <el-button size="small" @click="pickStableFrames">自动挑同一镜头的两帧</el-button>',
     '      </div>',
     // 球场的点名列表（篮筐模式没有这一排：中心是唯一必点项）
     '      <div class="row" style="flex-wrap:wrap">',
@@ -2994,8 +2927,8 @@ window.PAGES['upload'] = {
     '          :plain="mfTarget!==it.name" @click="mfPick(it)">',
     '          {{ mfDone[it.name] ? \'✓ \' : \'\' }}{{ it.label }}</el-button>',
     '      </div>',
-    // 篮筐模式的可选步骤：想自己量半径的人点这里，不点就交给检测器（默认路径）
-    '      <div v-if="markKind===\'hoop\'" class="row" style="flex-wrap:wrap;margin-top:2px">',
+    // 兼容旧版模板结构；新流程直接用两个角框出篮筐，不再有可选边缘按钮。
+    '      <div v-if="markKind===\'hoop\' && markItemsOptional.length" class="row" style="flex-wrap:wrap;margin-top:2px">',
     '        <el-button v-for="it in markItemsOptional" :key="it.name" size="small"',
     '          :type="hoopOptTarget===it.name ? \'primary\' : (hoopOptDone[it.name] ? \'success\' : \'default\')"',
     '          :plain="hoopOptTarget!==it.name"',
@@ -3012,7 +2945,7 @@ window.PAGES['upload'] = {
       '        下一步：选一个点名 → 到画面里点它。现在：',
       '        左画面 {{ mfLeftCov.n }} 个{{ mfLeftCov.enough ? \'（够了）\' : \'（还差 \' + (4 - mfLeftCov.n) + \' 个）\' }}、',
       '        右画面 {{ mfRightCov.n }} 个{{ mfRightCov.enough ? \'（够了）\' : \'（还差 \' + (4 - mfRightCov.n) + \' 个）\' }}。',
-      '        标完后先点「生成并显示球场矩阵」检查线框，再决定是否保存。</div>',
+      '        标完后点击「保存标定」。</div>',
     // 每幅画面各自的覆盖度：哪一边还差、点是不是挤在一条线上，一眼看到
     '      <div class="row" style="flex-wrap:wrap;align-items:center;margin-top:6px">',
     '        <span class="hint">每幅画面的覆盖度：</span>',
@@ -3026,7 +2959,7 @@ window.PAGES['upload'] = {
     // 用户硬点也只能是猜 —— 实测踩过（用户把"底线右角"点成了罚球区右角）。
     '      <el-alert v-if="!courtMini && offFrameNames.length" type="warning" :closable="false" show-icon style="margin-top:6px"',
     '        :title="\'有 \' + offFrameNames.length + \' 个点，在你这两幅画面里**根本看不见**：\' + offFrameNames.join(\'、\')"',
-    '        description="重标时跳过画面外的点，改点画面里看得清的地面交点。不要猜被遮挡的角点；完成试算后可手动显示投影线检查贴合度。" />',
+    '        description="重标时跳过画面外的点，改点画面里看得清的地面交点。不要猜被遮挡的角点；标完后直接保存。" />',
     '      <el-alert v-if="mfResult && !mfResult.ok" type="error" :closable="false" show-icon style="margin-top:8px"',
     '        :title="mfResult.note ? String(mfResult.note).slice(0, 120) : (\'标定误差偏大（平均 \' + mfResult.rmse_m + \' m）\')"',
     '        :description="\'最离群的几个点：\' + (mfResult.worst || []).map(function(d){return (d.label || d.name || \'?\') + \'(t=\' + d.t + \'s, \' + d.err_m + \'m)\'}).join(\'，\')" />',
@@ -3051,8 +2984,8 @@ window.PAGES['upload'] = {
     '          t={{ fr.t }}s：{{ fr.note }}</div>',
     '      </div>',
     '      <el-alert v-else-if="!courtMini && mfResult && mfResult.ok" type="success" :closable="false" show-icon style="margin-top:8px"',
-    '        :title="(mfResult.saved ? \'标定已保存：平均误差 \' : \'试算通过但尚未保存：平均误差 \') + mfResult.rmse_m + \' m\'"',
-    '        ><copy-note label="说明">点击“保存并解算标定”后才会写入视频配置；试算只用于检查投影效果。</copy-note></el-alert>',
+    '        :title="(mfResult.saved ? \'标定已保存：平均误差 \' : \'尚未保存：平均误差 \') + mfResult.rmse_m + \' m\'"',
+    '        ><copy-note label="说明">保存后会用于这段视频的位置分析。</copy-note></el-alert>',
     '    </div>',
     // 画面（球场模式用抽帧图，篮筐模式用取帧图）
     // 两个画面模式下：左画面 + 右画面并排。**每张图各自记自己那一半场地的点** ——
@@ -3062,40 +2995,33 @@ window.PAGES['upload'] = {
     // markKind==='court' 的 div），篮筐模式就只剩上面那个原片播放器 ——
     // 用户实际看到的就是"点进去有视频，但没有下面截帧，我没法点篮筐"（2026-10-05 实测）。
     // 取帧接口一直是好的（GET /api/frame 200），图早就存在 markImg 里，只是从来没人渲染它。
-    '      <div v-if="markKind!==\'court\'" class="mf-panel-wrap"',
-    '           style="position:relative;width:100%;max-width:1100px;cursor:crosshair"',
-    '           @click="onMarkClick" @mousemove="onMarkMove" @mouseleave="onMarkLeave">',
-    '        <img v-if="markImg" :src="markImg" style="width:100%;height:auto;display:block;border-radius:var(--r-sm)" />',
-    '        <div v-else class="muted" style="padding:40px">正在取帧…（若一直停在这里说明这次取帧失败，请看页面右下角提示）</div>',
-    // 准星 + 已点标记画在同一坐标系里（frameW/frameH 取自这次取帧的真实像素尺寸，
-    // 不是猜的默认值）—— 不然"我点在哪"和"系统记在哪"会看起来错位。
-    '        <svg v-if="markImg && frameW && frameH" :viewBox="\'0 0 \' + frameW + \' \' + frameH"',
-    '             preserveAspectRatio="none"',
-    '             style="position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none">',
-    '          <g v-if="hoverPt">',
-    '            <line :x1="hoverPt.x*frameW - 22" :y1="hoverPt.y*frameH" :x2="hoverPt.x*frameW + 22" :y2="hoverPt.y*frameH" stroke="#f59e0b" :stroke-width="Math.max(1.5, frameW*0.0022)" />',
-    '            <line :x1="hoverPt.x*frameW" :y1="hoverPt.y*frameH - 22" :x2="hoverPt.x*frameW" :y2="hoverPt.y*frameH + 22" stroke="#f59e0b" :stroke-width="Math.max(1.5, frameW*0.0022)" />',
-    '          </g>',
-    '          <template v-for="(p,i) in activePts" :key="\'h\'+i">',
-    '            <circle :cx="p.x * frameW" :cy="p.y * frameH" :r="Math.max(10, frameW*0.012)"',
-    '                    fill="rgba(34,197,94,.35)" stroke="#22c55e" :stroke-width="Math.max(2, frameW*0.003)" />',
-    '            <text :x="p.x * frameW + Math.max(12, frameW*0.014)" :y="p.y * frameH"',
-    '                  fill="#22c55e" :font-size="Math.max(16, frameW*0.022)"',
-    '                  style="paint-order:stroke;stroke:#000;stroke-width:3px">{{ p.label }}</text>',
-    '          </template>',
-    '        </svg>',
-    // 篮圈示意：原来这段只在球场模式的那个面板里（那个面板篮筐模式根本不渲染），
-    // 等于形状画了但永远看不见 —— 现在跟着篮筐模式的面板走。
-    '        <div v-if="markHoop" style="position:absolute;pointer-events:none;border:2px dashed #ef4444;border-radius:var(--r-pill)"',
-    '             :style="{left:((markHoop.cx-markHoop.rx)*100)+\'%\',top:((markHoop.cy-markHoop.ry)*100)+\'%\',width:(markHoop.rx*200)+\'%\',height:(markHoop.ry*200)+\'%\'}"></div>',
+    '      <div v-if="markKind===\'hoop\'" class="row" style="margin-bottom:8px"><el-button size="small" :disabled="markSaving || hoopPanels.left.loading || hoopPanels.right.loading" @click="swapHoopPanels">交换左右截图</el-button></div>',
+    '      <div v-if="markKind===\'hoop\'" class="mf-panels">',
+    '        <div v-for="side in [\'left\',\'right\']" :key="side" class="mf-panel-wrap">',
+    '          <div class="row" style="gap:8px;margin-bottom:8px;flex-wrap:wrap">',
+    '            <b>{{ side===\'left\' ? \'左半场\' : \'右半场\' }}</b>',
+    '            <el-tag size="small" :type="hoopPanels[side].box ? \'success\' : \'info\'">{{ hoopPanels[side].restored ? \'已保存框\' : (hoopPanels[side].box ? \'已框选\' : \'待框选\') }}</el-tag>',
+    '            <el-input-number v-model="hoopPanels[side].at" @change="seekHoopPanel(side,$event)" :min="0" :step="0.5" :precision="2" size="small" :disabled="markSaving" style="width:125px" />',
+    '            <el-button size="small" :disabled="markSaving" :loading="hoopPanels[side].loading" @click="captureHoopPanel(side)">取当前画面</el-button>',
+    '          </div>',
+    '          <video v-if="videoUrl" :ref="\'hoopVideo_\'+side" :src="videoUrl" controls preload="metadata"',
+    '            @loadedmetadata="$event.target.currentTime=hoopPanels[side].at" @timeupdate="hoopVideoTime(side,$event)" style="width:100%;max-height:26vh;background:var(--bg);margin-bottom:8px" />',
+    '          <div style="position:relative;cursor:crosshair;user-select:none"',
+    '            @mousedown="hoopPanelDown(side,$event)" @mousemove="hoopPanelMove(side,$event)"',
+    '            @mouseup="hoopPanelUp(side,$event)" @mouseleave="hoopPanelUp(side,$event)">',
+    '            <img v-if="hoopPanels[side].image" :src="hoopPanels[side].image" draggable="false" style="width:100%;display:block;border-radius:6px" />',
+    '            <div v-else class="muted" style="padding:60px 12px;text-align:center;background:var(--bg)">{{ hoopPanels[side].loading ? \'正在取帧…\' : \'拖动上方视频，选取这一侧截图\' }}</div>',
+    '            <div v-if="hoopPanels[side].box" :style="hoopPanelStyle(hoopPanels[side].box)" style="position:absolute;pointer-events:none;border:2px solid #22c55e;box-sizing:border-box"></div>',
+    '          </div>',
+    '        </div>',
     '      </div>',
     '      <div v-if="markKind===\'court\'" class="mf-panel-wrap"',
     '           :class="{ on: !mfDualSplit || mfActive===0 }" data-side="0"',
     '           style="position:relative;width:100%;max-width:1100px;cursor:crosshair"',
     '           @click="onMarkClick" @mousemove="onMarkMove" @mouseleave="onMarkLeave"',
     '           @mousedown="onMarkDown" @mouseup="onMarkUp">',
-    '        <img v-if="mfCurrent" :src="mfCurrent.image" style="width:100%;height:auto;display:block;border-radius:var(--r-sm)" />',
-    '        <div v-else class="muted" style="padding:40px">正在抽画面…</div>',
+    '        <img v-if="mfCurrent && mfCurrent.image" :src="mfCurrent.image" style="width:100%;height:auto;display:block;border-radius:var(--r-sm)" />',
+    '        <div v-else class="muted" style="padding:40px">在上方播放器选好画面，再点击「选作左画面」</div>',
     '        <div v-if="mfDualSplit" class="mf-badge">左画面{{ mfActive===0 ? \'（正在点这里）\' : \'\' }}</div>',
     // 已点的标记（两种模式都画：篮筐模式画 markPts/activePts；
     // 球场模式**左画面画 mfPtsHere、右画面画 mfPtsRight** ——
@@ -3133,12 +3059,7 @@ window.PAGES['upload'] = {
     // 标定自检：把这份 H 算出来的球场线画回画面（对不上就是对不上，一眼可见）
     // ⚠️ 用的是**左画面自己那一帧的 H**（overlayLinesLeft）—— 右画面有它自己的一份，
     // 见下面右画面的模板。两个画面共用一个 overlayLines 会把一个机位的线画到另一个上。
-    '          <template v-if="showCourtOverlay">',
-    '            <polyline v-for="(ln,li) in overlayLinesLeft" :key="\'ov\'+li"',
-    '              :points="ln.map(function(q){return q[0].toFixed(0)+\',\'+q[1].toFixed(0)}).join(\' \')"',
-    '              fill="none" stroke="#22d3ee" :stroke-width="Math.max(2, frameW*0.0035)"',
-    '              stroke-dasharray="10 6" opacity="0.95" />',
-    '          </template>',
+
     '        </svg>',
     // 这里原来还有一段「篮圈示意（只在篮筐模式）」的 div，但它在
     // `v-if="markKind==='court'"` 的面板里 —— 篮筐模式下这个面板根本不渲染，
@@ -3150,7 +3071,8 @@ window.PAGES['upload'] = {
     '           style="position:relative;width:100%;max-width:1100px;cursor:crosshair"',
     '           @click="onMarkClick" @mousemove="onMarkMove" @mouseleave="onMarkLeave"',
     '           @mousedown="onMarkDown" @mouseup="onMarkUp">',
-    '        <img v-if="mfCurrentRight" :src="mfCurrentRight.image" style="width:100%;height:auto;display:block;border-radius:var(--r-sm)" />',
+    '        <img v-if="mfCurrentRight && mfCurrentRight.image" :src="mfCurrentRight.image" style="width:100%;height:auto;display:block;border-radius:var(--r-sm)" />',
+    '        <div v-if="!mfCurrentRight || !mfCurrentRight.image" class="muted" style="padding:40px">在上方播放器选好画面，再点击「选作右画面」</div>',
     '        <div v-if="mfDualSplit" class="mf-badge">右画面{{ mfActive===1 ? \'（正在点这里）\' : \'\' }}</div>',
     '        <svg v-if="frameWRight && frameHRight" :viewBox="\'0 0 \' + frameWRight + \' \' + frameHRight"',
     '             preserveAspectRatio="none"',
@@ -3176,12 +3098,7 @@ window.PAGES['upload'] = {
     '          </template>',
     // ⚠️ 右画面用的是**它自己那一帧的 H**（overlayLinesRight）。以前这里渲染的是
     // 左画面的 overlayLines —— 两个机位的球场线互相串，两边都压不到白线上。
-    '          <template v-if="showCourtOverlay">',
-    '            <polyline v-for="(ln,li) in overlayLinesRight" :key="\'ovr\'+li"',
-    '              :points="ln.map(function(q){return q[0].toFixed(0)+\',\'+q[1].toFixed(0)}).join(\' \')"',
-    '              fill="none" stroke="#22d3ee" :stroke-width="Math.max(2, frameWRight*0.0035)"',
-    '              stroke-dasharray="10 6" opacity="0.95" />',
-    '          </template>',
+
     '        </svg>',
     '      </div>',
     '    </div>',
@@ -3210,34 +3127,23 @@ window.PAGES['upload'] = {
     '    <template #footer>',
     '      <el-button v-if="markKind===\'court\'" size="small" @click="mfUndo"',
     '        :disabled="courtMini ? !miniPtsActive.length : !mfPts.length">撤销上一个点</el-button>',
-    '      <el-button v-else size="small" @click="markUndo" :disabled="!activePts.length">撤销上一个</el-button>',
-    // 跳过：**两种模式都要有**。以前球场的"跳过这一项"被 v-if 排除了，
+        // 跳过：**两种模式都要有**。以前球场的"跳过这一项"被 v-if 排除了，
     // 而球场点名里有"另一端的篮筐中心（若只有一个篮筐可见就别选它）"这类
     // 画面里根本不存在的点 —— 用户于是卡住：不点前进不了、点也点不出来。
-    '      <el-button size="small" @click="markSkip" :disabled="markDone">跳过这一项</el-button>',
+    '      <el-button v-if="markKind===\'court\'" size="small" @click="markSkip" :disabled="markDone">跳过这一项</el-button>',
     // 清空：两个画面模式下「清空」只清当前这一个画面（另一边辛苦标的点不该被连坐），
     // 要全清就用后面那个「全部清空」。
-    '      <el-button size="small" @click="markKind===\'court\' ? mfClear() : clearMarks()" :disabled="markKind===\'court\' ? !mfActivePtsCount : !activePts.length">',
+    '      <el-button size="small" @click="markKind===\'court\' ? mfClear() : clearMarks()" :disabled="markKind===\'court\' ? !mfActivePtsCount : (markSaving || (!hoopPanels.left.box && !hoopPanels.right.box))">',
     '        {{ markKind===\'court\' && mfDualSplit ? \'清空这个画面\' : \'清空\' }}</el-button>',
     '      <el-button v-if="markKind===\'court\' && mfDualSplit" size="small" @click="mfClearAll" :disabled="!mfPts.length">全部清空</el-button>',
-    '      <el-button size="small" @click="markOpen=false">取消</el-button>',
-    // 预览（不落盘）：先看清逐点误差与合规性，再决定要不要保存（移植自旧版标定页）
-    // ⚠️ 「4 点试算」模式下必须改用 miniReady 判禁用：mfEnough 数的是**命名点**，
-    // 4 点模式下恒为 0 —— 直接沿用会让这个按钮永远是灰的、整个 4 点通道按不动。
-    '      <el-button v-if="markKind===\'court\'" size="small" :loading="markSaving"',
-    '        :disabled="courtMini ? !miniReady : !(mfFrames.length ? (mfEnough && solvableFrames.length && mfFullCourtReady) : courtEnough)" @click="generateCourtOverlay()">',
-    '        生成并显示球场矩阵（仅预览）</el-button>',
-    '      <el-button v-if="markKind===\'court\' && hasCourtProjection()" size="small"',
-    '        :type="showCourtOverlay ? \'success\' : \'default\'" @click="toggleCourtOverlay()">',
-    '        {{ showCourtOverlay ? \'隐藏球场投影\' : \'显示球场投影\' }}</el-button>',
-    '      <span v-if="markKind===\'court\' && showCourtOverlay" class="hint" style="color:#0891b2">青色线框＝当前端半场投影；A/B 两端共用同一套全场坐标，仅供核对白线，不代表校验通过或已保存</span>',
+    '      <el-button size="small" :disabled="markSaving" @click="markOpen=false">关闭</el-button>',
     // 保存：篮筐模式标了中心就能存；球场模式要求**至少有一幅画面自己够 4 个点**
     // （以前只看总点数，于是"6 个点撒在 3 幅画面上"这种解不出来的点法也能点保存，
     //  点下去只会拿到一句"误差偏大"，用户根本不知道该改什么）
     '      <el-button v-if="markKind!==\'court\' || !courtMini" size="small" type="primary" :loading="markSaving"',
-    '        :disabled="markKind===\'court\' ? !(mfFrames.length ? mfPreviewed : courtPreviewed) : !markHoop"',
+    '        :disabled="markKind===\'court\' ? !(mfFrames.length ? (mfEnough && solvableFrames.length && mfFullCourtReady) : courtEnough) : (!hoopPanels.left.box || !hoopPanels.right.box || hoopPanels.left.loading || hoopPanels.right.loading)"',
     '        @click="markKind===\'court\' ? (mfFrames.length ? saveCourtMulti() : saveCourt()) : saveMarks()">',
-    '        {{ markKind===\'court\' ? \'保存并解算标定\' : \'保存标点\' }}</el-button>',
+    '        {{ markKind===\'court\' ? \'保存标定\' : \'保存左右篮筐\' }}</el-button>',
     '    </template>',
     '  </el-dialog>',
     '</div>'

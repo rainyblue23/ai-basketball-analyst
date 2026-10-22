@@ -20,10 +20,12 @@ sys.path.insert(0, str(ROOT / "src"))
 def _client():
     from fastapi.testclient import TestClient
     from aihoop import api
+    if (api.DB_PATH.resolve() == (ROOT / 'data/jobs.sqlite').resolve()
+            or api.OUT_ROOT.resolve() == (ROOT / 'out').resolve()):
+        raise RuntimeError('API tests require isolated storage; run pytest or this file directly')
     # Explicit test account in isolated auth storage; production has no bypass for tests.
-    import tempfile
     from aihoop import auth
-    auth.DATA = Path(tempfile.mkdtemp(prefix="aihoop-auth-test-"))
+    auth.DATA = api.DATA / 'integration-auth'
     auth.save_account("integration", "integration-test-password")
     client = TestClient(api.app)
     response = client.post("/api/login", json={"username":"integration", "password":"integration-test-password"})
@@ -184,6 +186,40 @@ def test_api_web_assets_and_errors():
     assert bad.status_code in (403, 404), bad.status_code
 
 
+def test_api_preserves_left_and_right_hoop_boxes():
+    """左右半场应分别保存；第二次框选不能覆盖第一次。"""
+    import tempfile
+    import cv2
+    import numpy as np
+
+    c, api = _client()
+    old_data = api.DATA
+    with tempfile.TemporaryDirectory(prefix="aihoop-hoops-") as td:
+        root = Path(td)
+        video = root / "two-hoops.avi"
+        writer = cv2.VideoWriter(str(video), cv2.VideoWriter_fourcc(*"MJPG"),
+                                 10.0, (160, 90))
+        writer.write(np.zeros((90, 160, 3), dtype=np.uint8))
+        writer.release()
+        api.DATA = root
+        try:
+            common = {"video_path": str(video), "landmarks": {},
+                      "hoop": [.25, .35, .04, .02]}
+            left = c.post("/api/marks", json={**common, "at": 1.0,
+                                               "hoop_side": "left"})
+            assert left.status_code == 200, left.text
+            right = c.post("/api/marks", json={**common, "at": 8.0,
+                                                "hoop_side": "right"})
+            assert right.status_code == 200, right.text
+            hoops = right.json()["marks"]["hoops"]
+            assert set(hoops) == {"left", "right"}
+            assert hoops["left"]["at"] == 1.0
+            assert hoops["right"]["at"] == 8.0
+            assert all(len(x["hoop"]) == 4 for x in hoops.values())
+        finally:
+            api.DATA = old_data
+
+
 def _run_all() -> int:
     import traceback
     fns = [(n, f) for n, f in sorted(globals().items())
@@ -203,4 +239,14 @@ def _run_all() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(_run_all())
+    import os
+    import tempfile
+    with tempfile.TemporaryDirectory(prefix='aihoop-api-standalone-') as storage:
+        os.environ['AIHOOP_DATA_DIR'] = str(Path(storage) / 'data')
+        os.environ['AIHOOP_OUT_DIR'] = str(Path(storage) / 'out')
+        try:
+            exit_code = _run_all()
+        finally:
+            from aihoop import api
+            api.POOL.shutdown(wait=True)
+    raise SystemExit(exit_code)

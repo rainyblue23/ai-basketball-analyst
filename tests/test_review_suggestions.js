@@ -1,11 +1,12 @@
 const assert = require('node:assert/strict');
 global.window = {STORE:{}};
+require('../web/data.js');
 require(process.argv[2] || require('node:path').resolve(__dirname, '../web/pages/review.js'));
 const page=window.PAGES.review;
 const vm={...page.data(), $message:{info(){},error(){},success(){},warning(){}}};
 for(const [k,v] of Object.entries(page.methods)) vm[k]=v.bind(vm);
 const suggestion={result:'unknown',made:false,suggested_made:true,evidence:'cross_extrapolated'};
-assert.equal(vm.resultLabel(suggestion),'结果未知');
+assert.equal(vm.resultLabel(suggestion),'');
 assert.equal(vm.hasSuggestion(suggestion),true);
 assert.equal(vm.hasSuggestion({...suggestion,result:'made',made:true}),false);
 assert.equal(vm.hasSuggestion({result:'unknown',made:false}),false);
@@ -34,7 +35,7 @@ for (const [code, text] of [['cross_rim_contact','筐沿'],['cross_hoop_uncertai
   }
 }
 assert.ok(page.template.includes('v-if="unknownReason(row)"'));
-assert.ok(page.template.includes('<copy-note label="未知原因">{{ unknownReason(row) }}</copy-note>'));
+assert.ok(page.template.includes('<copy-note label="判定依据">{{ unknownReason(row) }}</copy-note>'));
 console.log('Unknown evidence reasons and suggestion exclusion passed');
 const reasonBlock = page.template.split('v-if="unknownReason(row)"')[1].split('v-if="hasSuggestion(row)"')[0];
 assert.ok(reasonBlock.includes('v-if="row.crossing_t != null"'));

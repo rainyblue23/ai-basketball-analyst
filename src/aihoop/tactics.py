@@ -101,6 +101,12 @@ class TacticsConfig:
     max_frames: int = 4000         # 战术帧上限（超长视频抽稀，防止产物爆炸）
     max_players_per_team: int = 5  # 标准五人制；异常时暂停，不截取前五人
     min_players: int = 4           # 每队至少要有这么多人，阵型识别才有意义
+    roster_evidence_filter: bool = False  # isolated evaluation; never take the first five
+    roster_gap_s: float = 0.25
+    roster_hold_s: float = 0.12
+    roster_max_speed_m_s: float = 12.0
+    camera_cuts_s: tuple = ()
+    spacing_observed_subset: bool = False  # opt-in: visible known-team people, never a full lineup claim
 
 
 @dataclass
@@ -214,8 +220,11 @@ def population_status(pos: dict, teams: dict, limit: int = 5) -> dict:
     for pid in pos:
         team = teams.get(pid, "unknown")
         counts[team] = counts.get(team, 0) + 1
-    valid = len(pos) <= 2 * limit and all(n <= limit for n in counts.values())
+    # UNKNOWN is unassigned membership, not a third five-person team.
+    valid = len(pos) <= 2 * limit and all(n <= limit for team, n in counts.items()
+                                         if team not in ("unknown", "UNKNOWN", "", "?"))
     return {"valid": valid, "observed_count": len(pos), "team_counts": counts,
+            "unassigned_count": sum(n for team, n in counts.items() if team in ("unknown", "UNKNOWN", "", "?")),
             "reason": "" if valid else "player_population_exceeded"}
 
 
@@ -243,6 +252,7 @@ class PlayerIndex:
     def at(self, t: float, *, allow_overcrowded: bool = False) -> dict[str, tuple[float, float]]:
         """返回 {player_id: (x, y)}；不在场/超出插值窗的球员不出现。"""
         out: dict[str, tuple[float, float]] = {}
+        weak = set()
         for pid, lst in self.by_pid.items():
             ts = self._times[pid]
             i = bisect.bisect_left(ts, t)
@@ -255,19 +265,33 @@ class PlayerIndex:
                 # 这一步是为了让"传球发生在两名球员采样点之间的缝隙里"这种情况
                 # 仍然能取到传球人；但窗口必须小（0.5s），否则就变成
                 # "所有历史轨迹都还在场上"，战术图会被重复点淹没。
-                if ts[0] - t <= self.cfg.hold_gap:
+                if not self.cfg.roster_evidence_filter and ts[0] - t <= self.cfg.hold_gap:
                     out[pid] = (lst[0].x, lst[0].y)
                 continue
             if i >= len(ts):
-                if t - ts[-1] <= self.cfg.hold_gap:
+                hold = self.cfg.roster_hold_s if self.cfg.roster_evidence_filter else self.cfg.hold_gap
+                if t - ts[-1] <= hold and not (self.cfg.roster_evidence_filter and any(ts[-1] < c <= t for c in self.cfg.camera_cuts_s)):
                     out[pid] = (lst[-1].x, lst[-1].y)
+                    weak.add(pid)
                 continue
             t0, t1 = ts[i - 1], ts[i]
-            if t1 - t0 > self.cfg.max_gap:
+            gap = self.cfg.roster_gap_s if self.cfg.roster_evidence_filter else self.cfg.max_gap
+            if t1 - t0 > gap:
                 continue
             f = (t - t0) / (t1 - t0) if t1 > t0 else 0.0
             a, b = lst[i - 1], lst[i]
+            if self.cfg.roster_evidence_filter:
+                if any(t0 < c <= t1 for c in self.cfg.camera_cuts_s):continue
+                if math.hypot(b.x-a.x,b.y-a.y)>self.cfg.roster_max_speed_m_s*(t1-t0):continue
             out[pid] = (a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f)
+        if self.cfg.roster_evidence_filter:
+            # Only an unsupported held endpoint may be removed. Two genuinely
+            # observed players can stand close during a screen or contest.
+            for pid in weak:
+                if any(other not in weak and self.teams.get(other)==self.teams.get(pid)
+                       and math.hypot(out[pid][0]-xy[0],out[pid][1]-xy[1])<0.35
+                       for other,xy in out.items() if other!=pid):
+                    del out[pid]
         quality = population_status(out, self.teams, self.cfg.max_players_per_team)
         if not quality["valid"] and not allow_overcrowded:
             self.population_rejections[round(t, 3)] = quality
@@ -300,7 +324,8 @@ def detect_possessions(ball_track, idx: PlayerIndex, cfg: TacticsConfig
             d = math.hypot(px - b.x, py - b.y)
             if d < best_d:
                 best_pid, best_d = pid, d
-        if best_pid is not None and best_d <= cfg.possess_radius:
+        if (best_pid is not None and best_d <= cfg.possess_radius
+                and idx.teams.get(best_pid) not in ("unknown", "UNKNOWN", "", "?")):
             raw.append((b.t, best_pid, idx.teams.get(best_pid, "")))
         else:
             raw.append((b.t, None, None))
@@ -372,6 +397,8 @@ def detect_passes(spells: Sequence[dict], idx: PlayerIndex,
     shots_t = sorted(float(getattr(a, "t", 0)) for a in (attempts or []))
     raw: list[dict] = []
     for a, b in zip(spells, spells[1:]):
+        if any(s.get("team") in ("unknown", "UNKNOWN", "", "?") for s in (a, b)):
+            continue
         # 同一个人"断了又捡回来"不是传球（抢到自己的篮板 / 检测抖动）
         if a["player_id"] == b["player_id"]:
             continue
@@ -486,10 +513,13 @@ def detect_passes_from_flights(flights: Sequence[Sequence],
         b, db = _nearest_player_at(pos1, fl[-1], radius)
         ta = idx.teams.get(a, "") if a else ""
         tb = idx.teams.get(b, "") if b else ""
+        team_known = all(t not in ("unknown", "UNKNOWN", "", "?") for t in (ta, tb))
         dist = math.hypot(fl[-1].x - fl[0].x, fl[-1].y - fl[0].y)
         path = sum(math.hypot(fl[i].x - fl[i - 1].x, fl[i].y - fl[i - 1].y)
                    for i in range(1, len(fl)))
-        if a and b and a != b:
+        if a and b and a != b and not team_known:
+            kind = "unattributed"
+        elif a and b and a != b:
             kind = "pass" if ta == tb else "turnover"
         elif a or b:
             kind = "loose"
@@ -500,7 +530,7 @@ def detect_passes_from_flights(flights: Sequence[Sequence],
                     "dist": round(dist, 2), "path": round(path, 2),
                     "duration": round(dur, 2),
                     "x": round(fl[0].x, 2), "d": round(abs(fl[0].y), 2),
-                    "same_team": bool(ta and tb and ta == tb),
+                    "same_team": bool(team_known and ta == tb),
                     "kind": kind, "points": len(fl),
                     "source": "flight"})
     # 去抖：时间上贴得极近的相邻事件只留第一条
@@ -785,7 +815,8 @@ def spacing_metrics(pts: Sequence[Sequence[float]]) -> dict:
 # 5) 主入口：把上面这些拼成 tactics.json
 # --------------------------------------------------------------------------
 def _segments(timeline: Sequence[dict], key_from: str, key_to: str,
-              label_key: str, min_len: float) -> list[dict]:
+              label_key: str, min_len: float, *, max_gap: Optional[float] = None,
+              cuts: Sequence[float] = ()) -> list[dict]:
     """把逐帧标签合并成时间段（连续同标签合并，太短的丢掉）。
 
     这是"阵型片段"的产出方式：前端拿到的是 [{t0,t1,label}, ...]，
@@ -794,7 +825,10 @@ def _segments(timeline: Sequence[dict], key_from: str, key_to: str,
     segs: list[dict] = []
     for row in timeline:
         lab = row[label_key]
-        if segs and segs[-1][label_key] == lab:
+        continuous = bool(segs) and (max_gap is None or row['t'] - segs[-1][key_to] <= max_gap)
+        if continuous and any(segs[-1][key_to] < c <= row['t'] for c in cuts):
+            continuous = False
+        if continuous and segs[-1][label_key] == lab:
             segs[-1][key_to] = row["t"]
             segs[-1]["n"] += 1
             continue
@@ -841,7 +875,7 @@ def build_tactics(player_track: Sequence[PlayerSample], ball_track,
                 "notes": notes}
 
     idx = PlayerIndex(samples, cfg)
-    teams = sorted({s.team for s in samples if s.team}) or ["home", "away"]
+    teams = sorted({s.team for s in samples if s.team not in ("unknown", "UNKNOWN", "", "?")}) or ["home", "away"]
     if len(teams) < 2:
         notes.append("只检测到一支球队的轨迹，阵型对比仅对单侧有效。")
 
@@ -879,7 +913,8 @@ def build_tactics(player_track: Sequence[PlayerSample], ball_track,
     prev_ids: set = set()
     for ti, tt in enumerate(times):
         # 近邻去重：否则"同一个人的两段碎片轨迹"会让阵型/间距被重复点带偏
-        pos = dedupe_positions(idx.at(tt), prefer=prev_ids)
+        observed = idx.at(tt)
+        pos = observed if cfg.roster_evidence_filter else dedupe_positions(observed, prefer=prev_ids)
         if pos:
             prev_ids = set(pos)
         if len(pos) < 2:
@@ -897,6 +932,12 @@ def build_tactics(player_track: Sequence[PlayerSample], ball_track,
         by_team: dict[str, list] = {}
         for pid, (px, py) in pos.items():
             by_team.setdefault(idx.teams.get(pid, "?"), []).append((px, py))
+
+        # Unknown people remain on the diagram but cannot form an invented
+        # team or make an incomplete team look like a verified formation.
+        unknown_present = any(team in by_team for team in ("unknown", "UNKNOWN", "", "?"))
+        if unknown_present and not cfg.spacing_observed_subset:
+            continue
 
         # 进攻方向：优先用球的位置，球没有就用两队整体位置中较深的一侧
         if ball_xy is not None:
@@ -920,8 +961,15 @@ def build_tactics(player_track: Sequence[PlayerSample], ball_track,
                 continue
             m = spacing_metrics(pts)
             m.update({"t": tt, "team": team, "n": len(pts)})
+            if cfg.spacing_observed_subset:
+                m.update(scope="observed_team_subset", unassigned_present=unknown_present,
+                         segment=bisect.bisect_right(cfg.camera_cuts_s, tt))
             spacing_timeline.append(m)
 
+            if unknown_present:
+                # A spatial measurement of known teammates does not resolve
+                # the unassigned people or establish a complete formation.
+                continue
             local = [attack_frame(x, y) for x, y in pts]
             if len(pts) >= cfg.min_players:
                 if off_team == team:
@@ -1020,9 +1068,13 @@ def build_tactics(player_track: Sequence[PlayerSample], ball_track,
         "roles_labeled": unlabeled == 0 and bool(spells),
         "unlabeled_frames": unlabeled,
         "offense": {t: _segments(off_tl[t], "t0", "t1", "shape",
-                                 cfg.segment_min) for t in teams},
+                                 cfg.segment_min,
+                                 max_gap=1.5 * step_t if cfg.roster_evidence_filter else None,
+                                 cuts=cfg.camera_cuts_s) for t in teams},
         "defense": {t: _segments(def_tl[t], "t0", "t1", "scheme",
-                                 cfg.segment_min) for t in teams},
+                                 cfg.segment_min,
+                                 max_gap=1.5 * step_t if cfg.roster_evidence_filter else None,
+                                 cuts=cfg.camera_cuts_s) for t in teams},
         "summary": {t: {
             "offense": _summarize_top([r["shape"] for r in off_tl[t]]),
             "defense": _summarize_top([r["scheme"] for r in def_tl[t]]),
@@ -1037,6 +1089,9 @@ def build_tactics(player_track: Sequence[PlayerSample], ball_track,
             k: round(_mean([r[k] for r in rows]), 2)
             for k in ("area", "mean_dist", "width", "depth", "radius")
         } if rows else {}
+        if rows and cfg.spacing_observed_subset:
+            space_summary[team].update(samples=len(rows), n_min=min(r['n'] for r in rows),
+                                       n_max=max(r['n'] for r in rows), scope='observed_team_subset')
 
     poss_by_team = {t: sum(1 for s in poss if s["team"] == t) for t in teams}
     pass_by_team = {t: sum(1 for p in passes
@@ -1056,7 +1111,8 @@ def build_tactics(player_track: Sequence[PlayerSample], ball_track,
             insights.append({
                 "type": "space", "team": team, "t": best["t"],
                 "text": (f"{_team_label(players, team)} 在 {_mmss(best['t'])} "
-                         f"打出最大空间：凸包面积 {best['area']} m²")})
+                         + ("可见球员站位面积最大" if cfg.spacing_observed_subset else "打出最大空间")
+                         + f"：凸包面积 {best['area']} m²")})
         tl = formation["offense"].get(team) or []
         if tl:
             longest = max(tl, key=lambda s: s["t1"] - s["t0"])
@@ -1088,7 +1144,10 @@ def build_tactics(player_track: Sequence[PlayerSample], ball_track,
             attack_side = "mixed"
         else:
             attack_side = {1: "right", -1: "left"}.get(side_major, "right")
-    available = bool(poss) or bool(spacing_timeline)
+    analysis_available = bool(poss) or bool(spacing_timeline)
+    has_unknown_teams = any(s.team in ("unknown", "UNKNOWN", "", "?") for s in samples)
+    diagram_available = any(bool(idx.at(tt)) for tt in times) if has_unknown_teams else analysis_available
+    available = analysis_available or diagram_available
     reason = ""
     if not poss:
         reason = ("球轨迹覆盖不足，没能判出球权（传球网络为空）；"
@@ -1101,15 +1160,24 @@ def build_tactics(player_track: Sequence[PlayerSample], ball_track,
     elif unlabeled:
         notes.append(f"球轨迹覆盖不足，{unlabeled} 帧判不出球权："
                      "阵型部分只给出「落位形状」，未区分进攻/防守。")
+    if has_unknown_teams:
+        notes.append("分队未知人员保留灰色位置；含未知分队的时刻不推断球队阵型。"
+                     + ("空间指标只使用已分组的可见人员，不代表完整阵容。" if cfg.spacing_observed_subset
+                        else "这些时刻不生成球队空间指标。"))
+        if not analysis_available:
+            reason = "位置可查看；分队证据不足，暂不生成球队战术统计。"
 
     return {
         "available": available,
+        "diagram_available": diagram_available,
+        "team_analysis_available": analysis_available,
         "version": "1.0",
         "reason": reason,
         "config": {"frame_step": cfg.frame_step, "anim_step": cfg.anim_step,
                    "possess_radius": cfg.possess_radius,
                    "min_possession": cfg.min_possession,
-                   "man_dist": cfg.man_dist},
+                   "man_dist": cfg.man_dist,
+                   "spacing_observed_subset": cfg.spacing_observed_subset},
         "population_quality": {"max_players_per_team": cfg.max_players_per_team,
             "rejected_query_times": sorted(idx.population_rejections),
             "note": "超员时暂停该时刻的战术推断；不代表已识别出正确阵容。"},
@@ -1170,9 +1238,13 @@ def build_tactics(player_track: Sequence[PlayerSample], ball_track,
 
 
 def _team_label(players: dict, team: str) -> str:
+    if team in ('team_a', 'team_b'):
+        return '分组A（主客未核实）' if team == 'team_a' else '分组B（主客未核实）'
     for p in (players or {}).values():
         if getattr(p, "team", "") == team:
             n = str(getattr(p, "name", "") or "")
+            if n in ('号码待确认', 'UNKNOWN', 'UNASSIGNED', 'unknown'):
+                continue
             n = n.replace("号", "").rstrip("0123456789")
             if n and not n.startswith(("T", "t")):
                 return n
@@ -1225,7 +1297,7 @@ def build_tactics_frames(player_track: Sequence[PlayerSample],
                 break
             t += step_t
             continue
-        pos = dedupe_positions(raw_pos, prefer=prev_ids)
+        pos = raw_pos if cfg.roster_evidence_filter else dedupe_positions(raw_pos, prefer=prev_ids)
         if pos:
             prev_ids = set(pos)
             ball = None
@@ -1234,7 +1306,8 @@ def build_tactics_frames(player_track: Sequence[PlayerSample],
                 cand = [j for j in (k - 1, k, k + 1) if 0 <= j < len(bt)]
                 if cand:
                     j = min(cand, key=lambda j: abs(bt_times[j] - t))
-                    if abs(bt_times[j] - t) <= max(2.0, cfg.max_gap):
+                    ball_gap = cfg.roster_gap_s if cfg.roster_evidence_filter else max(2.0, cfg.max_gap)
+                    if abs(bt_times[j] - t) <= ball_gap and not (cfg.roster_evidence_filter and any(min(t,bt_times[j]) < c <= max(t,bt_times[j]) for c in cfg.camera_cuts_s)):
                         ball = [round(bt[j].x, 3), round(bt[j].y, 3)]
             players = [[pid, idx.teams.get(pid, ""), round(px, 3), round(py, 3)]
                        for pid, (px, py) in sorted(pos.items())]
@@ -1242,10 +1315,19 @@ def build_tactics_frames(player_track: Sequence[PlayerSample],
             if ball:
                 side = attack_side_of(ball[1])
             out.append({"t": round(t, 2), "side": side, "ball": ball,
-                        "players": players})
-            if len(out) >= cfg.max_frames:
-                break
+                        "players": players, "population_quality": quality})
+        else:
+            # Keep an explicit gap so playback cannot carry an old camera's
+            # positions across an unmatched shot or missing detections.
+            prev_ids = set()
+            out.append({"t": round(t, 2), "side": 1, "ball": None,
+                        "players": [], "position_quality": {"valid": False,
+                        "reason": "no_reliable_positions"}})
+        if len(out) >= cfg.max_frames:
+            break
         t += step_t
+    for frame in out:
+        frame['segment'] = bisect.bisect_right(cfg.camera_cuts_s, frame['t'])
     return out
 
 

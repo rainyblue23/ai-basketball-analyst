@@ -35,6 +35,8 @@ from .report import build_report_md, build_report_json
 from .export import write_stats_csv, write_shots_csv, \
     write_passes_csv, write_spacing_csv
 from .highlight import make_highlights
+from .tactics_roster import (RosterEvidenceConfig, apply_roster_evidence,
+                            validate_roster_evidence, stitch_roster_evidence)
 
 
 @dataclass
@@ -54,6 +56,9 @@ class PipelineConfig:
     # 关掉它 = 退化成套餐 A 的产物集合，方便对比答辩。
     make_tactics: bool = True
     tactics: Optional[TacticsConfig] = None
+    # Offline opt-in evidence overlay; never modifies source tracks or shots.
+    tactics_roster: Optional[RosterEvidenceConfig] = None
+    tactics_roster_evidence: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -94,6 +99,24 @@ def run_pipeline(rt: RawTrack, cfg: Optional[PipelineConfig] = None,
                  progress: Optional[Callable[[float, str], None]] = None
                  ) -> PipelineResult:
     cfg = cfg or PipelineConfig()
+    tactics_track, tactics_players = rt.player_track, rt.players
+    roster_decisions = []
+    stitch_meta = {'enabled':False}
+    roster_enabled = bool(cfg.tactics_roster and
+                          (cfg.tactics_roster.use_roles or cfg.tactics_roster.use_teams or cfg.tactics_roster.stitch_tracks))
+    if roster_enabled:
+        validate_roster_evidence(rt, cfg.tactics_roster_evidence, cfg.tactics_roster)
+        tactics_track, roster_decisions = apply_roster_evidence(
+            rt.player_track, cfg.tactics_roster_evidence, cfg.tactics_roster)
+        cuts=tuple(sorted({r['t'] for r in rt.detections_meta.get('legacy_shots',{}).get('frames',[]) if r.get('cut')}
+                          | set(getattr(cfg.tactics,'camera_cuts_s',()) or ())))
+        tactics_track,stitch_meta=stitch_roster_evidence(tactics_track,cfg.tactics_roster_evidence,
+            cuts=cuts,cfg=cfg.tactics_roster)
+        import copy
+        tactics_players = copy.deepcopy(rt.players)
+        for sample in tactics_track:
+            if sample.player_id in tactics_players:
+                tactics_players[sample.player_id].team = sample.team
     out = Path(cfg.out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
@@ -144,6 +167,8 @@ def run_pipeline(rt: RawTrack, cfg: Optional[PipelineConfig] = None,
                         a["forced_value"] = fix["value"]
                     a["manual"] = True
 
+    from .scoreboard_fusion import apply_scoreboard
+    attempts, broadcast_score = apply_scoreboard(attempts, rt.detections_meta)
     shots = build_shots(attempts, ball_track=rt.ball_track,
                         scoreboard_events=rt.scoreboard_events, cfg=cfg.rules)
     step(0.45, f"生成 {len(shots)} 次出手记录")
@@ -205,6 +230,26 @@ def run_pipeline(rt: RawTrack, cfg: Optional[PipelineConfig] = None,
     else:
         score = dict(clip_score)
     meta["score_policy"] = policy
+    screen_reference = rt.detections_meta.get('scoreboard_reference_only') or {}
+    sb_hit = int(sb_meta.get("frames_hit") or screen_reference.get('ocr_hit') or 0)
+    sb_attempted = bool(sb_meta) or bool(screen_reference) or bool(rt.detections_meta.get("ocr_scoreboard_error"))
+    meta["scoreboard_usage"] = {
+        "attempted": sb_attempted,
+        "readable": sb_hit > 0,
+        "used_for_score": bool(not screen_reference and sb_hit > 0 and use_carry_for_score and sb_readable),
+        "events": len(sb_score_events),
+        "reason": ("已读出记分牌；连续比分变化仅用于辅助判断已有出手。"
+                   if screen_reference else
+                   "未稳定读出双方比分，本次比分来自视觉投篮检测；可能存在漏检。"
+                   if sb_attempted and not sb_hit else
+                   "记分牌读数仅作参考，当前采用场上投篮计分。"
+                   if sb_hit and not use_carry_for_score else
+                   "已采用记分牌读数；开局已有分数不生成虚构出手。"
+                   if sb_hit and use_carry_for_score else "没有可用记分牌读数。")}
+    if broadcast_score:
+        meta['scoreboard_usage']['used_for_shots']=len(broadcast_score['matched_shots'])
+        meta['scoreboard_usage']['used_for_score']=bool(broadcast_score['matched_shots'])
+        meta['scoreboard_usage']['reason']='仅用同镜头内可唯一对应的连续比分变化辅助确认已有出手；未匹配的变化不生成投篮。'
 
     # 每节比分要与总分一致 —— 这里做个自检，答辩时能讲「数据一致性校验」
     assert sum(q["home"] for q in qs) == score["home"], "分节比分与总分不一致(home)"
@@ -266,7 +311,8 @@ def run_pipeline(rt: RawTrack, cfg: Optional[PipelineConfig] = None,
               "unavailable": True, "reason": cal_reason}
         zones_by_team = {t: {} for t in ("home", "away")}
     meta["court_outputs_available"] = cal_charts
-    independent_ok = (rt.detections_meta.get("calibration_hoop_check") or {}).get("ok") is True
+    independent_ok = ((rt.detections_meta.get("calibration_for_value") or {}).get("ok") is True
+                      or (rt.detections_meta.get("calibration_hoop_check") or {}).get("ok") is True)
     meta["court_outputs_unverified"] = bool(cal_charts and (not cal_usable or not independent_ok))
     if not cal_charts:
         meta["court_outputs_reason"] = cal_reason
@@ -281,6 +327,7 @@ def run_pipeline(rt: RawTrack, cfg: Optional[PipelineConfig] = None,
         "clip_score": clip_score,
         "score_policy": policy,
         "scoreboard_reference": carry,
+        "broadcast_score": broadcast_score,
         "teams": {
             "home": {"name": _team_name(rt, "home") or "主队",
                      "stats": home.to_dict()},
@@ -320,7 +367,7 @@ def run_pipeline(rt: RawTrack, cfg: Optional[PipelineConfig] = None,
     # 最后一道闸：坐标自身在物理上说得通吗？
     # 分数（ratio/达标率）会骗人（实测 sliding 自称 14.5 / 0.999，坐标却把 90% 的
     # 球员压在边线上），但坐标的分布骗不了人。过不了就整层不出，并说明原因。
-    coords_ok, coords_why = _tactics_coords_sane(rt.player_track)
+    coords_ok, coords_why = _tactics_coords_sane(tactics_track)
     if cfg.make_tactics and not coords_ok:
         step(0.68, "战术层：跳过（球员坐标在物理上说不通）")
         pos_via_sliding = False
@@ -350,11 +397,25 @@ def run_pipeline(rt: RawTrack, cfg: Optional[PipelineConfig] = None,
     elif cfg.make_tactics:
         step(0.68, "战术层：控球归属 / 传球网络 / 阵型 / 空间")
         tcfg = cfg.tactics or TacticsConfig()
+        if not tcfg.camera_cuts_s:
+            from dataclasses import replace
+            cut_times=tuple(f['t'] for f in rt.detections_meta.get('legacy_shots',{}).get('frames',[]) if f.get('cut'))
+            tcfg=replace(tcfg,camera_cuts_s=cut_times)
         # 注意这里传的是**已定稿的 shots**（含人工复核改判），
         # 这样"这次回合拿了多少分"跟记分牌、战报永远是同一口径。
         tactics_data = build_tactics(
-            rt.player_track, rt.ball_track, rt.players, shots,
+            tactics_track, rt.ball_track, tactics_players, shots,
             duration=rt.duration, cfg=tcfg)
+        if roster_enabled:
+            tactics_data['roster_evidence'] = {
+                'input_signature': cfg.tactics_roster_evidence['input_signature'],
+                'excluded_observations': len(roster_decisions),
+                'role_accuracy': None, 'team_accuracy': None}
+            if stitch_meta.get('enabled'):
+                tactics_data['tracklet_stitch']=stitch_meta
+            if cfg.tactics_roster.use_teams:
+                tactics_data['team_identity'] = {'verified': False,
+                    'labels': {'team_a': '分组A（主客未核实）', 'team_b': '分组B（主客未核实）'}}
         if tactics_data.get("available") and pos_via_sliding:
             # 位置来自自动逐帧标定：坐标**没有经过独立校验**，必须显式标注。
             # 展示性结论照给（用户要的就是能看战术图），但绝不冒充"已校验"。
@@ -370,23 +431,28 @@ def run_pipeline(rt: RawTrack, cfg: Optional[PipelineConfig] = None,
         elif tactics_data.get("available"):
             tactics_data["position_unverified"] = not independent_ok
             if not independent_ok:
-                tactics_data["position_note"] = "静态标定未通过独立篮筐校验，位置仅供参考。"
-            tactics_data["position_source"] = "static_calibration"
+                tactics_data["position_note"] = "地面标定未通过检查，位置仅供参考。"
+            tactics_data["position_source"] = meta.get("player_track_source") or "static_calibration"
         # ---- 帧级体检（**不管上面判成可用还是不可用都要做**）----------------
         # 理由比"球轨迹不足"更贴近用户看到的症状（一张空球场），所以允许**覆盖**。
-        _drop = _tactics_population_drop(rt, cfg)
+        try:
+            tactics_frames = build_tactics_frames(tactics_track, rt.ball_track, duration=rt.duration, cfg=tcfg)
+        except Exception as e:                                   # noqa: BLE001
+            tactics_frames = []
+            meta["tactics_frames_error"] = f"{type(e).__name__}: {e}"
+        _drop = _tactics_population_drop(rt, cfg, frames=tactics_frames)
         if _drop:
+            tactics_frames = []
             tactics_data["available"] = False
             tactics_data["reason"] = _drop["reason"]
             tactics_data.setdefault("notes", []).append("⚠ " + _drop["reason"])
             meta["tactics_frame_drop"] = _drop["meta"]
         else:
-            try:
-                tactics_frames = build_tactics_frames(
-                    rt.player_track, rt.ball_track, duration=rt.duration, cfg=tcfg)
-            except Exception as e:                               # noqa: BLE001
-                tactics_frames = []
-                meta["tactics_frames_error"] = f"{type(e).__name__}: {e}"
+            rejected = sum(1 for f in tactics_frames
+                           if (f.get("population_quality") or {}).get("valid") is False)
+            if rejected:
+                tactics_data.setdefault("notes", []).append(
+                    f"{rejected} 个时刻人数异常，已暂停这些时刻的推断；其余有效画面可查看。")
         game["tactics"] = _tactics_summary(tactics_data)
 
     # ---- 5) 战报 ----
@@ -511,6 +577,11 @@ def _evidence_meta(rt: RawTrack) -> dict:
         }
     if d.get("scoreboard_bar"):
         meta["scoreboard_bar"] = d["scoreboard_bar"]
+    if d.get('scoreboard_reference_only'):
+        ref=d['scoreboard_reference_only']
+        meta['scoreboard_reference_only']={k:ref.get(k) for k in
+            ('screen_start','screen_final','screen_events','discontinuities','team_mapping_confirmed','ocr_hit','n_crops','note')}
+        meta['scoreboard_support']=d.get('scoreboard_support',[])
     if d.get("shot_engine"):
         meta["shot_engine"] = d["shot_engine"]
     if d.get("legacy_shots"):
@@ -541,6 +612,8 @@ def _evidence_meta(rt: RawTrack) -> dict:
         meta["teams"] = d["teams"]
     if d.get("scoreboard_error"):
         meta["scoreboard_error"] = d["scoreboard_error"]
+    if d.get("ocr_scoreboard_error"):
+        meta["ocr_scoreboard_error"] = d["ocr_scoreboard_error"]
     # ---- 球员球场坐标的来源与质量（战术层门槛要用，前端也要显示）----
     # 静态标定不可用时，sources 会自动改用**逐帧滑动标定**把球员投成球场坐标
     # （player_track_source == "sliding_calibration"）。它没有经过独立校验，
@@ -608,7 +681,7 @@ def _sliding_position_ok(meta: dict) -> tuple[bool, str]:
     return True, ("%d 个锚点，达标率 %.2f，中位 ratio %.2f" % (n_a, ok_ratio, med))
 
 
-def _tactics_population_drop(rt, cfg) -> Optional[dict]:
+def _tactics_population_drop(rt, cfg, *, frames=None) -> Optional[dict]:
     """战术帧的"空帧占比"体检：人数异常时给出**人话原因**。
 
     实测踩到（用户反馈"这都没人了"）：球员轨迹里混了大量观众/替补（球场标定
@@ -621,15 +694,21 @@ def _tactics_population_drop(rt, cfg) -> Optional[dict]:
     tcfg = getattr(cfg, "tactics", None)
     max_team = int(getattr(tcfg, "max_players_per_team", 5) or 5) if tcfg else 5
     try:
-        frames = build_tactics_frames(rt.player_track, rt.ball_track,
-                                      duration=rt.duration,
-                                      cfg=tcfg or TacticsConfig())
+        if frames is None:
+            frames = build_tactics_frames(rt.player_track, rt.ball_track,
+                                          duration=rt.duration,
+                                          cfg=tcfg or TacticsConfig())
     except Exception:                                            # noqa: BLE001
         return None
     n = len(frames or [])
     if not n:
         return None
-    empty = sum(1 for f in frames if not (f.get("players") or []))
+    empty = sum(1 for f in frames
+                if (f.get("population_quality") or {}).get("valid") is False)
+    # Reject affected times individually. Valid observations must not disappear
+    # merely because another camera/time has unreliable player detections.
+    if any(len(f.get("players") or []) >= 4 for f in frames):
+        return None
     if empty / n <= 0.30:
         return None
     why = ("球员人数异常：%d/%d 帧因为「每队人数超过 %d 人」被丢弃，"
@@ -819,6 +898,8 @@ def _no_score_reasons(meta: dict, sb: dict, include_scoreboard: bool = True) -> 
 
 def _team_name(rt: RawTrack, team: str) -> str:
     """仅使用队名元数据；缺失时使用主队/客队，不从球员名字推测。"""
+    if team not in ('home','away'):
+        return '球队未知'
     named = (rt.detections_meta.get("team_names") or {}).get(team)
     if named and not re.fullmatch(r"(?:球员|[Tt])\d+|其他球员", named):
         return named
@@ -836,6 +917,8 @@ def _shot_event(s: Shot, rt: RawTrack) -> dict:
             "location_unknown": "location_unknown" in s.tags,
             "clip_start": s.clip_start, "clip_end": s.clip_end,
             "decision_t": s.decision_t, "release_source": s.release_source,
+            "release_known": s.release_known,"release_evidence": dict(s.release_evidence),
+            "candidate_t": s.candidate_t,"geometry_source": s.geometry_source,
             "x": round(s.x, 2), "y": round(s.y, 2),
             "zone": "位置未知" if "location_unknown" in s.tags else zone_of(s.x, s.y), "confidence": s.confidence,
             "source": s.outcome_source, "period": s.period,

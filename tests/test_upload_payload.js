@@ -52,6 +52,11 @@ const withCal = startWith(makeVm(), 'D:\\videos\\a.mp4', true);
 assert.ok(withCal.allow_no_calibration === false || withCal.allow_no_calibration === undefined,
   '已标定时不该声明"不要球场坐标"');
 
+const withHoop = makeVm();
+withHoop.savedMarks = { path: '/srv/data/marks_a.json', hoop: [100, 80, 20, 8] };
+const hoopPayload = startWith(withHoop, 'D:\\videos\\a.mp4', false);
+assert.equal(hoopPayload.marks, '/srv/data/marks_a.json', '保存的篮筐标点文件必须显式传给分析任务');
+
 // 3) 没标定时要给用户一句看得懂的日志（说明这次少了什么）
 const vm3 = makeVm();
 startWith(vm3, 'D:\\videos\\b.mp4', false);
@@ -71,6 +76,7 @@ assert.equal(sent[0].raw_path, 'D:\\out\\x\\raw_track.json');
 const vm5 = makeVm();
 vm5.calInfo = { exists: false };
 const step2 = vm5.guideSteps[1];
+assert.equal(vm5.guideSteps.length, 4, '顶部流程应为视频、球场、篮筐、分析四步');
 assert.ok(step2.title.includes('标定球场'), '引导第 2 步应是「标定球场」');
 assert.ok(step2.desc.includes('不标也能分析'),
   '未标定时引导必须明说"不标也能分析"（否则用户以为卡住了）');
@@ -78,7 +84,17 @@ assert.ok(step2.desc.includes('热图') && step2.desc.includes('战术图'),
   '未标定的代价要写清楚：没有热图/战术图');
 assert.ok(!p.template.includes('随机种子') && sent[0].seed === undefined,
   '上传页不该再有随机种子输入框，请求体也不该再发 seed（它只对合成比赛生效）');
-assert.ok(p.template.includes('在画面上标篮筐') && p.template.includes('标球场（点场地特征点）'),
+assert.ok(vm5.guideSteps.some(s => s.key === 'hoop' && s.cta.includes('篮筐')) &&
+  vm5.guideSteps.some(s => s.key === 'calib' && s.title.includes('标定球场')),
   '标篮筐 / 标球场两个入口都应在模板里');
+assert.ok(!p.template.includes('label="球场标定"'), '下方不应再重复球场标定入口');
+assert.equal(noCal.score_policy, 'auto', '视频分析应自动使用可用比分牌，没有时回退视觉路径');
 
-console.log('Upload payload: allow_no_calibration contract passed (5 checks)');
+console.log('Upload payload contracts passed');
+
+const uploading = makeVm();
+uploading.form.video_path = 'previous.mp4';
+uploading.uploadPct = 0.5;
+sent.length = 0;
+uploading.start();
+assert.equal(sent.length, 0, '上传过程中不能分析旧视频');

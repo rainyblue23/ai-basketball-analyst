@@ -33,9 +33,9 @@ function makeVm() {
   return v;
 }
 
-// ---- 两个"机位"的单应矩阵（像素→球场米），形态模仿真实标定：帧上方是远端(y>0) ----
-const H_LEFT = [[0.002, -0.03, 10.0], [-0.025, -0.001, 16.0], [-0.0008, 0.0025, 1.0]];
-const H_RIGHT = [[0.021, -0.02, -8.0], [-0.012, 0.004, 12.0], [0.0015, 0.0022, 1.0]];
+// 两个可见半场：A端 y>0，B端 y<0；全部标点须在画面内，允许投影线裁剪。
+const H_LEFT = [[15/800, 0, -9], [0, -14/400, 14.7], [0, 0, 1]];
+const H_RIGHT = [[15/700, 0, -9.64], [0, 14/360, -16.3], [0, 0, 1]];
 
 function applyH(H, x, y, W = 960, Hh = 544) {
   const px = x * W, py = y * Hh;
@@ -65,6 +65,7 @@ function pointOn(H, dst, W = 960, Hh = 544) {
 function main() {
   const vm = makeVm();
   vm.markKind = 'court';
+  vm.showCourtOverlay = true;
   vm.form = { video_path: 'x.mp4' };
   vm.mfFrames = [{ t: 117.97, w: 960, h: 544, image: '' },
                  { t: 13.5, w: 960, h: 544, image: '' }];
@@ -101,8 +102,8 @@ function main() {
     '两个机位的线不可能一模一样 —— 一样就说明又画成同一份了');
 
   // 左画面的线 = 用 H_LEFT 投出来的；右画面 = 用 H_RIGHT 投出来的
-  const leftOwn = vm._overlayLinesFor(H_LEFT, 960, 544);
-  const rightOwn = vm._overlayLinesFor(H_RIGHT, 960, 544);
+  const leftOwn = vm._overlayLinesFor(H_LEFT, 960, 544, 'right');
+  const rightOwn = vm._overlayLinesFor(H_RIGHT, 960, 544, 'left');
   assert.deepEqual(vm.overlayLinesLeft, leftOwn, '左画面必须用左帧自己的 H');
   assert.deepEqual(vm.overlayLinesRight, rightOwn, '右画面必须用右帧自己的 H');
   assert.notDeepEqual(vm.overlayLinesRight, leftOwn, '右画面不能再拿到左帧的线');
@@ -153,14 +154,15 @@ function main() {
   assert.equal(vm.overlayLinesLeft.length + vm.overlayLinesRight.length + vm.overlayLines.length,
     0, '关窗必须清空所有叠线');
 
+  vm.showCourtOverlay = true;
   // ---- ⑥ 多机位那条路：顶层 H = null，每段一份 H（segments_H）也要能认领 ----
   vm.mfResult = { ok: true, via: 'per-shot', multi_shot: true, H: null,
                   segments_H: [{ t_start: 0.0, t_end: 55.21, names: [], n_points: 5, H: H_RIGHT },
                                { t_start: 55.21, t_end: 240.08, names: [], n_points: 5, H: H_LEFT }] };
   vm.refreshOverlay();
-  assert.deepEqual(vm.overlayLinesLeft, vm._overlayLinesFor(H_LEFT, 960, 544),
+  assert.deepEqual(vm.overlayLinesLeft, vm._overlayLinesFor(H_LEFT, 960, 544, 'right'),
     'per-shot：左画面要按 t 认领它所在那一段的 H');
-  assert.deepEqual(vm.overlayLinesRight, vm._overlayLinesFor(H_RIGHT, 960, 544),
+  assert.deepEqual(vm.overlayLinesRight, vm._overlayLinesFor(H_RIGHT, 960, 544, 'left'),
     'per-shot：右画面要按 t 认领它所在那一段的 H');
 
   // ---- ⑦ 自动试算的中间状态门禁 ----
@@ -170,6 +172,7 @@ function main() {
   v2.markKind = 'court';
   v2.form = { video_path: 'x.mp4' };
   v2.mfFrames = vm.mfFrames;
+  v2.mfSideByT = {'117.97':'right','13.5':'left'};
   v2.mfIdx = 0; v2.mfIdx2 = 1; v2.mfActive = 0; v2.dualView = true;
   v2.mfPts = vm.mfPts.filter(q => q.t === 117.97);        // 只有左画面点够 4 个
   v2.scheduleAutoPreview();
@@ -181,7 +184,7 @@ function main() {
     v2.scheduleAutoPreview();
     return step();
   }).then(() => {
-    assert.equal(calls.length, 1, '两边都点够之后应该自动解算一次');
+    assert.equal(calls.length, 0, '只在用户主动生成投影时解算');
 
     // ---- ⑧ 吻合度逐段 ----
     const v3 = makeVm();

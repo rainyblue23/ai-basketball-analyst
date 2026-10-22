@@ -35,13 +35,19 @@ window.PAGES['overview'] = {
   },
   computed: {
     shotCounts: function () {
-      var counts = { total: 0, made: 0, miss: 0, unknown: 0 };
-      var self = this;
+      var counts = { total: 0, made: 0, miss: 0, pending: 0 };
       ((this.game && this.game.timeline) || []).forEach(function (row) {
+        var display = window.D.shotDisplay(row);
         counts.total++;
-        counts[self.resultClass(row) === 'needs' ? 'unknown' : row.made ? 'made' : 'miss']++;
+        if (display.resolved) counts[display.made ? 'made' : 'miss']++;
+        else counts.pending++;
       });
       return counts;
+    },
+    unresolvedShots: function () {
+      return ((this.game && this.game.timeline) || []).filter(function (row) {
+        return !window.D.shotDisplay(row).resolved;
+      });
     },
     game: function () { return this.S.game; },
     sampleReview: function () { return ((this.game || {}).meta || {}).sample_review || null; },
@@ -92,10 +98,10 @@ window.PAGES['overview'] = {
       var m = (this.game && this.game.meta) || {};
       var out = [];
       var sb = m.scoreboard;
-      if (sb && sb.frames_read) {
+      if (sb && sb.frames_hit > 0) {
         var pct = Math.round(sb.frames_hit / sb.frames_read * 100);
         out.push({ k: '广播比分牌', v: '读取成功 ' + sb.frames_hit + '/' + sb.frames_read +
-          ' 帧（' + pct + '%）', d: '比分与得分时刻由它给出（导播系统直接渲染，零噪声）' });
+          ' 帧（' + pct + '%）', d: '仅采信通过检查的读数；比分变化不能确定投篮球员和出手位置。' });
       }
       if (m.hoopsight_error) {
         out.push({k: '篮下识别未完成', v: '本次结果可能漏球',
@@ -103,7 +109,7 @@ window.PAGES['overview'] = {
       }
       if (m.shot_engine === 'legacy') {
         out.push({ k: '投篮检测', v: '逐次出手引擎',
-          d: '保留命中、未中与未知；推算建议不自动计分，检测次数仍需复核。' });
+          d: '投篮记录显示时间、中或没中。' });
       }
       var vis = m.visual;
       if (vis) {
@@ -159,14 +165,12 @@ window.PAGES['overview'] = {
       if (m.attempts) {
         out.push({ k: '出手来源', v: '比分牌 ' + (m.attempts.from_scoreboard || 0) +
           ' 次 / 打铁候选 ' + (m.attempts.from_ball_track || 0) + ' 次',
-          d: '打铁候选置信度低，进人工复核队列，不进比分统计' });
+          d: this.sampleReview ? '轨迹候选不自动计入样例统计'
+            : '打铁候选置信度低，进入待确认队列，不进比分统计' });
       }
       if (m.teams) {
         out.push({ k: '分队依据', v: '球衣颜色聚类 ' + (m.teams.players || 0) + ' 名球员',
           d: '绿色系 ' + m.teams.green_hue + '° / 红色系 ' + m.teams.red_hue + '°' });
-      }
-      if (m.scoreboard_error) {
-        out.push({ k: '比分牌', v: '未启用或读取失败', d: m.scoreboard_error });
       }
       return out;
     },
@@ -180,6 +184,26 @@ window.PAGES['overview'] = {
       return tl.some(function (e) {
         return e.value_assumed || ((e.tags || []).indexOf('value_assumed') >= 0);
       });
+    },
+    analysisModules: function () {
+      var review = this.sampleReview;
+      var players = this.S.players || [];
+      var points = (((this.S.shotchart || {}).all || {}).points || []);
+      var tactics = (this.game && this.game.tactics) || {};
+      var report = this.S.report;
+      return [
+        { title: '球员 / 球队统计', href: '#/stats', available: players.length > 0,
+          summary: players.length ? ('已生成 ' + players.length + ' 条球员统计') : '没有可用的球员统计',
+          note: review && !review.players_verified ? '本样例尚未确认球员身份，统计按未分配球员汇总。' : '' },
+        { title: '投篮热图', href: '#/shotchart', available: points.length > 0,
+          summary: points.length ? ('已定位 ' + points.length + ' 次出手') : '没有可靠的出手位置，不绘制热图',
+          note: points.length ? '只绘制有可靠球场坐标的出手。' : '位置未知时不会生成假热区。' },
+        { title: '战术分析', href: '#/tactics', available: !!tactics.available,
+          summary: tactics.available ? '已生成阵型、空间与回合分析' : '没有可用的战术分析',
+          note: tactics.position_unverified ? '球员位置尚未独立校验，战术结论仅供回看参考。' : '' },
+        { title: '战报与导出', href: '#/report', available: !!report,
+          summary: report ? '已生成本场战报和导出文件' : '尚未生成战报', note: '' }
+      ];
     },
     /** 这次分析是不是"什么都没判出来"（没有任何得分事件/出手/时间轴） */
     emptyAnalysis: function () {
@@ -209,8 +233,9 @@ window.PAGES['overview'] = {
         + '（这段视频底部就有记分牌）；');
       lines.push('  ② 换更清楚的素材：球在画面里 ≥30 像素时进球检测才能工作'
         + '（README「素材体检」）；');
-      lines.push('  ③ 人工复核：在「人工复核」页逐条确认/补录，'
-        + '判完再看总览与热区。');
+      lines.push(this.sampleReview
+        ? '  ③ 样例逐球时间：在总览时间轴逐条回看。'
+        : '  ③ 人工复核：在「人工复核」页逐条确认/补录，判完再看总览与热区。');
       return lines.join('\n');
     },
     hasCarryIn: function () {
@@ -227,13 +252,11 @@ window.PAGES['overview'] = {
       var self = this;
       return rows.filter(function (e) {
         if (self.filterTeam !== 'all' && e.team !== self.filterTeam) return false;
-        // 「待确认」的判据与徽章/文案**共用同一个**（`resultClass` → `D.isUnknown`）：
-        // 结果未知时 made 是 null，光看 `e.result` 会把"缺 result 但结果为空"的行
-        // 漏到"未中"里、同时从"待确认"里漏掉（实测这处边界不一致）。
-        var unknown = self.resultClass(e) === 'needs';
-        if (self.filterMade === 'made' && (!e.made || unknown)) return false;
-        if (self.filterMade === 'miss' && (unknown || e.made)) return false;
-        if (self.filterMade === 'unknown' && !unknown) return false;
+        // 筛选与徽章使用同一显示建议，不覆写用于统计的原始结果。
+        var display = window.D.shotDisplay(e);
+        if (!display.resolved) return false;
+        if (self.filterMade === 'made' && !display.made) return false;
+        if (self.filterMade === 'miss' && display.made) return false;
         return true;
       });
     },
@@ -353,17 +376,14 @@ window.PAGES['overview'] = {
         cut_truncated: '证据被切镜截断（结果要去下一个镜头找）',
       })[f] || f;
     },
-    /**
-     * 时间轴徽章配色：命中=绿、未中=灰、**待确认=橙**。
-     * 为什么单独抽一个方法：结果未知时 `e.made` 是 null（后端已显式输出 null，
-     * 不再用 false 占位），直接写 `e.made?'made':'miss'` 会把"待确认"配成"未中"的灰。
-     * 待确认沿用既有但一直没被用到的 `.needs` 样式 —— 语义就是"需要人工复核"。
-     */
+    /** Only resolved rows are assigned a result color. */
     resultClass: function (e) {
-      if (!e) return 'miss';
-      if (window.D.isUnknown(e)) return 'needs';
-      return e.made ? 'made' : 'miss';
+      var display = window.D.shotDisplay(e);
+      return display.resolved ? (display.made ? 'made' : 'miss') : '';
     },
+    resultLabel: function (e) { return window.D.shotDisplay(e).label; },
+    resultReason: function (e) { return window.D.shotDisplay(e).reason; },
+    shotValueLabel: function (e) { return window.D.shotValueLabel(e); },
     rimPosition: function (r) {
       return r ? '(' + Math.round(r.cx) + ', ' + Math.round(r.cy) + ')' : '未确认';
     },
@@ -401,7 +421,7 @@ window.PAGES['overview'] = {
     onVideoMeta: function () { this.videoReady = true; this.videoErr = ''; this.seekVideo(); },
     onVideoError: function () { this.videoReady = false; this.videoErr = '原视频暂时无法播放，请检查文件是否仍在原位置，或重新上传兼容的视频。'; },
     rowClass: function (row) {
-      return row.team === 'home' ? 'h' : 'a';
+      return row.team === 'home' ? 'h' : row.team === 'away' ? 'a' : '';
     },
     goUpload: function () { location.hash = '#/upload'; }
   },
@@ -409,8 +429,8 @@ window.PAGES['overview'] = {
     '<div>',
     '  <section class="card" v-if="sampleReview">',
     '    <h3 class="card-title">本场产出</h3>',
-    '    <div class="row"><a href="#/stats">全片统计</a><a href="#/highlights">{{ sampleReview.attempts }} 次出手回放</a><a href="#/review">逐球复核</a><a href="#/report">战报与导出</a></div>',
-    '    <p class="hint">原视频与逐球时间轴在下方。球员身份、出手位置未确认；热区与战术结论暂不提供。</p>',
+    '    <div class="row"><a href="#/stats">球员 / 球队统计</a><a href="#/shotchart">投篮热图</a><a href="#/tactics">战术分析</a><a href="#/highlights">{{ sampleReview.attempts }} 次出手回放</a><a href="#/report">战报与导出</a></div>',
+    '    <p class="hint">完整分析入口均可查看；球员、球队或出手位置尚未确认的模块会直接说明缺少的数据，不生成假统计或假热区。</p>',
     '  </section>',
 
     '  <div class="card" v-if="!game">',
@@ -418,7 +438,7 @@ window.PAGES['overview'] = {
     '  </div>',
     '  <template v-else>',
     '    <div class="card">',
-    '      <h3 class="card-title">原始视频 <el-tag v-if="sampleReview" size="small" effect="plain">人工复核版</el-tag></h3>',
+    '      <h3 class="card-title">原始视频 <el-tag v-if="sampleReview" size="small" effect="plain">样例分析</el-tag></h3>',
     '      <div class="replay-stage" v-if="videoUrl">',
     '      <video v-if="videoUrl" :key="videoUrl" ref="video" :src="videoUrl" controls playsinline preload="metadata" style="display:block;width:100%;max-height:520px;background:var(--bg);border-radius:var(--r-sm)" @loadedmetadata="onVideoMeta" @error="onVideoError"></video>',
     '        <detection-overlay ref="boxOverlay" :job-id="S.jobId" />',
@@ -430,22 +450,20 @@ window.PAGES['overview'] = {
     '      <el-empty v-if="!videoUrl" description="演示数据没有关联原视频" :image-size="70" />',
     '    </div>',
     '    <div class="card">',
-    '      <h3 v-if="sampleReview" class="card-title">全片复核：运动战 {{ sampleReview.field_attempts }} 投 {{ sampleReview.field_made }} 中 · 罚球 {{ sampleReview.free_throw_attempts }} 投 {{ sampleReview.free_throw_made }} 中</h3>',
-    '      <h3 v-else class="card-title">检测到 {{ shotCounts.total }} 条投篮候选</h3>',
-    '      <p v-if="sampleReview">按你提供的逐球记录整理。自动检测仍有漏检；下方时间可逐条回看。</p>',
+    '      <h3 v-if="sampleReview" class="card-title">全片统计：运动战 {{ sampleReview.field_attempts }} 投 {{ sampleReview.field_made }} 中 · 罚球 {{ sampleReview.free_throw_attempts }} 投 {{ sampleReview.free_throw_made }} 中</h3>',
+    '      <h3 v-else class="card-title">投篮结果 {{ shotCounts.made + shotCounts.miss }} 条</h3>',
+    '      <p v-if="sampleReview">按逐球记录整理；下方时间可逐条回看。</p>',
     '      <p v-if="sampleReview && sampleReview.replay_count">含 {{ sampleReview.replay_count }} 条重复回放；去重后运动战 {{ sampleReview.unique_field_attempts }} 投 {{ sampleReview.unique_field_made }} 中。</p>',
     '      <div class="row" style="flex-wrap:wrap;gap:20px;margin-bottom:12px" aria-label="全部投篮候选统计">',
-    '        <span>命中 <strong>{{ shotCounts.made }}</strong></span>',
-    '        <span>未中 <strong>{{ shotCounts.miss }}</strong></span>',
-    '        <span>未知 <strong>{{ shotCounts.unknown }}</strong></span>',
+    '        <span>中 <strong>{{ shotCounts.made }}</strong></span>',
+    '        <span>没中 <strong>{{ shotCounts.miss }}</strong></span>',
     '      </div>',
     '        <h3 class="card-title" style="flex-wrap:wrap">投篮记录 ',
     '          <span class="grow"></span>',
     '          <el-radio-group v-model="filterMade" size="small">',
     '            <el-radio-button label="all">全部</el-radio-button>',
-    '            <el-radio-button label="made">仅命中</el-radio-button>',
-    '            <el-radio-button label="miss">仅未中</el-radio-button>',
-    '            <el-radio-button label="unknown">未知 / 待确认</el-radio-button>',
+    '            <el-radio-button label="made">只看中</el-radio-button>',
+    '            <el-radio-button label="miss">只看没中</el-radio-button>',
     '          </el-radio-group>',
     '          <el-select v-if="!sampleReview || sampleReview.teams_verified" v-model="filterTeam" size="small" style="width:130px">',
     '            <el-option label="双方" value="all" />',
@@ -455,19 +473,19 @@ window.PAGES['overview'] = {
     '        </h3>',
     '        <div class="timeline">',
     '          <div v-for="(e,i) in timeline" :key="(game.timeline||[]).indexOf(e)" class="tl-row" style="display:flex;flex-wrap:wrap" :class="{active: activeRow===(game.timeline||[]).indexOf(e)}">',
-    '            <button class="el-button el-button--small" @click="gotoEvent(e,i)">看出手 {{ mmss(e.t) }}</button>',
-    '            <span><span v-if="e.team===\'home\' || e.team===\'away\'" class="tl-badge" :class="e.team===\'home\'?\'h\':\'a\'">{{ e.team===\'home\' ? teamName(\'home\') : teamName(\'away\') }}</span>',
-    '              <span class="tl-badge" :class="resultClass(e)" style="margin-left:4px">{{ resultClass(e) === \'needs\' ? \'未知（待确认）\' : e.made ? \'命中\' : \'未中\' }}</span></span>',
-    '            <span v-if="sampleReview">{{ e.value === 1 ? \'罚球 · 1 分\' : e.value_assumed ? \'运动战 · 分值未确认\' : e.value + \' 分\' }} · 人工复核</span>',
-    '            <el-tag v-if="sampleReview && e.is_replay" size="small" effect="plain">同一次出手的重复回放</el-tag>',
-    '            <span v-else class="pl">{{ e.player || "球员未识别" }} · {{ e.zone || "位置未知" }}</span>',
-    '            <button v-if="e.review_t != null" class="el-button el-button--small" @click="gotoEvent(e,i,true)">看待确认位置 {{ mmss(e.review_t) }}</button>',
-    '            <button v-else-if="e.crossing_t != null" class="el-button el-button--small" @click="gotoEvent(e,i,true)">看篮下 {{ mmss(e.crossing_t) }}</button>',
-    '            <button v-else-if="e.decision_t != null" class="el-button el-button--small" @click="gotoEvent(e,i,true)">看判定收尾 {{ mmss(e.decision_t) }}</button>',
-    '            <span v-if="e.release_source" class="hint">时间来源：{{ e.release_source === \'manual\' ? \'人工近似时间\' : e.release_source === \'player_feet\' ? \'球员位置回溯\' : \'球轨迹\' }}</span>',
+    '            <button class="el-button el-button--small" @click="gotoEvent(e,i)">{{ mmss(e.t) }}</button>',
+    '            <span class="tl-badge" :class="resultClass(e)" :title="resultReason(e)">{{ resultLabel(e) }}</span>',
+    '            <strong v-if="shotValueLabel(e)">{{ shotValueLabel(e) }}</strong>',
     '          </div>',
     '          <el-empty v-if="!timeline.length" description="无符合条件的事件" :image-size="70" />',
     '        </div>',
+    '    </div>',
+    '    <h2>完整分析结果</h2>',
+    '    <div class="grid grid-4">',
+    '      <a v-for="m in analysisModules" :key="m.title" :href="m.href" class="card" style="display:block;text-decoration:none;color:inherit">',
+    '        <h3 class="card-title">{{ m.title }} <el-tag size="small" :type="m.available ? \'success\' : \'info\'">{{ m.available ? \'可查看\' : \'暂无数据\' }}</el-tag></h3>',
+    '        <p>{{ m.summary }}</p><p v-if="m.note" class="hint">{{ m.note }}</p>',
+    '      </a>',
     '    </div>',
     '    <section class="card" v-if="rimAvailability || ballVisibility" aria-label="分析覆盖摘要"><h3 class="card-title">分析覆盖</h3><p><span v-if="rimAvailability">篮筐可用 {{ Math.round(rimAvailability.usable_fraction*100) }}%</span><span v-if="ballVisibility"> · 球检测观测 {{ Math.round(ballVisibility.observed_fraction*100) }}%</span></p><p class="hint">这是检测覆盖，不是准确率；没有记录不代表没有投篮。</p><el-button size="small" @click="locationToReview">补录漏掉的出手</el-button></section>',
     '    <section class="card" v-if="(rimAvailability && rimAvailability.unavailable_ranges.length) || (ballVisibility && ballVisibility.blind_ranges.length)" aria-label="检测覆盖范围">',
@@ -525,73 +543,16 @@ window.PAGES['overview'] = {
     '        </li>',
     '      </ul>',
     '    </details>',
-    '    <h2>分模块分析</h2>',
-    '    <div class="card" v-if="emptyAnalysis">',
-    '      <h3 class="card-title">比赛总览 <span class="sub">没有得分事件</span></h3>',
-    '      <el-alert type="warning" :closable="false" show-icon',
-    '        title="需要检查"',
-    '        ><copy-note label="原因与处理">这份结果里没有任何进球/出手 —— 不是页面坏了，是上游没判出来。{{ emptyWhy }}</copy-note></el-alert>',
-    '    </div>',
-    '    <!-- ① 比分牌 + 分节比分 -->',
-    '    <div class="card" v-if="!sampleReview || sampleReview.teams_verified">',
-    '      <h3 class="card-title">比分与球队统计',
-    '        <span class="grow"></span>',
-    '        <el-tag v-if="S.demoMode" type="warning" size="small" effect="plain">演示数据</el-tag>',
-    '        <el-tag v-else type="success" size="small" effect="plain">后端数据</el-tag>',
-    '      </h3>',
+    '    <div class="card" v-if="!sampleReview && (!game.judgement || game.judgement.state!==\'cannot_judge\')">',
+    '      <h3 class="card-title">比分与球队统计</h3>',
     '      <big-scoreboard :game="game" />',
-    // 分值来源未确认时必须在**页面上**留一个短标记：'2 分'这个数是我们按每次命中
-    // 暂计的，不代表已经识别出两分/三分。原来这里是一句长灰字（已按用户要求删掉），
-    // 但不能什么都不留 —— 短标签 + 点开的说明既简洁又不隐瞒（test_unknown_style.js 钉这条）。
-    '      <el-tag v-if="assumedValue" type="warning" size="small" effect="plain" style="margin-top:8px">分值尚未确认',
-    '        <copy-note label="说明">按每次命中 2 分暂计，不代表已识别两分或三分；位置未知的出手不生成热区或出手距离。</copy-note></el-tag>',
-    '      <el-alert v-if="game.judgement && game.judgement.state===\'cannot_judge\'" type="warning" :closable="false" show-icon style="margin-top:12px"',
-    '        title="本段无法判定"',
-    '        ><copy-note label="原因与处理">{{ game.judgement.note }} {{ (game.judgement.reasons||[]).join(\' ｜ \') + \'。下面的 0 : 0 只表示「没有检测到得分」，不等于双方真的都没得分。\' }}</copy-note></el-alert>',
+    '      <el-tag v-if="assumedValue" type="warning" size="small" effect="plain" style="margin-top:8px">分值尚未确认</el-tag>',
     '    </div>',
-    '    <!-- ①b 证据来源：这次结论是怎么来的 -->',
-    '    <div class="card" v-if="evidence.length">',
-    '      <h3 class="card-title">证据来源</h3>',
-    '      <div class="grid grid-2">',
-    '        <div v-for="(e,i) in evidence" :key="\'ev\'+i" class="kpi">',
-    '          <div class="k">{{ e.k }}</div>',
-    '          <div class="v" style="font-size:15px">{{ e.v }}</div>',
-    '          <div class="d"><copy-note label="依据与限制">{{ e.d }}</copy-note></div>',
-    '        </div>',
-    '      </div>',
-    '    </div>',
-    '    <!-- ② 关键指标对比 -->',
-    '    <div class="grid grid-4" v-if="!sampleReview || sampleReview.teams_verified">',
-    '      <div class="kpi home" v-for="(k,i) in kpis.slice(0,4)" :key="\'kh\'+i">',
-    '        <div class="k">{{ k.k }}</div>',
-    '        <div class="row" style="justify-content:space-between">',
-    '          <span class="v">{{ k.hv }}</span>',
-    '          <span class="v" style="color:var(--away);text-align:right">{{ k.av }}</span>',
-    '        </div>',
-    '        <div class="d">{{ teamName(\'home\') }} · {{ teamName(\'away\') }}</div>',
-    '      </div>',
-    '    </div>',
-    '    <div class="grid grid-4" v-if="!sampleReview || sampleReview.teams_verified">',
-    '      <div class="kpi" v-for="(k,i) in kpis.slice(4)" :key="\'ka\'+i">',
-    '        <div class="k">{{ k.k }}</div>',
-    '        <div class="row" style="justify-content:space-between">',
-    '          <span class="v" style="color:var(--home)">{{ k.hv }}</span>',
-    '          <span class="v" style="color:var(--away);text-align:right">{{ k.av }}</span>',
-    '        </div>',
-    '        <div class="d">主队 / 客队</div>',
-    '      </div>',
-    '    </div>',
-    '    <!-- ③ 走势图 -->',
-    '    <div class="grid grid-2" v-if="!sampleReview || sampleReview.teams_verified">',
-    '      <div class="card">',
-    '        <h3 class="card-title">{{ hasCarryIn ? \'本片段比分走势\' : \'比分走势\' }} <span class="sub">{{ hasCarryIn ? (\'不含比分牌带入的 \' + game.carry_in.home + \':\' + game.carry_in.away) : \'按已确认得分累加\' }}</span></h3>',
-    '        <echarts-box :option="progressOption" height="330px" />',
-    '      </div>',
-    '      <div class="card">',
-    '        <h3 class="card-title">分差走势 </h3>',
-    '        <echarts-box :option="scoreDiffOption" height="330px" />',
-    '      </div>',
-    '    </div>',
+    '    <details class="card" v-if="evidence.length"><summary>识别依据与限制</summary>',
+    '      <div class="grid grid-2" style="margin-top:12px"><div v-for="(e,i) in evidence" :key="\'ev\'+i" class="kpi">',
+    '        <div class="k">{{ e.k }}</div><div class="v" style="font-size:15px">{{ e.v }}</div><div class="d">{{ e.d }}</div>',
+    '      </div></div>',
+    '    </details>',
     '  </template>',
     '</div>'
   ].join('\n')

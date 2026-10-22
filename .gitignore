@@ -25,6 +25,9 @@ pip-build-tracker-*/
 # 视频动辄几百 MB（实测 bili_nybo.mp4 就有 962MB），一律不入库；
 # 需要分享素材请用 GitHub Releases 或网盘，别塞进仓库。
 data/uploads/
+data/compatible/
+data/compatible-preview/
+data/samples/
 data/torch_whl/
 data/*.mp4
 data/*.avi
@@ -34,6 +37,7 @@ data/*.sqlite
 data/jobs.sqlite
 data/calibration.json
 data/calibration_*.json
+data/calibration_*.json.bak*
 data/calibration.backup*.json
 data/marks_*.json
 data/basket_feedback.jsonl
@@ -59,6 +63,7 @@ data/.gitkeep
 
 # ---- 分析产物（可重建：重新跑一次分析就有了）----
 out/
+/deploy/runtime/
 
 # ---- 开发期的临时目录：诊断脚本、轨迹 dump、连拍图、慢放片段 ----
 # 实测这个目录长到 144MB / 289 个文件，而且全是"看一次就扔"的东西 ——
@@ -154,10 +159,12 @@ data/auth.sqlite*
 
 # Reusable evaluation tools (outputs remain ignored)
 !/scripts/eval_annotated_balls.py
+!/scripts/eval_ball_feedback.py
 !/scripts/eval_match_annotations.py
 
 # Human correction images and labels stay local
 /data/ball_feedback/
+/data/mark-preview/
 
 # Published, reviewed demonstration snapshots and playback media
 !/examples/

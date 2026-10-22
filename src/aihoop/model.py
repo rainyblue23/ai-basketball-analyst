@@ -88,6 +88,7 @@ class OutcomeSource(str, Enum):
     NET_MOTION = "net_motion"                  # 网/篮筐震动
     MANUAL = "manual"                          # 人工在复核页修正
     SYNTHETIC = "synthetic"                    # 合成数据（demo 用）
+    UNKNOWN = "unknown"                        # 没有可确认的命中证据来源
     # 画面里的**广播比分牌**直接读出来的比分跳变。
     # 它和 SCOREBOARD_OCR（场边 LED 记分牌）不是一回事：广播台标由导播系统
     # 直接渲染，数字零噪声、不受遮挡，是自动推理里最硬的一路证据。
@@ -109,7 +110,7 @@ class Shot:
     period: int = 1
     clock: float = 0.0                    # 该节剩余时间（秒）
     contest: float = 0.0                  # 防守干扰强度 0~1（可选）
-    outcome_source: str = OutcomeSource.SYNTHETIC.value
+    outcome_source: str = OutcomeSource.UNKNOWN.value
     confidence: float = 1.0
     release_frame: int = 0
     rim_frame: Optional[int] = None
@@ -123,6 +124,10 @@ class Shot:
     decision_t: Optional[float] = None
     release_source: str = ""
     suggested_made: Optional[bool] = None
+    release_known: Optional[bool] = None
+    release_evidence: dict = field(default_factory=dict)
+    candidate_t: Optional[float] = None
+    geometry_source: str = ""
 
     @property
     def points(self) -> int:

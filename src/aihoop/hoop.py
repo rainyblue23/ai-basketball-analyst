@@ -224,7 +224,7 @@ class Hoop:
                     method=d.get("method", ""), t=float(d.get("t", 0.0) or 0.0))
 
 
-def _all_rim_candidates(frame, cfg: HoopConfig):
+def _all_rim_candidates(frame, cfg: HoopConfig, audit=None):
     """单帧里找（篮板，所有像篮圈的候选）。
 
     返回 (board, [rim_box, ...])，rim 按得分从高到低排序。
@@ -271,10 +271,14 @@ def _all_rim_candidates(frame, cfg: HoopConfig):
     for c in cnts:
         x, y, w, h = cv2.boundingRect(c)
         a = cv2.contourArea(c)
+        entry = dict(xywh=[x,y,w,h],area=float(a),reason='eligible')
+        if audit is not None:audit.append(entry)
         if not (cfg.rim_min_w <= w <= cfg.rim_max_w) or h < 3:
+            entry['reason']='pixel_size_rejected'
             continue
         ar = w / float(h)
         if not (cfg.rim_min_aspect <= ar <= cfg.rim_max_aspect):
+            entry['reason']='pixel_aspect_rejected'
             continue
         # ---- 空心度：篮筐是个「环」，中间是空的；球衣是实心块 ----
         # 这是区分"篮筐"和"橙色球衣"最关键的一条，而原来的判据
@@ -285,6 +289,7 @@ def _all_rim_candidates(frame, cfg: HoopConfig):
         #   环      ≈ 0.15~0.55（中间被挖掉一块）
         fill = a / float(max(1, w * h))
         if fill > cfg.rim_max_fill or fill < cfg.rim_min_fill:
+            entry['reason']='contour_fill_rejected'
             continue
         # 评分改成"越扁越好 + 空心度越接近环越好"，不再单纯奖励大块
         ringness = 1.0 - abs(fill - 0.4) / 0.4
@@ -297,16 +302,79 @@ def _all_rim_candidates(frame, cfg: HoopConfig):
             # 原来是 bw*1.7，宽得离谱：画面里任何橙色块（比如黄色球衣）只要
             # 横向不太偏就会被当成篮筐。收到 0.75*bw + 20px。
             if abs(cx - (bx + bw / 2.0)) > bw * 0.75 + 20:
+                entry['reason']='board_horizontal_context_rejected'
                 continue
             # ---- 垂直：篮圈必须在篮板**下沿**附近 ----
             # 这是原来**完全缺失**的一条约束，也是这次误检的直接原因：
             # 实测检出的"篮筐"(y=247) 落在"篮板"(y=397) 上方 150px，
             # 真实篮圈不可能在篮板上面。允许上下各 0.15 倍板高 + 15px 的余量。
             if not (by - 0.15 * bh - 15 <= cy <= by + bh + 0.5 * bh + 15):
+                entry['reason']='board_vertical_context_rejected'
                 continue
         rims.append((score, [x, y, w, h]))
     rims.sort(key=lambda t: -t[0])
     return board, [list(b) for _s, b in rims]
+
+
+def refine_rim_candidate(frame, coarse, *, min_width_ratio=.5, max_width_ratio=1.5,
+                         min_width_px=6, min_aspect=1.8, max_aspect=9.,
+                         min_color_fill=.08, max_color_fill=.8,
+                         center_offset_ratio=.4, vertical_margin_ratio=.5,
+                         top_offset_ratio=.45, contour_diagnostics=False):
+    """Find measured rim pixels inside a learned coarse hoop/net region.
+
+    Reuses the existing contour extractor. A coarse bbox is never cropped into
+    an invented aperture. Empty/solid/ambiguous regions yield no refinement.
+    The temporal rim tracker must still confirm a returned contour.
+    """
+    cv2, np = _require_cv()
+    from .legacy_shots.detector import Det
+    audit = {'parent_box': list(coarse.xyxy), 'reason': 'no_rim_pixels',
+             'candidates': [], 'selected': None}
+    if frame is None or coarse.w <= 0 or coarse.h <= 0:
+        return None, audit
+    height, width = frame.shape[:2]
+    a,b,c,d = coarse.xyxy
+    x1=max(0,int(math.floor(a)))
+    x2=min(width,int(math.ceil(c)))
+    y1=max(0,int(math.floor(b-vertical_margin_ratio*coarse.h)))
+    y2=min(height,int(math.ceil(min(d,b+top_offset_ratio*coarse.h)+1)))
+    audit['search_box']=[x1,y1,x2,y2]
+    if x2-x1 < min_width_px or y2-y1 < 3:return None,audit
+    crop=frame[y1:y2,x1:x2]
+    # The learned coarse region supplies context; unrelated white net pixels are
+    # not treated as a second backboard detector inside this tiny crop.
+    cfg=HoopConfig(search_top=1., board_min_area=crop.shape[0]*crop.shape[1]+1,
+        rim_min_w=max(min_width_px,int(min_width_ratio*coarse.w)),
+        rim_max_w=max(min_width_px,int(max_width_ratio*coarse.w)),
+        rim_min_aspect=min_aspect,rim_max_aspect=max_aspect,
+        rim_min_fill=0.,rim_max_fill=1.)
+    contours=[] if contour_diagnostics else None
+    _,candidates=_all_rim_candidates(crop,cfg,contours)
+    if contour_diagnostics:audit['pixel_contours']=contours
+    hsv=cv2.cvtColor(crop,cv2.COLOR_BGR2HSV)
+    orange=cv2.inRange(hsv,cfg.orange_lo,cfg.orange_hi) | cv2.inRange(hsv,cfg.orange_lo2,cfg.orange_hi2)
+    eligible=[]
+    if contour_diagnostics:audit['pixel_candidates']=[]
+    for x,y,w,h in candidates:
+        center_x=x1+x+w/2;center_y=y1+y+h/2
+        fill=float(np.mean(orange[y:y+h,x:x+w]>0))
+        box=(float(x1+x),float(y1+y),float(x1+x+w),float(y1+y+h))
+        entry={'xyxy':list(box),'color_fill':fill,'reason':'eligible'}
+        if contour_diagnostics:audit['pixel_candidates'].append(entry)
+        if not min_color_fill <= fill <= max_color_fill:
+            entry['reason']='color_fill_rejected';continue
+        if abs(center_x-coarse.cx)>center_offset_ratio*coarse.w:
+            entry['reason']='coarse_horizontal_context_rejected';continue
+        if not b-vertical_margin_ratio*coarse.h <= center_y <= b+top_offset_ratio*coarse.h:
+            entry['reason']='coarse_vertical_context_rejected';continue
+        eligible.append(Det('rim_refined',coarse.conf,box))
+        audit['candidates'].append({'xyxy':list(box),'color_fill':fill})
+    if len(eligible)!=1:
+        if eligible:audit['reason']='ambiguous_rim_pixels'
+        return None,audit
+    audit.update(reason='measured_rim_pixels',selected=list(eligible[0].xyxy))
+    return eligible[0],audit
 
 
 def _validate_hoop(h) -> bool:
@@ -573,7 +641,7 @@ def detect_hoop_track_yolo(video_path: str, weights: str,
         candidates = []
         if r.boxes is not None:
             for b in r.boxes:
-                if str(r.names[int(b.cls[0])]).lower() != "rim":
+                if str(r.names[int(b.cls[0])]).lower() not in ("rim", "hoop"):
                     continue
                 x1, y1, x2, y2 = [float(v) for v in b.xyxy[0]]
                 if not all(math.isfinite(v) for v in (x1, y1, x2, y2)) or x2 <= x1 or y2 <= y1:
@@ -592,7 +660,7 @@ def detect_hoop_track_yolo(video_path: str, weights: str,
     cap.release()
     if len(samples) < max(3, cfg.min_rim_votes):
         raise RuntimeError(
-            f"篮筐检测器在 {len(samples)} 帧上找到 rim，太少"
+            f"篮筐检测器在 {len(samples)} 帧上找到 rim/hoop，太少"
             f"（需要 >= {max(3, cfg.min_rim_votes)}）。"
             "可能是这个机位没在训练集里 —— 用 scripts/label_rim.py 点几次补数据。")
     tr = HoopTrack(samples=samples, fps=fps, duration=total / fps if fps else 0.0,

@@ -95,13 +95,14 @@
       changeRate:function(value){var v=this.$parent.$refs.video;if(v){v.playbackRate=Number(value);this.rate=Number(value);}},
       step:function(dir){var v=this.$parent.$refs.video;if(!v||!this.ready||!this.effectiveFps)return;v.pause();v.currentTime=stepTime(v.currentTime,dir,this.effectiveFps,v.duration);},
       stamp:function(t){return Math.floor(t/60).toString().padStart(2,'0')+':'+Math.floor(t%60).toString().padStart(2,'0');},
-      label:function(e){return window.D&&window.D.isUnknown(e)?'未知':(e.result==='unknown'||e.made==null?'未知':(e.made?'命中':'未中'));},
+      label:function(e){return window.D.shotDisplay(e).label;},
+      resultClass:function(e){var d=window.D.shotDisplay(e);return d.resolved?(d.made?'made':'miss'):'';},
       select:function(m){this.$emit('event',m.row,m.index,true);}
     },
     template:[
       '<div class="replay-tools">',
       ' <div class="replay-actions"><el-button size="small" :disabled="!ready || !effectiveFps" @click="step(-1)">上一帧</el-button><el-button size="small" :disabled="!ready || !effectiveFps" @click="step(1)">下一帧</el-button><el-select :model-value="rate" @change="changeRate" :disabled="!ready" aria-label="播放速度" class="replay-rate"><el-option :value="0.25" label="0.25 倍" /><el-option :value="0.5" label="0.5 倍" /><el-option :value="1" label="正常速度" /></el-select><span class="replay-clock">{{ stamp(time) }}</span></div>',
-      ' <div v-if="markers.length" class="replay-events" aria-label="投篮事件时间标记"><el-button v-for="m in markers" :key="m.index" size="small" :disabled="!ready" :class="{active:Math.abs(time-m.t)<1}" :aria-label="stamp(m.t)+\' \'+label(m.row)" @click="select(m)"><span>{{ stamp(m.t) }}</span><span :class="[\'event-result\',label(m.row)===\'未知\'?\'unknown\':(m.row.made?\'made\':\'miss\')]">{{ label(m.row) }}</span></el-button></div>',
+      ' <div v-if="markers.length" class="replay-events" aria-label="投篮事件时间标记"><el-button v-for="m in markers" :key="m.index" size="small" :disabled="!ready" :class="{active:Math.abs(time-m.t)<1}" :aria-label="stamp(m.t)+\' \'+label(m.row)" @click="select(m)"><span>{{ stamp(m.t) }}</span><span v-if="label(m.row)" :class="[\'event-result\',resultClass(m.row)]">{{ label(m.row) }}</span></el-button></div>',
       '</div>'
     ].join('')
   };

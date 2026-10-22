@@ -29,6 +29,27 @@ from aihoop import api                      # noqa: E402
 assert "hoop_far" in api.COURT_LANDMARKS and "arc_far" in api.COURT_LANDMARKS
 
 
+def test_airborne_rim_does_not_reject_ground_homography(tmp_path, monkeypatch):
+    """篮圈离地 3.05m，不能把它的像素中心当成地面点否决正常标定。"""
+    from aihoop import calibcheck
+    from aihoop.court import Calibration
+
+    marks = tmp_path / "marks.json"
+    marks.write_text(json.dumps({"hoop": [80.0, 30.0, 8.0, 4.0]}), encoding="utf-8")
+    monkeypatch.setattr(api, "_find_marks_for", lambda _video: marks)
+    monkeypatch.setattr(calibcheck, "court_fit_score",
+                        lambda *_a, **_k: {"ok": True, "ratio": 2.0, "note": "ok"})
+    cal = Calibration(
+        method="web-keypoints-multi", frame="full", frame_size=[160, 90],
+        src_px=[[10, 10], [150, 10], [150, 80], [10, 80], [80, 45]],
+        dst_m=[[-7.5, -14], [7.5, -14], [7.5, 14], [-7.5, 14], [0, 0]],
+        H=[[1, 0, 0], [0, 1, 0], [0, 0, 1]])
+    quality = api._calibration_quality(tmp_path / "video.mp4", cal)
+    assert quality["hoop_check"]["checked"] is False
+    assert quality["hoop_check"]["role"] == "detection_only"
+    assert "离地 3.05m" in quality["hoop_check"]["reason"]
+
+
 def _work_dir() -> Path:
     """在**仓库内**建临时目录：pytest 的 tmp_path 落在 %TEMP%，
     某些受限环境（本机就是）连创建/清理都报 WinError 5，测试直接起不来。"""
@@ -117,7 +138,11 @@ def test_calibrate_multi_returns_result_instead_of_500():
     assert max(f["n"] for f in out["per_frame_fit"]) == 5
 
 
-def test_calibrate_multi_confirm_saves_and_is_readable():
+def test_calibrate_multi_confirm_saves_and_is_readable(monkeypatch):
+    # testsrc 不是球场：本测试隔离存储契约，白线质量拒绝由下一项覆盖。
+    from aihoop import calibcheck
+    monkeypatch.setattr(calibcheck, "court_fit_score",
+                        lambda *_a, **_k: {"ok": True, "ratio": 2.0})
     video = _work_dir() / "tiny2.mp4"
     if not _make_video(video):
         pytest.skip("本机没有 ffmpeg，跳过")
@@ -173,3 +198,19 @@ def test_calibrate_multi_rejects_when_no_frame_has_four_points():
     out = asyncio.run(api.post_calibrate_multi(api.MultiCalibRequest(**body)))
     assert out["ok"] is False
     assert "4 个点" in str(out["note"])
+
+
+def test_calibrate_multi_rejects_non_court_video_without_saving(tmp_path, monkeypatch):
+    from fastapi import HTTPException
+    video = _work_dir() / "tiny2.mp4"
+    if not _make_video(video):
+        pytest.skip("没有 ffmpeg")
+    output = tmp_path / "rejected.json"
+    monkeypatch.setattr(api, "_calibration_path_for", lambda _v: output)
+    body = _payload(video)
+    body["confirm"] = True
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(api.post_calibrate_multi(api.MultiCalibRequest(**body)))
+    assert error.value.status_code == 422
+    assert "吻合度" in error.value.detail
+    assert not output.exists()

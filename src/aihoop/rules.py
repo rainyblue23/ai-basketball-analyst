@@ -158,7 +158,7 @@ def fuse_outcome(evidences: Iterable[Evidence], cfg: Optional[RulesConfig] = Non
     }
     evs = list(evidences)
     if not evs:
-        return None, 0.0, OutcomeSource.SYNTHETIC.value
+        return None, 0.0, OutcomeSource.UNKNOWN.value
 
     total = 0.0
     score = 0.0
@@ -309,7 +309,9 @@ def build_shots(attempts: list[dict],
                 "scoreboard": OutcomeSource.BROADCAST_SCOREBOARD.value,
                 "ball_rim": OutcomeSource.BALL_THROUGH_RIM.value,
                 "legacy_ball_rim": OutcomeSource.BALL_THROUGH_RIM.value,
-            }.get(a.get("source", ""), OutcomeSource.SYNTHETIC.value)
+                "synthetic": OutcomeSource.SYNTHETIC.value,
+                "manual": OutcomeSource.MANUAL.value,
+            }.get(a.get("source", ""), OutcomeSource.UNKNOWN.value)
             evidences.append(Evidence(src_prior, bool(a["made"]), t,
                                       float(a.get("conf", 1.0))))
 
@@ -393,6 +395,8 @@ def build_shots(attempts: list[dict],
             evidence=a.get("evidence", ""), review_reason=a.get("review_reason") or "",
             crossing_t=a.get("crossing_t"), review_t=a.get("review_t"),
             decision_t=a.get("decision_t"), release_source=a.get("release_source", ""),
+            release_known=a.get('release_known'),release_evidence=dict(a.get('release_evidence') or {}),
+            candidate_t=a.get('candidate_t'),geometry_source=a.get('geometry_source',''),
             suggested_made=a.get("suggested_made"),
         ))
     return shots
@@ -481,6 +485,9 @@ def compute_player_stats(shots: list[Shot],
         return rows[pid]
 
     for s in shots:
+        # 队别未知的候选保留在时间线供复核，但不能凭空归到球员统计。
+        if s.team not in ("home", "away"):
+            continue
         r = row(s.player_id, s.team)
         if s.result == ShotResult.UNKNOWN.value:
             r["unknown"] += 1

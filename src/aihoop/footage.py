@@ -15,8 +15,9 @@ def pick_ball_weights(explicit=''):
     if explicit:return Path(explicit)
     root=Path(__file__).resolve().parents[2]
     candidates=[root/'runs/detect/ball/weights/best.pt',root/'data/shot_tracker_best.pt']
-    if os.environ.get('AIHOOP_MODELS'):
-        candidates.append(Path(os.environ['AIHOOP_MODELS'])/'rim_ball_v6.pt')
+    model_dir=Path(os.environ.get('AIHOOP_MODELS') or root/'models')
+    candidates.extend(model_dir/name for name in
+                      ('rim_ball_v6.pt', 'BODD_yolov8n_0001.pt'))
     return next((p for p in candidates if p.exists()),None)
 
 def probe_detector(video, weights='', samples=24, imgsz=1280, device='cpu', max_seconds=0):

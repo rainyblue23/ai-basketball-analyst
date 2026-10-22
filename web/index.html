@@ -70,7 +70,7 @@
 <link rel="stylesheet" href="./editorial.css?v=70-shaoxiang" />
 </head>
 <body>
-<script src="./session.js?v=70-shaoxiang"></script>
+<script src="./session.js?v=99-shot-scoreboard-evidence"></script>
 <div id="app" v-cloak>
   <!-- ============ 深色顶栏：数据源状态 + 模式标签 + 任务快照 ============ -->
   <header class="topbar">
@@ -187,7 +187,7 @@
           <div><b>{{ teamName('away') }}</b><span>{{ game.score.away }}</span></div>
         </div>
         <div class="side-card-meta">
-          出手 {{ (game.timeline || []).length }} 次 · 待复核
+          出手 {{ (game.timeline || []).length }} 次 · {{ (game.meta || {}).sample_review ? '结果未知' : '待复核' }}
           {{ (game.needs_review || []).length }} 次
         </div>
         <div class="side-card-meta" v-if="state.demoMode">来源：演示数据</div>
@@ -200,7 +200,7 @@
     </aside>
 
     <main class="content">
-      <div class="sample-status" role="status" v-if="(state.jobId || '').indexOf('example_')===0">样例只读 · 集锦分析，非完整比赛统计。<a href="#/examples">返回样例</a></div>
+      <div class="sample-status" role="status" v-if="(state.jobId || '').indexOf('example_')===0">样例只读 · 完整分析入口已加载，未确认的数据会明确标注。<a href="#/examples">返回样例</a></div>
       <page-help :page="route"></page-help>
       <!-- 每个页面都是 window.PAGES[key] 里的一个组件对象，hash 路由切换 -->
       <component :is="currentPage" v-if="currentPage"></component>
@@ -218,25 +218,25 @@
   就能保证浏览器一定拿到新代码。统一成一个串的理由：以前每次只改动的那个文件 +1，
   于是同一轮里各文件号不一样，看不出"这一轮到底是什么时候"；统一之后一眼可查。
 -->
-<script src="./api.js?v=70-shaoxiang"></script>
-<script src="./data.js?v=84-court-preview-geometry"></script>
-<script src="./court.js?v=84-court-preview-geometry"></script>
-<script src="./components.js?v=70-shaoxiang"></script>
-<script src="./ball-feedback.js?v=1"></script>
-<script src="./detection-overlay.js?v=74-jersey-only"></script>
-<script src="./pages/examples.js?v=77-reviewed-samples"></script>
-<script src="./module-art.js?v=70-shaoxiang"></script>
-<script src="./pages/home.js?v=70-shaoxiang"></script>
-<script src="./pages/upload.js?v=85-court-nba-draft"></script>
-<script src="./pages/overview.js?v=79-manual-coverage"></script>
-<script src="./pages/stats.js?v=77-reviewed-samples"></script>
-<script src="./pages/shotchart.js?v=83-shotcourt-fold-fix"></script>
-<script src="./pages/tactics.js?v=76-yang-outputs"></script>
-<script src="./pages/highlights.js?v=76-yang-outputs"></script>
-<script src="./pages/report.js?v=72-yang-review"></script>
-<script src="./pages/review.js?v=79-manual-coverage"></script>
+<script src="./api.js?v=100-history-integrity"></script>
+<script src="./data.js?v=102-two-result-states"></script>
+<script src="./court.js?v=99-shot-scoreboard-evidence"></script>
+<script src="./components.js?v=102-two-result-states"></script>
+<script src="./ball-feedback.js?v=99-shot-scoreboard-evidence"></script>
+<script src="./detection-overlay.js?v=102-two-result-states"></script>
+<script src="./pages/examples.js?v=101-binary-shot-display"></script>
+<script src="./module-art.js?v=99-shot-scoreboard-evidence"></script>
+<script src="./pages/home.js?v=102-two-result-states"></script>
+<script src="./pages/upload.js?v=100-history-integrity"></script>
+<script src="./pages/overview.js?v=102-two-result-states"></script>
+<script src="./pages/stats.js?v=99-shot-scoreboard-evidence"></script>
+<script src="./pages/shotchart.js?v=99-shot-scoreboard-evidence"></script>
+<script src="./pages/tactics.js?v=99-shot-scoreboard-evidence"></script>
+<script src="./pages/highlights.js?v=102-two-result-states"></script>
+<script src="./pages/report.js?v=101-binary-shot-display"></script>
+<script src="./pages/review.js?v=102-two-result-states"></script>
 <!-- 「训练标注」页已下线：不再加载 pages/train.js（文件备份在 _tmp/merge/backup/train.js.removed） -->
-<script src="./app.js?v=78-ball-feedback"></script>
+<script src="./app.js?v=100-history-integrity"></script>
 
 <!-- 右上角：我的 / 退出登录（登录后可见；未登录会自动跳登录页） -->
 

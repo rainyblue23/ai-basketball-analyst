@@ -1,0 +1,138 @@
+{
+  "video_sha256": "af8c5ab309e6fcb61ed5e7294daeb1c0520179c04c7d8294f5c1016908ba9bf2",
+  "source_match_split": "Development",
+  "tasks": [
+    {
+      "id": "link_01",
+      "source_track_ids": [
+        "T68",
+        "T196"
+      ],
+      "frames": [
+        72,
+        84
+      ],
+      "times": [
+        2.402,
+        2.803
+      ],
+      "same_person": true,
+      "review_status": "human_completed",
+      "training_approved": false,
+      "team": "UNKNOWN",
+      "jersey_number": "UNKNOWN",
+      "role": "UNKNOWN",
+      "real_person_name": "UNKNOWN",
+      "complete_interval_identity_reviewed": false,
+      "nominal_decoded_times_s": [
+        2.4024,
+        2.8028
+      ],
+      "queue_time_rounding_tolerance_s": 0.001,
+      "image_evidence": [
+        {
+          "path": "out/tactics_identity_20261019_191723/verified_run/endpoint_crops/T68_72.jpg",
+          "sha256": "71dab41e9ea8c43cd4d262afd81d7babfe5ae914aea85b7df9622613329bc2b8"
+        },
+        {
+          "path": "out/tactics_identity_20261019_191723/verified_run/endpoint_crops/T196_84.jpg",
+          "sha256": "73d9cc5732b48ecedbadc7a98bfa10f9223c551b6b37e9c275dbf21e00914302"
+        }
+      ]
+    },
+    {
+      "id": "link_02",
+      "source_track_ids": [
+        "T3312",
+        "T3897"
+      ],
+      "frames": [
+        1716,
+        1718
+      ],
+      "times": [
+        57.257,
+        57.324
+      ],
+      "same_person": true,
+      "review_status": "human_completed",
+      "training_approved": false,
+      "team": "UNKNOWN",
+      "jersey_number": "UNKNOWN",
+      "role": "UNKNOWN",
+      "real_person_name": "UNKNOWN",
+      "complete_interval_identity_reviewed": false,
+      "nominal_decoded_times_s": [
+        57.257200000000005,
+        57.323933333333336
+      ],
+      "queue_time_rounding_tolerance_s": 0.001,
+      "image_evidence": [
+        {
+          "path": "out/tactics_identity_20261019_191723/verified_run/endpoint_crops/T3312_1716.jpg",
+          "sha256": "a6a7bec345c2bbe3a23765fc0e800323539ab8a49f6d700284cf94d4fffb27d1"
+        },
+        {
+          "path": "out/tactics_identity_20261019_191723/verified_run/endpoint_crops/T3897_1718.jpg",
+          "sha256": "a95de08394044c9e8c65c8a3dfe89a56c2b3f4ebcde6f3a0a9ddb2b912a8938b"
+        }
+      ]
+    },
+    {
+      "id": "link_03",
+      "source_track_ids": [
+        "T4794",
+        "T4829"
+      ],
+      "frames": [
+        2232,
+        2236
+      ],
+      "times": [
+        74.474,
+        74.608
+      ],
+      "same_person": true,
+      "review_status": "human_completed",
+      "training_approved": false,
+      "team": "UNKNOWN",
+      "jersey_number": "UNKNOWN",
+      "role": "UNKNOWN",
+      "real_person_name": "UNKNOWN",
+      "complete_interval_identity_reviewed": false,
+      "nominal_decoded_times_s": [
+        74.4744,
+        74.60786666666667
+      ],
+      "queue_time_rounding_tolerance_s": 0.001,
+      "image_evidence": [
+        {
+          "path": "out/tactics_identity_20261019_191723/verified_run/endpoint_crops/T4794_2232.jpg",
+          "sha256": "1813a92061431cd0b10f156d24b02fe943cc6d6f50ee9aff9a8c144c8639dc95"
+        },
+        {
+          "path": "out/tactics_identity_20261019_191723/verified_run/endpoint_crops/T4829_2236.jpg",
+          "sha256": "b14269696729d608a91680211d68eb5d9d94757df257d719c0e42d65f657f854"
+        }
+      ]
+    }
+  ],
+  "inference_reads_this_file": false,
+  "schema_version": 1,
+  "source_match_id": "yang-retry2",
+  "raw_path": "out/44ffbf4e186d/raw_track.json",
+  "raw_sha256": "be422bf32aecc8465f9317e220d598f5624246bf029bb0d745cfa0a5a7582fd2",
+  "original_queue": "out/tactics_identity_20261019_191723/verified_run/identity_review_queue.json",
+  "queue_sha256": "15772a592ea1911971934d79f4510e734b2b2f754e9d6d891cc5a33cf12e9046",
+  "recorded_at": "2026-10-19T19:49:35.472198+08:00",
+  "reviewer": "project_user",
+  "review_channel": "user_chat",
+  "reviewer_statement": "都是同一个人",
+  "review_scope": "Each displayed pair internally refers to the same person; no identity relation between different pairs is asserted.",
+  "timestamp_basis": "zero-based decoded frame index / nominal FPS; original variable-rate PTS mapping not independently verified",
+  "fps": 29.97002997002997,
+  "training_approved": false,
+  "frames_complete": false,
+  "persons_complete": false,
+  "roles_complete": false
+}

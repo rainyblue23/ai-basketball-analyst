@@ -1,2 +1,2 @@
-# Optional local jersey OCR; existing torch/torchvision runtime required.
+# Optional local jersey and Linux scoreboard OCR; existing torch runtime required.
 easyocr==1.7.2

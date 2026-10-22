@@ -9,7 +9,7 @@
      shotchart  shotchart.json     ← GET /api/games/{id}/shotchart
      report     {markdown, json}   ← GET /api/games/{id}/report
      highlights {clips, index_url} ← GET /api/games/{id}/highlights
-   降级：探测不到后端就整体切到 ./demo/ 下的静态产物（见 api.js loadDemo）。
+   后端不可用时显示空状态；合成演示只能由用户明确选择。
    ========================================================================== */
 (function () {
   'use strict';
@@ -22,7 +22,7 @@
   // 从哪边写都会通知已挂载的页面。
   var STATE = Vue.reactive({
     backendOk: false,
-    demoMode: true,
+    demoMode: false,
     jobId: '',
     game: null,
     players: [],
@@ -97,33 +97,6 @@
       applyGame(r[0], r[1], r[2], r[3], r[4]);
       STORE.demoMode = false;
       STORE.notice = id.indexOf('example_') === 0 ? '样例比赛 · 只读分析结果' : '';
-    });
-  }
-
-  /**
-   * 静态产物兜底：读 web/demo/{game,players,shotchart,report}.json + report.md。
-   * （仓库默认不带这些产物；跑一次 `aihoop.cli demo` + `scripts\sync_demo.ps1`
-   *   或 `scripts\run_demo.ps1` 就有了。）
-   */
-  function loadFromDemo() {
-    var A = window.API;
-    return A.loadDemo().then(function (d) {
-      if (!d.game) {
-        STATE.notice = '未找到静态产物（web/demo/game.json）。先在根目录跑一次：' +
-          "python -m aihoop.cli demo --seed 7 --duration 600 --out out/demo " +
-          '（或直接启动后端 127.0.0.1:8000，前端会自动连）。缺失：' +
-          (d.missing || []).join(', ');
-        STATE.jobId = '';
-        STORE.emptyWhy = buildEmptyWhy();
-        return;
-      }
-      STATE.demoMode = true;
-      STATE.jobId = (d.game.meta && d.game.meta.job_id) || 'demo';
-      applyGame(d.game, d.players || [], d.shotchart, {
-        markdown: d.reportMd || '',
-        json: d.report_json || null
-      }, d.highlights);
-      STATE.notice = '';
     });
   }
 
@@ -207,7 +180,23 @@
     return '当前任务' + durationLabel + '尚未生成投篮记录。可回看原视频或重新分析；没有记录不代表没有投篮。';
   }
 
-  /** 统一入口：优先后端，失败自动降级到 demo。
+  function clearResults(notice) {
+    STORE.demoMode = false;
+    STORE.jobId = '';
+    STORE.game = null;
+    STORE.players = [];
+    STORE.shotchart = null;
+    STORE.report = null;
+    STORE.highlights = [];
+    STORE.tactics = null;
+    STORE.tacticsFrames = null;
+    STORE.tacticsLoaded = false;
+    STORE.tacticsError = '';
+    STORE.notice = notice;
+    STORE.emptyWhy = notice;
+  }
+
+  /** 统一入口：读取后端任务，失败或无结果时显示空状态。
    *
    *  去重（移植自队友 d0247ee）：根组件 mounted、上传页、自动重连都可能调它，
    *  并发跑两遍会互相覆盖选中任务 —— 只允许一份在飞。 */
@@ -227,19 +216,17 @@
         return window.API.listJobs().then(function (jobs) {
           var list = Array.isArray(jobs) ? jobs : (jobs && jobs.jobs) || [];
           STORE.jobs = list;             // 顶栏「当前任务」下拉用这一份
-          STORE.jobs = list;             // 必须走响应式代理才会触发顶栏重绘
-          var done = list.filter(function (j) { return j.status === 'done'; });
-          var pick = done[0] || list[0];
+          var done = list.filter(function (j) { return j.status === 'done' && j.source !== 'synthetic'; });
+          var pick = done[0];
           if (pick && pick.job_id) return loadFromBackend(pick.job_id);
-          return loadFromDemo().then(function () {
-            STORE.demoMode = true;   // 后端在但没有任务，仍展示演示数据
-          });
-        }).catch(function () { return loadFromDemo(); });
+          clearResults('暂无已完成的视频分析，请先选择视频开始分析。');
+        }).catch(function () { clearResults('历史分析读取失败，请稍后重试。'); });
       }
-      return loadFromDemo();
+      STORE.jobs = [];
+      clearResults('分析服务暂时无法连接，请稍后重试。');
     }).catch(function (e) {
-      STORE.backendOk = false;
-      return loadFromDemo();
+      STORE.jobs = [];
+      clearResults('分析结果读取失败，请稍后重试。');
     });
     bootstrapPromise = run.then(function (value) {
       STORE.loading = false;
@@ -295,7 +282,9 @@
         });
     }
     var p;
-    if (STATE.backendOk && STATE.jobId) {
+    if (STATE.demoMode) {
+      p = fromDemo();
+    } else if (STATE.backendOk && STATE.jobId) {
       p = Promise.all([
         A.tactics(STATE.jobId).catch(function () { return null; }),
         A.tacticsFrames(STATE.jobId).catch(function () { return null; })
@@ -307,7 +296,9 @@
         STATE.tacticsFrames = r[1] || { available: false, frames: [] };
       });
     } else {
-      p = fromDemo();
+      STATE.tactics = { available: false, reason: '当前没有可读取的分析任务' };
+      STATE.tacticsFrames = { available: false, frames: [] };
+      p = Promise.resolve();
     }
     return p.then(function () {
       // 这里**故意不做**"后端没有战术产物就退回演示数据"的兜底：
@@ -497,6 +488,17 @@
   // 退出去再点一次才加载（队友 d0247ee 实测）。
   window.APP_BOOTSTRAP = bootstrap;
   window.APP_LOAD_JOB = loadJob;
+  // Recomputed artifacts retain their job ID. Refresh both the game gate and
+  // chart together so stale calibration metadata cannot hide a repaired chart.
+  window.APP_REFRESH_RESULTS = function () {
+    var id = STATE.jobId;
+    if (!STATE.backendOk || !id || id === 'demo') return Promise.resolve();
+    return Promise.all([window.API.game(id), window.API.shotchart(id)])
+      .then(function (r) {
+        if (STATE.jobId !== id) return;
+        applyGame(r[0], STATE.players, r[1], STATE.report, STATE.highlights);
+      });
+  };
   window.APP_TACTICS = loadTactics;
   window.APP_WAIT_READY = function () {
     return bootstrapPromise || Promise.resolve();

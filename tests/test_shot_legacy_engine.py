@@ -1,6 +1,9 @@
 import copy
+import os
+import tempfile
 import unittest
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 from aihoop.legacy_shots.stream import LegacyShotStream, replay_trace
@@ -28,8 +31,19 @@ class LegacyIntegration(unittest.TestCase):
         from pydantic import ValidationError
         request=JobCreate(source='video',video_path='fixture.mp4')
         self.assertEqual(request.shot_engine,'legacy')
-        self.assertEqual(request.score_policy,'court')
+        self.assertEqual(request.score_policy,'auto')
         with self.assertRaises(ValidationError):JobCreate(shot_engine='typo')
+
+    def test_dedicated_rim_model_precedes_general_bodd(self):
+        from aihoop import api
+        with tempfile.TemporaryDirectory() as tmp:
+            model_dir=Path(tmp)/'models';model_dir.mkdir()
+            (model_dir/'BODD_yolov8n_0001.pt').write_bytes(b'general')
+            (model_dir/'shottracker_best.pt').write_bytes(b'dedicated')
+            with patch.object(api,'ROOT',Path(tmp)/'root'), patch.dict(
+                    os.environ,{'AIHOOP_MODELS':str(model_dir)}):
+                self.assertEqual(Path(api._pick_ball_weights()).name,'BODD_yolov8n_0001.pt')
+                self.assertEqual(Path(api._pick_hoop_weights()).name,'BODD_yolov8n_0001.pt')
 
     def test_complete_crossing_and_replay(self):
         s=path()
@@ -92,7 +106,9 @@ class LegacyIntegration(unittest.TestCase):
         self.assertEqual([s.to_dict()['made'] for s in shots],[True,False,None])
         self.assertEqual(shots[0].outcome_source,'ball_through_rim')
         self.assertIs(shots[2].suggested_made,True)
-        self.assertEqual(sum(s.score_points for s in shots),2)
+        # Outcome confirmation does not verify the default two-point estimate.
+        self.assertEqual(sum(s.score_points for s in shots),0)
+        self.assertTrue(shots[0].made)
         self.assertEqual(len(shots),3)
 
     def test_unassigned_team_is_not_scored(self):
@@ -156,6 +172,7 @@ class LegacyIntegration(unittest.TestCase):
         source=VideoSource('fixture.mp4',Calibration(),detect_players=False,auto_sliding=False,
                            scoreboard=False,ball_weights='fixture.pt',ball_cfg=BallConfig(use_bg=False))
         with patch.object(source,'_require'),patch('cv2.VideoCapture',side_effect=lambda *a:Capture()),\
+             patch('aihoop.video_compat.ensure_cv2_decodable',return_value='fixture.mp4'),\
              patch.dict(sys.modules,{'ultralytics':SimpleNamespace(YOLO=lambda *a:Model())}),\
              patch('aihoop.calibcheck.camera_motion',return_value={'verdict':'static'}),\
              patch.object(source,'_calibration_matches',return_value=False),\

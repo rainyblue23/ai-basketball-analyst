@@ -113,7 +113,8 @@ class IntegrationTests(unittest.TestCase):
                                score_policy='scoreboard',scoreboard_events=str(path),ball_weights='should-not-load.pt')
             cap=MagicMock();cap.isOpened.return_value=True
             cap.get.side_effect=lambda k:{5:30,7:7200,3:1920,4:1080}.get(k,0)
-            with patch('cv2.VideoCapture',return_value=cap):
+            with patch('cv2.VideoCapture',return_value=cap), \
+                 patch('aihoop.video_compat.ensure_cv2_decodable',return_value='stub.mp4'):
                 rt=source.run()
             cap.grab.assert_not_called()
             result=run_pipeline(rt,PipelineConfig(out_dir=str(Path(temp)/'out'),make_highlights=False))
@@ -155,10 +156,41 @@ class IntegrationTests(unittest.TestCase):
     def test_low_ocr_coverage_does_not_produce_output(self):
         mod=load_script('read_marked_scoreboard')
         with TemporaryDirectory() as temp,patch.object(mod,'ROOT',Path(temp)), \
+             patch.object(mod,'_opencv_video',return_value='fake.mp4'), \
              patch.object(mod,'grab_crops',return_value=[dict(t=0,team='all',file='a')]), \
              patch.object(mod,'run_ocr',return_value={'a':'3 rd Qtr'}):
             with self.assertRaisesRegex(ValueError,'有效读数不足'):
                 mod.read_scoreboard('fake.mp4',box=(0,0,100,50))
+
+    def test_linux_scoreboard_ocr_preserves_reading_order_and_stays_offline(self):
+        mod=load_script('read_marked_scoreboard')
+        with TemporaryDirectory() as temp:
+            folder=Path(temp)
+            for name in ('craft_mlt_25k.pth','english_g2.pth'):
+                (folder/name).touch()
+            (folder/'000_all.png').touch()
+            (folder/'001_home.png').touch()
+            reader=MagicMock()
+            reader.readtext.side_effect=[
+                [([(50,0),(75,0),(75,20),(50,20)],'35',.95),
+                 ([(0,0),(35,0),(35,20),(0,20)],'FHS',.95)],
+                [([(0,0),(20,0),(20,20),(0,20)],'37',.97)],
+            ]
+            with patch.dict(os.environ,{'AIHOOP_SCOREBOARD_OCR_MODELS':str(folder)}), \
+                 patch.object(mod.os,'name','posix'), \
+                 patch.object(mod,'_easyocr_reader',return_value=reader) as load:
+                found=mod.run_ocr(folder,folder/'out.json')
+            load.assert_called_once_with(str(folder))
+            self.assertEqual(found,{'000_all.png':'FHS 35','001_home.png':'37'})
+            self.assertEqual(reader.readtext.call_args_list[0].kwargs['allowlist'],None)
+            self.assertEqual(reader.readtext.call_args_list[1].kwargs['allowlist'],'0123456789')
+
+    def test_linux_scoreboard_ocr_reports_missing_models(self):
+        mod=load_script('read_marked_scoreboard')
+        with TemporaryDirectory() as temp, \
+             patch.dict(os.environ,{'AIHOOP_SCOREBOARD_OCR_MODELS':temp}):
+            with self.assertRaisesRegex(RuntimeError,'模型缺失'):
+                mod._easyocr_model_dir()
 
     def test_shared_coverage_does_not_reject_on_pixel_size(self):
         self.assertTrue(coverage_verdict(80,100)['ok'])

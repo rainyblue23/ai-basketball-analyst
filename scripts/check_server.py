@@ -6,7 +6,7 @@
 
 为什么需要它：本项目的失败模式大多不是"报错"，而是**静默降级**——
 缺 YOLO_CONFIG_DIR 时报的是 Ultralytics 写 AppData 被拒；缺权重时球检测悄悄退回色块；
-Linux 上比分牌 OCR 直接没有；磁盘满了会在写视频那一步才炸。上线前一次问清，比现场排查便宜。
+比分牌 OCR 依赖的平台和本地模型不齐；磁盘满了会在写视频那一步才炸。上线前一次问清，比现场排查便宜。
 退出码：0 = 关键项全过；1 = 有必须先解决的问题。
 """
 from __future__ import annotations
@@ -31,10 +31,6 @@ def say(tag: str, text: str) -> None:
 def check_runtime() -> None:
     print("\n=== 1. 运行时 ===")
     say(OK, f"平台 {platform.platform()}   Python {platform.python_version()}")
-    if os.name != "nt":
-        say(WARN, "非 Windows：比分牌 OCR 路径不可用（见 docs/部署方案.md 第 1 节），"
-                  "只剩模板匹配那条路")
-        warnings.append("Linux/容器上没有比分牌 OCR")
     print("  依赖：")
     for mod in ("fastapi", "uvicorn", "pydantic", "httpx", "numpy", "cv2",
                 "torch", "ultralytics"):
@@ -124,10 +120,9 @@ def check_weights() -> None:
     cands = [ROOT / "runs/detect/ball/weights/best.pt",
              ROOT / "runs/detect/rim/weights/best.pt",
              ROOT / "data/shot_tracker_best.pt"]
-    env_dir = os.environ.get("AIHOOP_MODELS")
-    if env_dir:
-        cands += [Path(env_dir) / n for n in
-                  ("rim_ball_v6.pt", "rim_ball.pt", "yolov8s.pt")]
+    model_dir = Path(os.environ.get("AIHOOP_MODELS") or ROOT / "models")
+    cands += [model_dir / n for n in
+              ("rim_ball_v6.pt", "rim_ball.pt", "BODD_yolov8n_0001.pt", "yolov8s.pt")]
     found = []
     for c in cands:
         if c.is_file():
@@ -144,9 +139,8 @@ def check_weights() -> None:
         warnings.append("没有模型权重")
     else:
         names = {p.name for p in found}
-        if "best.pt" not in names:
-            say(WARN, "没有放到 runs/detect/{ball,rim}/weights/best.pt —— "
-                      "自动挑选权重时会找不到（也可用 AIHOOP_MODELS 指目录）")
+        if not names.intersection({"best.pt", "rim_ball_v6.pt", "BODD_yolov8n_0001.pt"}):
+            say(WARN, "自动挑选的球/篮筐权重仍可能缺失；请检查 models/ 或 runs/detect/")
 
 
 def check_gpu() -> None:
@@ -166,7 +160,27 @@ def check_gpu() -> None:
 def check_ocr(video: str) -> None:
     print("\n=== 7. 比分牌 OCR 路径 ===")
     if os.name != "nt":
-        say(WARN, "跳过：该路径仅 Windows 可用")
+        from aihoop.ocr_assets import ocr_model_directory
+        model_dir = ocr_model_directory(ROOT)
+        missing = [n for n in ("craft_mlt_25k.pth", "english_g2.pth")
+                   if not (model_dir / n).is_file()]
+        if missing:
+            say(BAD, f"EasyOCR 模型缺失：{model_dir}（{', '.join(missing)}）")
+            problems.append("缺少 Linux 比分牌 OCR 模型")
+            return
+        try:
+            import easyocr
+            reader = easyocr.Reader(["en"], gpu=False,
+                                    model_storage_directory=str(model_dir),
+                                    download_enabled=False, verbose=False)
+            del reader
+        except Exception as exc:  # noqa: BLE001
+            say(BAD, f"EasyOCR 模型加载失败：{type(exc).__name__}: {exc}")
+            problems.append("Linux 比分牌 OCR 无法加载")
+            return
+        say(OK, f"Linux EasyOCR 可用，模型位于 {model_dir}（离线加载）")
+        if video:
+            say(OK, f"请用脚本框选这段视频的比分区域验证识读：{video}")
         return
     ps = shutil.which("powershell") or shutil.which("powershell.exe")
     if not ps:

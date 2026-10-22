@@ -68,7 +68,7 @@
       // 输入 y 是带进攻端符号的底线距离，先还原为全场位置。
       var fullY = Number(y);
       return { u: Number(x) + C.COURT_W / 2,
-               v: fullY < 0 ? -fullY : C.COURT_L - fullY };
+               v: (fullY < 0 || Object.is(fullY,-0)) ? -fullY : C.COURT_L - fullY };
     }
     // 把两端的进攻方向统一到同一个篮筐，同时保留横向左右位置：
     // y<0 的半场旋转 180°，所以 x 也要翻转。u=x+7.5 与球场线框一致。
@@ -435,7 +435,7 @@
   // 画布坐标：u = x + 7.5 + pad、v = d + pad —— 与 courtSVG({view:'half'})
   // 完全对齐，因此「球场层」和「球员层」两张 SVG 只要 viewBox 相同就能严丝合缝。
   // ================================================================
-  var TEAM_COLOR = { home: '#2f6fed', away: '#f2762e' };
+  var TEAM_COLOR = { home: '#2f6fed', away: '#f2762e', team_a: '#2f6fed', team_b: '#f2762e' };
 
   /** 数据坐标 -> 半场画布坐标（含 pad） */
   function mapTactics(x, y) {
@@ -464,7 +464,7 @@
     return { w: Math.round(w * k), h: Math.round(h * k), k: k };
   }
 
-  function _name(p) { return window.D.playerLabel(p).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+  function _name(p) { return (window.D.tacticsPlayerLabel||window.D.playerLabel)(p).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
 
   /**
    * 传球网络图层：画在半场上（节点按球员平均站位摆，边宽 ∝ 传球次数）。
@@ -473,54 +473,41 @@
    */
   function passNetLayer(net, o) {
     o = o || {};
-    var vb = tacticsViewBox();
-    var color = TEAM_COLOR[o.team] || '#2f6fed';
-    var s = ['<svg class="court-svg" viewBox="' + vb + '" preserveAspectRatio="xMidYMid meet" ' +
-      'xmlns="http://www.w3.org/2000/svg">'];
-
-    var nodes = (net && net.nodes) || [];
-    var edges = (net && net.edges) || [];
-    var byId = {};
-    nodes.forEach(function (p) { byId[p.id] = p; });
-    var maxV = 1;
-    edges.forEach(function (e) { maxV = Math.max(maxV, e.value || 1); });
-
-    // ---- 边 ----
-    edges.forEach(function (e) {
-      var a = byId[e.source], b = byId[e.target];
-      if (!a || !b) return;
-      var qa = mapTactics(a.x, a.d), qb = mapTactics(b.x, b.d);
-      // 双向传球时两条线会完全重合，按 id 顺序做一点点偏移，避免互相盖住
-      var off = (String(e.source) < String(e.target)) ? 0.12 : -0.12;
-      var w = 0.035 + 0.16 * ((e.value || 1) / maxV);
-      s.push('<line x1="' + f(qa.u) + '" y1="' + f(qa.v) + '" x2="' + f(qb.u) +
-        '" y2="' + f(qb.v) + '" stroke="' + color + '" stroke-opacity="0.55" ' +
-        'stroke-width="' + f(w) + '" stroke-linecap="round" data-off="' + off + '">' +
-        '<title>' + _name(a) + ' → ' + _name(b) + '：' + (e.value || 0) + ' 次</title></line>');
+    var escape = function (v) { return String(v).replace(/[&<>"']/g, function(c) {
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); };
+    var nodes = (net && net.nodes) || [], edges = (net && net.edges) || [];
+    var focus = nodes.find(function(p){return p.id === o.focus;});
+    var linked = new Set();
+    if (focus) {
+      linked.add(focus.id);
+      edges.forEach(function(e){if(e.source === focus.id)linked.add(e.target);if(e.target === focus.id)linked.add(e.source);});
+      nodes=nodes.filter(function(p){return linked.has(p.id);});
+      edges=edges.filter(function(e){return e.source === focus.id || e.target === focus.id;});
+    }
+    if (!nodes.length) return '<div class="muted" style="padding:36px">暂无传球连线</div>';
+    var points = {}, around=nodes.filter(function(p){return !focus || p.id !== focus.id;});
+    if (focus) points[focus.id]={x:320,y:240,r:42};
+    around.forEach(function(p,i){var angle=-Math.PI/2+2*Math.PI*i/Math.max(1,around.length);
+      points[p.id]={x:320+206*Math.cos(angle),y:240+172*Math.sin(angle),r:26};});
+    var byId={};nodes.forEach(function(p){byId[p.id]=p;});
+    var s=['<svg class="court-svg pass-network" viewBox="0 0 640 480" role="group" aria-label="传球关系图" xmlns="http://www.w3.org/2000/svg"><defs>'];
+    ['home','away','team_a','team_b','unknown'].forEach(function(team){var color=TEAM_COLOR[team] || '#64748b';
+      s.push('<marker id="pass-arrow-'+team+'" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L6,3 L0,6 Z" fill="'+color+'" /></marker>');});
+    s.push('</defs>');
+    edges.forEach(function(e){var a=points[e.source],b=points[e.target];if(!a || !b || e.source===e.target)return;
+      var dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy)||1,ux=dx/d,uy=dy/d;
+      var ax=a.x+ux*(a.r+4),ay=a.y+uy*(a.r+4),bx=b.x-ux*(b.r+9),by=b.y-uy*(b.r+9);
+      var reverse=edges.some(function(r){return r.source===e.target && r.target===e.source;});
+      var mx=(ax+bx)/2-uy*(reverse?16:0),my=(ay+by)/2+ux*(reverse?16:0);
+      var team=byId[e.source].team || o.team || 'unknown',color=TEAM_COLOR[team] || '#64748b';
+      s.push('<path d="M'+ax+','+ay+' Q'+mx+','+my+' '+bx+','+by+'" fill="none" stroke="'+color+'" stroke-opacity=".7" stroke-width="'+Math.min(9,2+Math.sqrt(e.value||1))+'" marker-end="url(#pass-arrow-'+team+')"><title>'+_name(byId[e.source])+' → '+_name(byId[e.target])+'：'+escape(e.value)+' 次</title></path>');
     });
-
-    // ---- 节点 ----
-    var maxP = 1;
-    nodes.forEach(function (p) { maxP = Math.max(maxP, (p.passes || 0) + (p.received || 0)); });
-    nodes.forEach(function (p) {
-      var q = mapTactics(p.x, p.d);
-      var tot = (p.passes || 0) + (p.received || 0);
-      var r = 0.30 + 0.24 * (tot / maxP);
-      s.push('<circle cx="' + f(q.u) + '" cy="' + f(q.v) + '" r="' + f(r) + '" ' +
-        'fill="#ffffff" stroke="' + color + '" stroke-width="0.09">' +
-        '<title>' + _name(p) + '：传球 ' + (p.passes || 0) + ' / 接球 ' +
-        (p.received || 0) + '</title></circle>');
-      s.push('<text x="' + f(q.u) + '" y="' + f(q.v + 0.16) + '" text-anchor="middle" ' +
-        'font-size="' + f(r * 0.9) + '" font-weight="700" fill="' + color + '">' +
-        tot + '</text>');
-      if (o.showLabels !== false) {
-        s.push('<text x="' + f(q.u) + '" y="' + f(q.v - r - 0.14) + '" text-anchor="middle" ' +
-          'font-size="0.46" fill="#33414f" style="paint-order:stroke;stroke:#ffffff;stroke-width:0.16">' +
-          _name(p) + '</text>');
-      }
+    nodes.forEach(function(p){var q=points[p.id],color=TEAM_COLOR[p.team] || '#64748b',selected=focus && p.id===focus.id;
+      s.push('<g data-player="'+escape(p.id)+'" data-selected="'+!!selected+'" role="button" tabindex="0" aria-label="聚焦'+_name(p)+'" aria-pressed="'+!!selected+'" style="cursor:pointer">');
+      if(selected)s.push('<circle cx="'+q.x+'" cy="'+q.y+'" r="'+(q.r+7)+'" fill="none" stroke="'+color+'" stroke-opacity=".2" stroke-width="5"/>');
+      s.push('<circle cx="'+q.x+'" cy="'+q.y+'" r="'+q.r+'" fill="'+color+'" stroke="white" stroke-width="3"/><text x="'+q.x+'" y="'+q.y+'" text-anchor="middle" dominant-baseline="central" font-size="'+(_name(p).length>=5 ? (selected?12:8) : (selected?24:16))+'" fill="white" font-weight="700">'+_name(p)+'</text><title>'+_name(p)+'：传球 '+escape(p.passes||0)+' / 接球 '+escape(p.received||0)+'</title></g>');
     });
-    s.push('</svg>');
-    return s.join('');
+    s.push('</svg>');return s.join('');
   }
 
   /**
@@ -531,7 +518,9 @@
    */
   function tacticsPlayersLayer(frame, trails, o) {
     o = o || {};
-    var vb = tacticsViewBox();
+    var view=o.view||'half',geometry=viewOf(view);
+    var vb='0 0 '+n(geometry.W+geometry.pad*2)+' '+n(geometry.H+geometry.pad*2);
+    var project=function(x,y){if(view!=='full')return mapTactics(x,y);var q=mapXY('full',x,y);return {u:q.u+geometry.pad,v:q.v+geometry.pad};};
     var s = ['<svg class="court-svg" viewBox="' + vb + '" preserveAspectRatio="xMidYMid meet" ' +
       'xmlns="http://www.w3.org/2000/svg">'];
 
@@ -542,7 +531,7 @@
         if (seq.length < 2) return;
         var team = (frame.teamOf && frame.teamOf[pid]) || o.teamOf && o.teamOf[pid] || 'home';
         var pts = seq.map(function (p) {
-          var q = mapTactics(p[0], p[1]);
+          var q = project(p[0], p[1]);
           return f(q.u) + ',' + f(q.v);
         }).join(' ');
         s.push('<polyline points="' + pts + '" fill="none" stroke="' +
@@ -557,20 +546,21 @@
     var identities={};(o.players||[]).forEach(function(p){identities[p.player_id]=p;});
     (frame.players || []).forEach(function (p) {
       var pid = p[0], team = p[1], x = p[2], y = p[3];
-      var q = mapTactics(x, y);
+      var q = project(x, y);
       var col = TEAM_COLOR[team] || '#64748b';
+      var teamLabel = {home:'主队',away:'客队',team_a:'分组A（主客未核实）',team_b:'分组B（主客未核实）'}[team] || '分队未知';
       var hi = (o.highlight || []).indexOf(pid) >= 0;
       s.push('<circle cx="' + f(q.u) + '" cy="' + f(q.v) + '" r="' + (hi ? 0.42 : 0.34) + '" ' +
         'fill="' + col + '" stroke="#ffffff" stroke-width="0.09" opacity="0.95">' +
-        '<title>' + _name(identities[pid]) + ' · ' + (team === 'home' ? '主队' : '客队') +
+        '<title>' + _name(identities[pid]||{player_id:pid}) + ' · ' + teamLabel +
         ' · x=' + f(x) + ' y=' + f(y) + '</title></circle>');
-      s.push('<text x="' + f(q.u) + '" y="' + f(q.v + 0.13) + '" text-anchor="middle" ' +
-        'font-size="0.40" font-weight="700" fill="#ffffff">' + _name(identities[pid]) + '</text>');
+      s.push('<text x="' + f(q.u) + '" y="' + f(q.v + 0.82) + '" text-anchor="middle" ' +
+        'font-size="0.42" font-weight="700" fill="#172033" stroke="#ffffff" stroke-width="0.10" paint-order="stroke">' + _name(identities[pid]||{player_id:pid}) + '</text>');
     });
 
     // ---- 球 ----
     if (frame.ball) {
-      var qb = mapTactics(frame.ball[0], frame.ball[1]);
+      var qb = project(frame.ball[0], frame.ball[1]);
       s.push('<circle cx="' + f(qb.u) + '" cy="' + f(qb.v) + '" r="0.24" fill="#e2823c" ' +
         'stroke="#ffffff" stroke-width="0.07"><title>球</title></circle>');
     }

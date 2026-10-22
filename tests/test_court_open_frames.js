@@ -1,0 +1,21 @@
+const assert=require('node:assert/strict');
+global.window={STORE:{}};
+require('../web/pages/upload.js');
+const p=window.PAGES.upload;
+const vm=Object.assign(p.data(),{$message:{warning(){},info(){},success(){},error(){}}});
+Object.keys(p.methods).forEach(k=>vm[k]=p.methods[k].bind(vm));
+Object.keys(p.computed).forEach(k=>Object.defineProperty(vm,k,{get:p.computed[k].bind(vm)}));
+vm.form.video_path='av1.mp4';vm.loadPlayer=()=>{};vm.loadCalInfo=()=>{};
+window.API={getFrame:()=>{throw Error('Must not request automatic screenshots');}};
+global.document={createElement:()=>({width:0,height:0,getContext:()=>({drawImage(){}}),toDataURL:()=> 'data:image/jpeg;base64,test'})};
+vm.$refs={courtVideo_0:[{readyState:2,currentTime:1,videoWidth:1920,videoHeight:1080,pause(){}}],
+ courtVideo_1:[{readyState:2,currentTime:19,videoWidth:1920,videoHeight:1080,pause(){}}]};
+vm.openCourt();assert.equal(vm.mfFrames.filter(f=>f.image).length,0);
+vm.captureCourtPanel(0);assert.equal(vm.mfCurrent.t,1);assert.equal(vm.mfCurrentRight.image,'');
+vm.mfPts=[{t:1,name:'lane_far_right',x:.1,y:.1}];
+vm.captureCourtPanel(1);assert.equal(vm.mfCurrentRight.t,19);assert.equal(vm.mfPts.length,1);
+vm.$refs.courtVideo_1[0].currentTime=22;
+vm.captureCourtPanel(1);assert.equal(vm.mfCurrent.t,1);assert.equal(vm.mfCurrentRight.t,22);
+vm.scheduleAutoPreview();assert.equal(vm.autoPreviewTimer,null);
+assert.ok(!p.template.includes('自动挑同一镜头的两帧'));
+console.log('Manual court snapshots stay independent; no automatic frame or preview requests');

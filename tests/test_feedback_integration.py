@@ -19,8 +19,17 @@ class CorrectionIntegration(unittest.TestCase):
     body={'t':.35,'boxes':[{'kind':'ball','xyxy':[.2,.2,.4,.4]}]}
     response=client.post('/api/games/example_test/ball-feedback',json=body)
     self.assertEqual(response.status_code,200);self.assertTrue(response.json()['saved'])
+    feedback_id=response.json()['id']
     rows=list((root/'data/ball_feedback').glob('*/record.json'));self.assertEqual(len(rows),1)
     self.assertEqual(json.loads(rows[0].read_text(encoding='utf-8'))['frame_index'],3)
+    self.assertEqual(client.get('/api/ball-feedback?status=pending').json()['total'],1)
+    denied=client.post(f'/api/ball-feedback/{feedback_id}/review',json={
+     'decision':'approved','reviewer':'qa','frame_complete':False})
+    self.assertEqual(denied.status_code,400)
+    approved=client.post(f'/api/ball-feedback/{feedback_id}/review',json={
+        'decision':'approved','reviewer':'qa','frame_complete':True,
+        'conditions':['far_small'],'source_match_id':'match-test-001'})
+    self.assertEqual(approved.status_code,200);self.assertTrue(approved.json()['training_approved'])
     self.assertEqual(client.post('/api/games/job/ball-feedback',json={'t':3,'boxes':body['boxes']}).status_code,400)
     self.assertEqual(len(list((root/'data/ball_feedback').glob('*/record.json'))),1)
     self.assertEqual(client.post('/api/games/example_test/shots/add',json={}).status_code,403)
@@ -40,6 +49,28 @@ class CorrectionIntegration(unittest.TestCase):
     self.assertTrue(all('location_unknown' in e['tags'] for e in timeline))
     before=(root/'manual_attempts.json').read_bytes()
     self.assertEqual(client.post('/api/games/feedback_test/shots/add',json={'t':10,'team':'home','value':2}).status_code,400)
+    self.assertEqual(before,(root/'manual_attempts.json').read_bytes())
+ def test_manual_mixed_unknown_home_away_is_atomic(self):
+  from aihoop.sources import RawTrack
+  with tempfile.TemporaryDirectory() as d:
+   root=Path(d);RawTrack(fps=30,duration=10).save(str(root/'raw_track.json'))
+   with patch.object(api,'_out_dir',return_value=root),patch('aihoop.auth.read_session',return_value='test'):
+    client=TestClient(api.app)
+    cases=[{'t':1},{'t':2,'team':'home','result':'missed'},
+           {'t':3,'team':'away','result':'made'}]
+    for body in cases:
+     r=client.post('/api/games/mixed/shots/add',json=body)
+     self.assertEqual(r.status_code,200,r.text)
+    timeline=r.json()['timeline']
+    self.assertEqual([e['result'] for e in timeline],['unknown','missed','made'])
+    self.assertEqual(r.json()['score'],{'home':0,'away':2})
+    self.assertTrue(all('location_unknown' in e['tags'] for e in timeline))
+    records=json.loads((root/'manual_attempts.json').read_text(encoding='utf-8'))
+    self.assertEqual([x['player_id'] for x in records],
+                     ['MANUAL_UNKNOWN','MANUAL_HOME','MANUAL_AWAY'])
+    before=(root/'manual_attempts.json').read_bytes()
+    with patch.object(api,'run_pipeline',side_effect=RuntimeError('rebuild failed')):
+     with self.assertRaises(RuntimeError):api.asyncio.run(api.add_manual_shot('mixed',api.ManualShot(t=4,team='home')))
     self.assertEqual(before,(root/'manual_attempts.json').read_bytes())
  def test_manual_three_states_and_no_fake_location(self):
   for result,made in [('made',True),('missed',False),('unknown',None)]:

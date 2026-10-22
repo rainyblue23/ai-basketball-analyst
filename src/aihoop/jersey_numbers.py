@@ -84,14 +84,18 @@ def model_path():
     """Only use provisioned local OCR weights; never download during analysis."""
     value=os.environ.get('AIHOOP_JERSEY_MODEL')
     if value is not None and value.lower() in ('off','none',''):return None
-    path=Path(value) if value else Path(__file__).resolve().parents[3]/'aihoop_assets/models/easyocr'
+    from .ocr_assets import ocr_model_directory
+    path=ocr_model_directory(env_name='AIHOOP_JERSEY_MODEL')
     return path if all((path/n).is_file() for n in ('craft_mlt_25k.pth','english_g2.pth')) else None
 
 
 def model_read(folder,records,path,device):
     import easyocr
-    import torch
-    gpu=bool(torch.cuda.is_available()) if device is None else (False if str(device).lower()=='cpu' else ('cuda:'+str(device) if str(device).isdigit() else str(device)))
+    if device is None:
+        import torch
+        gpu=bool(torch.cuda.is_available())
+    else:
+        gpu=False if str(device).lower()=='cpu' else ('cuda:'+str(device) if str(device).isdigit() else str(device))
     reader=easyocr.Reader(['en'],gpu=gpu,model_storage_directory=str(path),download_enabled=False,verbose=False)
     rows=[]
     for name in records:

@@ -32,7 +32,7 @@ const labelsOf = list => list.map(i => i.label);
 const namesOf = list => list.map(i => i.name);
 // 干净的显示名（半场列表）：不带"（篮筐那一头）/（中圈那一头）"
 // 干净的显示名（半场列表）：不含篮筐（篮圈离地 3.05m，不进地面标定）
-const CLEAN = ['底线左角', '底线右角', '罚球区左角',
+const CLEAN = ['底线左角', '底线右角', '禁区底线左角', '禁区底线右角', '罚球区左角',
                '罚球区右角', '罚球线中点', '三分弧顶'];
 
 // ---- 默认是全场 ----
@@ -78,22 +78,22 @@ assert.ok(p.data().courtSideNames.full.length >= 15,
 
 // ---- 左侧 = 工具里 y<0 的那半场 = _near 那一套（临时筛选仍然要正确）----
 vm.setCourtSide('left');
-assert.equal(vm.courtItems.length, 6, '左侧应当是 6 个点（不含篮筐）');
+assert.equal(vm.courtItems.length, 8, '左侧应当是 8 个点（不含篮筐）');
 assert.ok(namesOf(vm.courtItems).every(n => /_near/.test(n)),
   '左侧必须用 _near 那一套（写反会把球场平移 28m）：' + namesOf(vm.courtItems));
 assert.ok(namesOf(vm.courtItems).every(n => n.indexOf('hoop') !== 0),
   '左侧清单里不能有篮筐（篮圈离地 3.05m，不在地面单应矩阵平面上）');
-assert.deepEqual(labelsOf(vm.courtItems), CLEAN,
+assert.deepEqual(labelsOf(vm.courtItems).map(l => l.replace(/^[AB]端/, '')), CLEAN,
   '左侧显示名必须是干净名字：' + labelsOf(vm.courtItems));
 
 // ---- 右侧 = y>0 = _far 那一套 ----
 vm.setCourtSide('right');
-assert.equal(vm.courtItems.length, 6, '右侧应当是 6 个点（不含篮筐）');
+assert.equal(vm.courtItems.length, 8, '右侧应当是 8 个点（不含篮筐）');
 assert.ok(namesOf(vm.courtItems).every(n => /_far/.test(n)),
   '右侧必须用 _far 那一套：' + namesOf(vm.courtItems));
 assert.ok(namesOf(vm.courtItems).every(n => n.indexOf('hoop') !== 0),
   '右侧清单里也不能有篮筐');
-assert.deepEqual(labelsOf(vm.courtItems), CLEAN,
+assert.deepEqual(labelsOf(vm.courtItems).map(l => l.replace(/^[AB]端/, '')), CLEAN,
   '右侧显示名也要干净（两边同一套名字，用户不必学两套）：' + labelsOf(vm.courtItems));
 
 // ---- 切换地标范围必须清空已标点 ----
@@ -112,4 +112,4 @@ assert.ok(vm.courtItems.length >= 15, '非法输入也必须有一张有效的�
 // 没有已标点时切换不该弹提示（不要打扰用户）
 assert.equal(vm.mfPts.length, 0);
 
-console.log('标定页地标范围：全场 A端/B端 15 点 + 半场 6 点筛选 + 坐标与 court.py 一致（checks passed）');
+console.log('标定页地标范围：全场 A端/B端 15 点 + 半场 8 点筛选 + 坐标与 court.py 一致（checks passed）');

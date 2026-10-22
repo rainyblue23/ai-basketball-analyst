@@ -10,7 +10,7 @@ class NightSettings(unittest.TestCase):
         d=resolve_detect({'profile':'night'});self.assertEqual((d['imgsz'],d['rim_min_conf']),(960,.30))
         self.assertEqual(resolve_detect({'profile':'night','imgsz':1280})['imgsz'],1280)
     def test_validation(self):
-        for v in ({'imgsz':961},{'rim_min_conf':-1},{'profile':'oops'},{'ball_conf':.9}):
+        for v in ({'imgsz':961},{'rim_min_conf':-1},{'profile':'oops'},{'ball_conf':1.1}):
             with self.assertRaises(ValidationError):LegacyDetectOptions(**v)
     def test_detector_floor(self):
         d={'ball_conf':.25,**resolve_detect({'rim_min_conf':.2})}

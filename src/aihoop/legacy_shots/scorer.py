@@ -65,6 +65,45 @@ class RimTracker:
     generation: int = 0  # 跟踪证据段编号，不等同于物理篮筐身份
     last_update_reason: str = "uninitialized"
     scale_rejected: int = 0               # 因尺度不相容被拒绝的候选数
+    dynamic_enabled: bool = False
+    prediction_s: float = .25
+    measurement_alpha: float = 1.
+    geometry_observed: bool = False
+    camera_verified: bool = False
+    observation_kind: str = 'DETECTED'
+    current_t: float = -1e9
+    geometry_frame: int = -1
+    geometry_t: float = -1e9
+
+    def compensate(self, audit, t, frame_idx):
+        """Warp association geometry only; never refresh last_seen_t/frame."""
+        if not self.dynamic_enabled:return
+        self.current_t=t;self.geometry_observed=False;self.camera_verified=False
+        # forward_H maps ONLY the previous image to this image. A successful
+        # transform cannot bridge an earlier failed/absent transform. Until a
+        # real rim is reacquired, do not label the unmapped geometry PREDICTED.
+        if (not self.initialized or not audit.get('ok')
+                or frame_idx != self.geometry_frame+1
+                or not self.geometry_t < t
+                or not 0 <= t-self.last_seen_t <= self.prediction_s):return
+        import numpy as np
+        import cv2
+        box=np.float32([[[self.cx-self.w/2,self.cy-self.h/2]],[[self.cx+self.w/2,self.cy-self.h/2]],
+                        [[self.cx+self.w/2,self.cy+self.h/2]],[[self.cx-self.w/2,self.cy+self.h/2]]])
+        mapped=cv2.perspectiveTransform(box,np.array(audit['forward_H'],dtype=float)).reshape(-1,2)
+        low=mapped.min(axis=0);high=mapped.max(axis=0)
+        if not np.isfinite(mapped).all() or np.any(high<=low):
+            self.camera_verified=False;return
+        self._adopt(tuple(map(float,((low[0]+high[0])/2,(low[1]+high[1])/2,
+                                    high[0]-low[0],high[1]-low[1]))))
+        self.geometry_frame=frame_idx;self.geometry_t=t;self.camera_verified=True
+
+    def status(self,t,stale_s):
+        if not self.initialized or t-self.last_seen_t>stale_s:return 'LOST'
+        if abs(t-self.last_seen_t)<1e-7:return self.observation_kind
+        if (self.dynamic_enabled and self.camera_verified and abs(t-self.geometry_t)<1e-7
+                and t-self.last_seen_t<=self.prediction_s):return 'PREDICTED'
+        return 'STALE'
 
     @property
     def initialized(self) -> bool:
@@ -76,7 +115,10 @@ class RimTracker:
                switch_absent_s: float = 2.5, switch_confirm: int = 10,
                scale_tol: float = 0.0) -> None:
         self.last_update_reason = "no_candidate"
+        self.current_t=t
+        if self.dynamic_enabled:self.geometry_observed=False
         if rim is None:
+            if self.dynamic_enabled:self.geometry_observed=False
             self.pending = None
             self.pending_count = 0
             return
@@ -129,6 +171,9 @@ class RimTracker:
                 self.pending_count = 0
                 self.last_seen_t = t
                 self.last_seen_frame = frame_idx
+                self.geometry_frame=frame_idx;self.geometry_t=t
+                self.geometry_observed=True
+                self.observation_kind='REFINED' if rim.cls_name=='rim_refined' else 'DETECTED'
             return
 
         if _dist(self.cx, self.cy, cand[0], cand[1]) > jump_limit:
@@ -136,7 +181,7 @@ class RimTracker:
             self.rejected += 1
             return
         self.last_update_reason = "tracked"
-        a = self.alpha
+        a = self.measurement_alpha if self.dynamic_enabled else self.alpha
         self.cx = (1 - a) * self.cx + a * cand[0]
         self.cy = (1 - a) * self.cy + a * cand[1]
         self.w = (1 - a) * self.w + a * cand[2]
@@ -144,8 +189,11 @@ class RimTracker:
         self.seen += 1
         self.last_seen_t = t
         self.last_seen_frame = frame_idx
+        self.geometry_frame=frame_idx;self.geometry_t=t
         self.top = self.cy - self.h / 2.0
         self.bottom = self.cy + self.h / 2.0
+        self.geometry_observed=True
+        self.observation_kind='REFINED' if rim.cls_name=='rim_refined' else 'DETECTED'
 
     def _adopt(self, cand: tuple[float, float, float, float]) -> None:
         self.cx, self.cy, self.w, self.h = cand
@@ -154,7 +202,8 @@ class RimTracker:
 
     def fresh(self, t: float, stale_s: float) -> bool:
         """筐是否"当前有效"：已确认、宽度合理、且最近仍在被观测。"""
-        return self.initialized and self.w > 4 and (t - self.last_seen_t) <= stale_s
+        return (self.initialized and self.w > 4 and (t - self.last_seen_t) <= stale_s
+                and (not self.dynamic_enabled or (self.geometry_observed and abs(t-self.last_seen_t)<1e-7)))
 
 
 @dataclass
@@ -183,6 +232,9 @@ class Attempt:
     suggestion_count: int = 0
     review_t: float | None = None
     left_streak: int = 0          # "离开筐区/掉到筐下"连续成立的真实观测数（防单帧异常）
+    candidate_t: float | None = None
+    release_evidence: dict = field(default_factory=dict)
+    last_measured_rim: tuple | None = None
 
 
 class ScoreEngine:
@@ -234,8 +286,25 @@ class ScoreEngine:
         self.suspected_make_max_gap_s = float(s.get("suspected_make_max_gap_s", 0.7))
         self.release_lookback_s = float(s.get("release_lookback_s", 2.0))
         self.release_max_person_dist_ratio = float(s.get("release_max_person_dist_ratio", 0.9))
+        self.release_binding_mode = s.get('release_binding_mode','contact_sequence')
+        self.ball_geometry_mode = s.get('ball_geometry_mode','measured')
+        self.release_options=dict(lookback=self.release_lookback_s,
+            min_contacts=int(s.get('release_min_contact_frames',2)),
+            min_departures=int(s.get('release_min_departure_frames',2)),
+            contact_gap=float(s.get('release_contact_max_gap_s',.25)),
+            departure_gap=float(s.get('release_departure_max_gap_s',.25)),
+            ambiguity_s=float(s.get('release_ambiguity_s',.1)),
+            x_pad=float(s.get('release_contact_x_pad_ratio',.25)),
+            top=float(s.get('release_contact_top_ratio',-.2)),
+            bottom=float(s.get('release_contact_bottom_ratio',.75)))
+        self.release_evidence={}
 
         self.rim = RimTracker()
+        general=(cfg.get('detect') or {}).get('general') or {}
+        self.rim.dynamic_enabled=bool(general.get('dynamic_rim'))
+        self.rim.prediction_s=float(general.get('rim_prediction_s',.25))
+        self.rim.measurement_alpha=float(general.get('rim_measurement_alpha',1.))
+        self.dynamic_scale_limit=float(general.get('camera_max_scale_change',.25))
         # 远距离重捕需要的连续一致帧数（默认 2 = 原有行为）。见 eval/rim_tracking_audit.md 第三节 (a)。
         self.rim_readopt_far_frames = int(s.get("rim_readopt_far_frames", 6) or 0)
         self.attempt: Attempt | None = None
@@ -248,7 +317,7 @@ class ScoreEngine:
         self.ball_hist: deque[tuple[float, float, float, float]] = deque(maxlen=24)
         self.recent_real: deque[tuple[float, float]] = deque(maxlen=5)
         # 目标历史：用于回溯"离手时刻"（球—人最接近的时刻）
-        self.history: deque[dict[str, Any]] = deque(maxlen=int(max(30, self.fps * 3)))
+        self.history: deque[dict[str, Any]] = deque(maxlen=int(max(30, self.fps * max(3,self.release_lookback_s))))
 
     # ------------------------------------------------------------------ 工具
     def _dist_est_m(self, xy: tuple[float, float]) -> float:
@@ -257,18 +326,30 @@ class ScoreEngine:
         return round(_dist(xy[0], xy[1], self.rim.cx, self.rim.cy) / self.rim.w * self.rim_real_width_m, 2)
 
     def _points(self, dist_est_m: float) -> tuple[int, bool]:
-        """返回 (得分, 是否已标定确认)。三分目前是单目估算 → 未确认。"""
+        """Single-view rim-width estimates never verify either two or three points."""
         if self.enable_three_point and dist_est_m >= self.three_point_m:
             return 3, False
-        return 2, True
+        return 2, False
 
     def _approach_r(self) -> float:
         return max(self.rim.w * self.approach_radius_ratio, 30.0)
+
+    @staticmethod
+    def _candidate_age(at, t):
+        return t-(at.candidate_t if at.candidate_t is not None else at.start_t)
 
     def _emit(self, ev: dict[str, Any]) -> None:
         self.events.append(ev)
 
     def _bind_shooter(self, t: float) -> tuple[tuple[float, float], int | None, str, float]:
+        if self.release_binding_mode != 'legacy_nearest_feet':
+            from .release_binding import bind_release
+            bound,self.release_evidence=bind_release(self.history,t,self.release_options)
+            return bound if bound is not None else ((0.,0.),None,'none',t)
+        self.release_evidence=dict(status='legacy_unverified',reason='nearest_feet_history')
+        return self._bind_shooter_legacy(t)
+
+    def _bind_shooter_legacy(self, t: float) -> tuple[tuple[float, float], int | None, str, float]:
         """回溯历史，锁定出手人与离手时刻。
 
         规则：在回溯窗口内统计"每个球员与球的接触帧数"，**持球时间最长的那个球员**判为出手人，
@@ -298,7 +379,9 @@ class ScoreEngine:
         return (pcx, feet_y), pid, "history", rel_t
 
     def _smooth_xy(self, ball: Det) -> tuple[float, float]:
-        """用最近 3 次真实观测的中位数做几何判定，抑制单帧误检造成的跳变。"""
+        """Use actual coordinates; retain the old median only for explicit ablation."""
+        if self.ball_geometry_mode == 'measured':
+            return ball.cx,ball.cy
         pts = list(self.recent_real)[-3:]
         if len(pts) >= 3:
             xs = sorted(p[0] for p in pts)
@@ -342,6 +425,8 @@ class ScoreEngine:
     def update(self, frame_idx: int, t: float, ball: Det | None, rim: Det | None,
                persons: list[Det]) -> list[dict[str, Any]]:
         new_events: list[dict[str, Any]] = []
+        if ball is not None and not ball.predicted and not ball.is_measurement:
+            ball = None
         previous_generation = self.rim.generation
         jump_limit = self.rim_max_jump_px if self.rim_max_jump_px > 0 else max(60.0, 3.0 * max(self.rim.w, 1.0))
         self.rim.update(rim, t, frame_idx, jump_limit, self.rim_need_confirm, self.rim_stale_s,
@@ -362,7 +447,7 @@ class ScoreEngine:
             if new_events:
                 return new_events
 
-        real_ball = ball is not None and not ball.predicted
+        real_ball = ball is not None and ball.is_measurement
 
         # 记录历史（仅真实观测，供回溯出手人使用）
         if real_ball:
@@ -373,6 +458,7 @@ class ScoreEngine:
             self.history.append({
                 "frame": frame_idx, "t": t, "ball_xy": (ball.cx, ball.cy),
                 "persons": [(p.track_id, p.cx, p.xyxy[3], p.h) for p in persons],
+                "person_boxes": [(p.track_id,*p.xyxy) for p in persons if not p.predicted],
             })
             self.recent_real.append((ball.cx, ball.cy))
 
@@ -441,7 +527,7 @@ class ScoreEngine:
                 and hd < approach_r and by < approach_top):
             if real_ball:
                 origin, pid, binding, release_t = self._bind_shooter(t)
-                if binding != "history":
+                if binding not in ('history','contact_sequence'):
                     origin, pid, release_t = (bx, by), None, t
             else:
                 origin, pid, binding, release_t = (bx, by), None, "none", t
@@ -449,12 +535,23 @@ class ScoreEngine:
                 start_frame=frame_idx, start_t=release_t, release_xy=origin,
                 dist_est_m=self._dist_est_m(origin), player_id=pid, binding=binding,
                 ball_release_xy=(bx, by),
+                candidate_t=t,release_evidence=dict(self.release_evidence),
             )
+            if self.release_evidence.get('ball_xy') is not None:
+                self.attempt.ball_release_xy=tuple(self.release_evidence['ball_xy'])
 
         if self.attempt is None:
             return new_events
 
         at = self.attempt
+        # A candidate may begin before sufficient departure evidence is available.
+        # Update only ownership metadata before rim entry; never alter outcome gates.
+        if real_ball and at.player_id is None and not at.entered:
+            origin,pid,binding,release_t=self._bind_shooter(t)
+            if binding=='contact_sequence':
+                at.release_xy,at.player_id,at.binding,at.start_t=origin,pid,binding,release_t
+                at.release_evidence=dict(self.release_evidence)
+                at.ball_release_xy=tuple(self.release_evidence['ball_xy'])
         if real_ball:
             self._observe_suspected_make(at, t, ball)
             at.real_obs += 1
@@ -464,6 +561,21 @@ class ScoreEngine:
             # insufficient: a recent observed downward segment must cross the aperture.
             previous_xy = at.last_real_xy
             continuous = 0 < t - previous_real_t <= self.ball_recent_s
+            # Compare two REAL observations in the current measured rim frame.
+            # Camera compensation is never substituted for an observed rim.
+            if self.rim.dynamic_enabled:
+                old_rim=at.last_measured_rim
+                if previous_xy is not None and old_rim is not None and old_rim[2]>0:
+                    ratio=self.rim.w/old_rim[2]
+                    limit=self.dynamic_scale_limit
+                    if 1-limit<=ratio<=1+limit:
+                        previous_xy=(self.rim.cx+(previous_xy[0]-old_rim[0])*ratio,
+                                     self.rim.cy+(previous_xy[1]-old_rim[1])*ratio)
+                    else:continuous=False
+                else:continuous=False
+                if not continuous:
+                    at.crossing_t=None
+                at.last_measured_rim=(self.rim.cx,self.rim.cy,self.rim.w,self.rim.h)
             if previous_xy is not None and continuous:
                 px, py = previous_xy
                 # Only a downward approach followed by a substantial rise is a
@@ -493,6 +605,7 @@ class ScoreEngine:
                     at.entered_cy = by
 
             prev_cy = at.last_real_cy
+            if self.rim.dynamic_enabled:prev_cy=previous_xy[1] if previous_xy is not None and continuous else None
             # 3) 出筐时窗从真实向下穿越筐口开始，而不是从较宽的接近区域开始。
             # 慢速接近或扣篮准备阶段不应提前耗尽穿筐后的确认时间。
             crossing_ok = (at.crossing_t is not None and (t - at.crossing_t) <= self.make_window_s)
@@ -531,8 +644,8 @@ class ScoreEngine:
                 at.left_streak += 1
             else:
                 at.left_streak = 0
-            timed_out = (t - at.start_t) > self.miss_timeout_s
-            if (at.left_streak >= 2 or timed_out) and (t - at.start_t) >= 0.35:
+            timed_out = self._candidate_age(at,t) > self.miss_timeout_s
+            if (at.left_streak >= 2 or timed_out) and self._candidate_age(at,t) >= 0.35:
                 # 球已到筐口一带但没拿到"穿筐"证据 → 证据不足，记未知而不是未中
                 if ((at.entered and at.crossing_t is None)
                         or ((not at.entered) and (near_rim_at_close or (t - at.last_real_t) > self.ball_recent_s))):
@@ -544,7 +657,7 @@ class ScoreEngine:
             at.last_real_cy = by
         else:
             # 预测球：只推进时间，绝不确认结果
-            if (t - at.start_t) > self.miss_timeout_s:
+            if self._candidate_age(at,t) > self.miss_timeout_s:
                 kind = EVENT_UNCERTAIN if (at.entered and at.crossing_t is None) or (t - at.last_real_t) > self.ball_recent_s else EVENT_MISS
                 new_events.append(self._close(frame_idx, t, kind, ball))
         return new_events
@@ -554,7 +667,7 @@ class ScoreEngine:
         at = self.attempt
         if at is None:
             return
-        if (t - at.start_t) > self.miss_timeout_s:
+        if self._candidate_age(at,t) > self.miss_timeout_s:
             kind = EVENT_UNCERTAIN if (at.entered and at.crossing_t is None) or (t - at.last_real_t) > self.ball_recent_s else EVENT_MISS
             self._close(frame_idx, t, kind, None)
 
@@ -563,7 +676,7 @@ class ScoreEngine:
         at = self.attempt
         if at is None:
             return
-        if (t - at.start_t) > self.miss_timeout_s:
+        if self._candidate_age(at,t) > self.miss_timeout_s:
             self._close(frame_idx, t, EVENT_UNCERTAIN, ball)
 
     def finalize(self, frame_idx: int, t: float) -> list[dict[str, Any]]:
@@ -609,6 +722,7 @@ class ScoreEngine:
             "t": round(float(t), 2),
             "points": int(points),
             "points_verified": bool(verified) if kind == EVENT_MAKE else False,
+            "points_source": "rim_width_px_estimate" if kind == EVENT_MAKE else "unknown",
             "player_id": at.player_id,
             "player_binding": at.binding,
             "dist_m": at.dist_est_m,
@@ -617,7 +731,11 @@ class ScoreEngine:
             "calibrated": False,
             "release_t": round(float(at.start_t), 2),
             "release_xy": [round(float(at.release_xy[0]), 1), round(float(at.release_xy[1]), 1)],
-            "release_source": ("player_feet" if at.binding == "history" else "ball"),
+            "release_source": ("player_feet" if at.binding in ('history','contact_sequence') else "ball"),
+            "release_known": at.binding=='contact_sequence',
+            "release_evidence": dict(at.release_evidence),
+            "candidate_t": round(at.candidate_t,3) if at.candidate_t is not None else None,
+            "geometry_source": self.ball_geometry_mode,
             "ball_release_xy": [round(float(at.ball_release_xy[0]), 1), round(float(at.ball_release_xy[1]), 1)]
             if at.ball_release_xy else None,
             "ball_xy": [round(float(ball.cx), 1), round(float(ball.cy), 1)] if ball else None,
@@ -641,7 +759,7 @@ class ScoreEngine:
     # ------------------------------------------------------------------ 统计
     @property
     def score(self) -> int:
-        return sum(e["points"] for e in self.events if e["type"] == EVENT_MAKE)
+        return sum(e["points"] for e in self.events if e["type"] == EVENT_MAKE and e.get('points_verified'))
 
     def summary(self) -> dict[str, Any]:
         makes = [e for e in self.events if e["type"] == EVENT_MAKE]
@@ -650,6 +768,7 @@ class ScoreEngine:
         attempts = len(makes) + len(misses)
         return {
             "score": self.score,
+            "estimated_score": sum(e['points'] for e in makes),
             "makes": len(makes),
             "misses": len(misses),
             "uncertain": len(uncertain),

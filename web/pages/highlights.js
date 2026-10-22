@@ -83,7 +83,13 @@ window.PAGES['highlights'] = {
     }
   },
   methods: {
-    clipOutcome: function (c) { if (c.result === 'unknown') return '待确认'; if (!c.made) return '未中'; return c.value == null || c.value_assumed ? '命中 · 分值未确认' : '命中 · ' + c.value + '分'; },
+    clipOutcome: function (c) {
+      var display = window.D.shotDisplay(c);
+      return display.label;
+    },
+    clipTitle: function (c) {
+      return [(c.player_id || ''),window.D.shotDisplay(c).label].filter(Boolean).join(' ');
+    },
     teamName: function (s) { return window.D.teamName(this.game, s); },
     mmss: function (t) { return window.D.mmss(t); },
     /** 片段播放地址：优先 /api/media，兜底原始视频；绝对文件路径不可用时返回空串 */
@@ -261,16 +267,16 @@ window.PAGES['highlights'] = {
     '               @error="onErr(i)" style="width:100%"></video>',
     '        <div v-else class="thumb" @click="play(c,i)">',
     '          <span>▶</span>',
-    '          <span class="lab">{{ clipOutcome(c) }}</span>',
+    '          <span v-if="clipOutcome(c)" class="lab">{{ clipOutcome(c) }}</span>',
     '        </div>',
     '        <div class="body">',
     '          <div class="ttl">',
-    '            #{{ (c.index===undefined? i+1 : c.index) }} {{ c.label || (c.player_id + \' \' + (c.made? (\'命中\'+c.value+\'分球\') : \'出手未中\')) }}',
+    '            #{{ (c.index===undefined? i+1 : c.index) }} {{ clipTitle(c) }}',
     '          </div>',
     '          <div class="mt">',
     '            时刻 {{ mmss(c.t) }} · 区间 {{ mmss(c.start) }} ~ {{ mmss(c.end) }}<br>',
     '            <span v-if="c.team===\'home\' || c.team===\'away\'" class="tl-badge" :class="c.team===\'home\'?\'h\':\'a\'">{{ c.team===\'home\' ? teamName(\'home\') : teamName(\'away\') }}</span>',
-    '            <span style="margin-left:6px">{{ c.player_id }}</span><span v-if="c.value != null && !c.value_assumed"> · {{ c.value }} 分球</span><br>',
+    '            <span style="margin-left:6px">{{ c.player_id }}</span><span v-if="c.made === true && c.result !== \'unknown\' && c.value != null && !c.value_assumed"> · {{ c.value }} 分球</span><br>',
     '            <span class="muted">文件：{{ c.path || \'（未生成）\' }}</span>',
     '          </div>',
     '          <div class="row" style="margin-top:8px">',
